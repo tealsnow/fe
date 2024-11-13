@@ -1,0 +1,19 @@
+Step 1 text:
+    font finding
+        fontconfig
+    layout
+        icu
+    text shaping
+        Harfbuzz
+    altas/textures
+        msdfgen (harder) or stb_truetype/freetype
+        we will need to implement our own atlas packing though
+        https://raw.githubusercontent.com/rougier/freetype-gl/master/doc/RectangleBinPack.pdf
+    rendering
+        wgpu
+    windowing
+        sdl2
+
+Step n:
+    svg rendering
+        ?
