@@ -16,4 +16,4 @@ Step 1 text:
 
 Step n:
     svg rendering
-        ?
+        nanovg?

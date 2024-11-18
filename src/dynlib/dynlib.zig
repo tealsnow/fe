@@ -14,5 +14,5 @@ fn getColor(r: *u8, g: *u8, b: *u8) void {
 }
 
 fn greet(name: []const u8) void {
-    common.out.printfln("Hello (testing), {s}!", .{name});
+    common.out.printfln("Hello, {s}!", .{name});
 }

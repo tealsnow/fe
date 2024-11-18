@@ -10,7 +10,7 @@ const out = common.out;
 const debugging = builtin.mode == .Debug;
 
 // FIXME: Keep all global state in one place
-var shared_lib_recompiled = false;
+var dynlib_recompiled = false;
 // FIXME: Keep all global state in one place
 var sdl_allocator: std.mem.Allocator = undefined;
 
@@ -89,7 +89,7 @@ fn run() !void {
         .flags = .{
             .hidden = true,
             .allow_highdpi = true,
-            .resizable = false,
+            .resizable = true,
         },
     });
     defer window.deinit();
@@ -174,11 +174,11 @@ fn run() !void {
         }
 
         while (update.shouldTick()) {
-            if (shared_lib_recompiled) {
+            if (dynlib_recompiled) {
                 out.print("Reloading (from signal)...");
                 defer out.println(" Done");
 
-                shared_lib_recompiled = false;
+                dynlib_recompiled = false;
 
                 library.close();
                 try loadLibrary(&library, &api);
@@ -256,8 +256,8 @@ fn installSigaction() !void {
 fn handleSignal(sig: c_int) callconv(.C) void {
     switch (sig) {
         std.os.linux.SIG.USR1 => {
-            log.info("Got USR1 signal, shared lib has recompiled", .{});
-            shared_lib_recompiled = true;
+            log.info("Got USR1 signal, dynlib has recompiled", .{});
+            dynlib_recompiled = true;
         },
         else => {
             log.warn("Got unknown signal: {d}", .{sig});

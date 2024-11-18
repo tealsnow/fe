@@ -8,6 +8,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const use_llvm_lld = b.option(
+        bool,
+        "use_llvm",
+        "Use llvm and lld (default: false) should be true for release",
+    ) orelse false;
+
     const commonlib_src = b.path("src/common/common.zig");
     const commonlib = b.addSharedLibrary(.{
         .name = "common",
@@ -16,6 +22,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         // .version = .{ .major = 0, .minor = 0, .patch = 1 },
         .pic = true,
+
+        .use_llvm = use_llvm_lld,
+        .use_lld = use_llvm_lld,
     });
 
     commonlib.linkLibC();
@@ -32,6 +41,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         // .version = .{ .major = 0, .minor = 0, .patch = 1 },
         .pic = true,
+
+        .use_llvm = use_llvm_lld,
+        .use_lld = use_llvm_lld,
     });
 
     dynlib.linkLibC();
@@ -49,12 +61,27 @@ pub fn build(b: *std.Build) void {
     notify.step.dependOn(&dynlib_install.step);
     dynlib_step.dependOn(&notify.step);
 
+    const watch_dynlib_cmd = b.addSystemCommand(&.{
+        "watchexec",
+        "-r", // restart if still running
+        "-w", // watch dir:
+        "src/dynlib/",
+        "-e", // watch ext:
+        "zig",
+        "zig build dynlib",
+    });
+    const watch_dynlib_step = b.step("watch-dynlib", "Watch the dynamic library and rebuild on changes");
+    watch_dynlib_step.dependOn(&watch_dynlib_cmd.step);
+
     const exe_src = b.path("src/exe/exe.zig");
     const exe = b.addExecutable(.{
         .name = "fe",
         .root_source_file = exe_src,
         .target = target,
         .optimize = optimize,
+
+        .use_llvm = use_llvm_lld,
+        .use_lld = use_llvm_lld,
     });
 
     exe.linkLibC();
