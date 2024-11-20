@@ -1,4 +1,11 @@
-Step 1 text:
+logging
+    source location
+    structured
+    tracing - w/ tracy
+
+harden dynlib stuff
+
+text rendering:
     font finding
         fontconfig
     layout
@@ -14,6 +21,6 @@ Step 1 text:
     windowing
         sdl2
 
-Step n:
+other:
     svg rendering
         nanovg?

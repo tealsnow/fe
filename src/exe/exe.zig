@@ -1,11 +1,13 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const log = std.log;
+// const log = std.log;
 
 const sdl = @import("sdl.zig");
 
 const common = @import("common");
 const out = common.out;
+
+const log = common.log.Scoped("exe");
 
 const debugging = builtin.mode == .Debug;
 
@@ -15,55 +17,67 @@ var dynlib_recompiled = false;
 var sdl_allocator: std.mem.Allocator = undefined;
 
 pub fn main() !void {
-    run() catch |err| {
-        const exit_code = switch (err) {
-            error.Sdl => blk: {
-                log.err("Fatal SDL error: {?s}", .{sdl.getError()});
-                break :blk ExitCode.Sdl;
-            },
-            else => blk: {
-                log.err("Fatal error: {}", .{err});
-                break :blk ExitCode.General;
-            },
-        };
-
-        // FIXME: Should probably put stacktrace in a log file for bug reports
-        if (!debugging)
-            exit_code.exit();
-
-        return err;
+    const exit_code: ExitCode = run() catch |err| switch (err) {
+        error.Sdl => blk: {
+            log.fatal(
+                @src(),
+                "Fatal SDL error",
+                .{},
+                .{ .err = sdl.getError() },
+            );
+            if (debugging)
+                return err;
+            break :blk .sdl;
+        },
+        else => blk: {
+            log.fatal(
+                @src(),
+                "Fatal error",
+                .{},
+                .{ .err = err },
+            );
+            if (debugging)
+                return err;
+            break :blk .general;
+        },
     };
+
+    exit_code.exit();
 }
 
 const ExitCode = enum(u8) {
-    Successful = 0,
-    General = 1,
-    Sdl = 2,
+    successful = 0,
+    general = 1,
+    sdl = 2,
 
     pub fn exit(self: ExitCode) noreturn {
-        if (self == .Successful)
+        if (self == .successful)
             std.process.cleanExit();
         std.process.exit(@intFromEnum(self));
     }
 };
 
-fn run() !void {
-    log.debug("Starting application", .{});
-    defer log.debug("Exiting application", .{});
+fn run() !ExitCode {
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        // .never_unmap = true,
+        // .retain_metadata = true,
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{
-    //     // .never_unmap = true,
-    //     // .retain_metadata = true,
+        // .verbose_log = true,
+    }){};
+    const allocator = gpa.allocator();
+    defer {
+        const status = gpa.deinit();
+        if (status == .leak) {
+            out.println("Exited with memory leak");
+        }
+    }
 
-    //     // .verbose_log = true,
-    // }){};
-    // const allocator = gpa.allocator();
-    // defer {
-    //     const status = gpa.deinit();
-    //     if (status == .leak) {
-    //         out.println("Exited with memory leak");
-    //     }
-    // }
+    var console_logger = try common.log.ConsoleLogger.new(allocator);
+    defer console_logger.deinit(allocator);
+    common.log.setup(allocator, &console_logger.asLog());
+
+    log.debug(@src(), "Starting application", .{}, .{});
+    defer log.debug(@src(), "Exiting application", .{}, .{});
 
     // sdl_allocator = allocator;
     sdl_allocator = std.heap.raw_c_allocator;
@@ -102,11 +116,16 @@ fn run() !void {
 
     var library: std.DynLib = undefined;
     var api: common.Api = undefined;
+
     try loadLibrary(&library, &api);
     defer library.close();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-    const allocator = arena.allocator();
+    api.onStart();
+    defer api.onEnd();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
+    // FIXME: Rename for less ambiguity
+    const aallocator = arena.allocator();
 
     const event_timeout = 16; // ms
     const update_60_times_a_second = 16 * 1000 * 1000; // ns
@@ -126,7 +145,13 @@ fn run() !void {
             const failed = arena.reset(.retain_capacity); // FIXME: Limit this accordingly!
             if (debugging and failed and !show_failed_reset) {
                 show_failed_reset = true;
-                log.err("Arena reset failed, Not showing again. Press (r) to reset showing this message", .{});
+                log.err(
+                    @src(),
+                    "Arena reset failed. This message will not show again. " ++
+                        "To reset this flag press r",
+                    .{},
+                    .{},
+                );
             }
         }
 
@@ -161,7 +186,11 @@ fn run() !void {
                         },
 
                         .f => {
-                            const msg = try std.fmt.allocPrint(allocator, "Some int: {d}", .{15});
+                            const msg = try std.fmt.allocPrint(
+                                aallocator,
+                                "Some int: {d}",
+                                .{15},
+                            );
                             api.greet(msg);
                         },
 
@@ -197,6 +226,8 @@ fn run() !void {
             renderer.present();
         }
     }
+
+    return .successful;
 }
 
 pub fn TickerTimer(comptime ticker_count: comptime_int) type {
@@ -248,7 +279,12 @@ fn installSigaction() !void {
     const sigaction_res = std.os.linux.sigaction(std.os.linux.SIG.USR1, &act, null);
     if (sigaction_res != 0) {
         const err = std.posix.errno(sigaction_res);
-        log.err("Failed to setup sigaction: {}", .{err});
+        log.err(
+            @src(),
+            "Failed to setup sigaction",
+            .{},
+            .{ .errno = err },
+        );
         return error.FailedToSetSigaction;
     }
 }
@@ -256,11 +292,21 @@ fn installSigaction() !void {
 fn handleSignal(sig: c_int) callconv(.C) void {
     switch (sig) {
         std.os.linux.SIG.USR1 => {
-            log.info("Got USR1 signal, dynlib has recompiled", .{});
+            log.info(
+                @src(),
+                "Got USR1 signal, dynlib marked out of date",
+                .{},
+                .{},
+            );
             dynlib_recompiled = true;
         },
         else => {
-            log.warn("Got unknown signal: {d}", .{sig});
+            log.warn(
+                @src(),
+                "Got unknown signal",
+                .{},
+                .{ .sig = sig },
+            );
         },
     }
 }

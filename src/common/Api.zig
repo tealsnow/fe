@@ -2,6 +2,9 @@ const std = @import("std");
 
 const Api = @This();
 
+onStart: *const fn () void,
+onEnd: *const fn () void,
+
 getColor: *const fn (r: *u8, g: *u8, b: *u8) void,
 greet: *const fn (name: []const u8) void,
 
