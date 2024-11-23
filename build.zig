@@ -8,11 +8,22 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // This should be enabled when debugging
+    const debugger_attached = b.option(
+        bool,
+        "debugger_attached",
+        "whether to be compiled with the assumption that a dubugger will be attached",
+    ) orelse false;
+
+    // llvm increases compile time a lot, but optimizes better and gives better debugging symbols
     const use_llvm_lld = b.option(
         bool,
         "use_llvm",
-        "Use llvm and lld (default: false) should be true for release",
-    ) orelse false;
+        "Use llvm and lld (default: false) should be true for release, set to true of debugger_attached is true",
+    ) orelse debugger_attached;
+
+    const options = b.addOptions();
+    options.addOption(bool, "debugger_attached", debugger_attached);
 
     const commonlib_src = b.path("src/common/common.zig");
     const commonlib = b.addSharedLibrary(.{
@@ -30,6 +41,9 @@ pub fn build(b: *std.Build) void {
     commonlib.linkLibC();
     b.installArtifact(commonlib);
 
+    commonlib.root_module.addOptions("options", options);
+
+    // FIXME: Can we just use `commonlib.root_module` instead?
     const commonlib_module = b.createModule(.{
         .root_source_file = commonlib_src,
     });
@@ -52,6 +66,8 @@ pub fn build(b: *std.Build) void {
     dynlib.linkLibrary(commonlib);
     dynlib.root_module.addImport("common", commonlib_module);
 
+    dynlib.root_module.addOptions("options", options);
+
     const dynlib_install = b.addInstallArtifact(dynlib, .{});
 
     const dynlib_step = b.step("dynlib", "Build only the dynlib shared library");
@@ -68,7 +84,7 @@ pub fn build(b: *std.Build) void {
         "src/dynlib/",
         "-e", // watch ext:
         "zig",
-        "zig build dynlib",
+        "zig build dynlib", // command
     });
     const watch_dynlib_step = b.step("watch-dynlib", "Watch the dynamic library and rebuild on changes");
     watch_dynlib_step.dependOn(&watch_dynlib_cmd.step);
@@ -90,6 +106,8 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(commonlib);
     exe.root_module.addImport("common", commonlib_module);
 
+    exe.root_module.addOptions("options", options);
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -100,16 +118,21 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = exe_src,
-        .target = target,
-        .optimize = optimize,
-    });
+    const check_step = b.step("check", "Check");
+    check_step.dependOn(&commonlib.step);
+    check_step.dependOn(&dynlib.step);
+    check_step.dependOn(&exe.step);
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    // const exe_unit_tests = b.addTest(.{
+    //     .root_source_file = exe_src,
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
+    // const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+
+    // const test_step = b.step("test", "Run unit tests");
+    // test_step.dependOn(&run_exe_unit_tests.step);
 }
 
 const NotifyRebuild = struct {

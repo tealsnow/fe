@@ -4,26 +4,26 @@ const common = @import("common");
 const log = common.log.Scoped("dynlib");
 
 export fn getApi(api: *common.Api) void {
-    log.trace(@src(), "Populating Api", .{}, .{});
     api.* = .{
-        .onStart = &onStart,
-        .onEnd = &onEnd,
+        .onLoad = &onLoad,
+        .onUnload = &onUnload,
 
         .getColor = &getColor,
         .greet = &greet,
     };
 }
 
-const allocator = std.heap.c_allocator;
-var console_logger: common.log.ConsoleLogger = undefined;
+var console_logger: *common.log.ConsoleLogger = undefined;
 
-fn onStart() void {
-    console_logger = common.log.ConsoleLogger.new(allocator) catch unreachable;
-    common.log.setup(allocator, &console_logger.asLog());
+fn onLoad(allocator: std.mem.Allocator) void {
+    const level_filter = common.log.LevelFilter.trace;
+    console_logger = allocator.create(common.log.ConsoleLogger) catch unreachable;
+    console_logger.* = common.log.ConsoleLogger.new(level_filter) catch unreachable;
+    common.log.setup(.{ .allocator = allocator, .level_filter = level_filter, .logger = console_logger.createLog() });
 }
 
-fn onEnd() void {
-    console_logger.deinit(allocator);
+fn onUnload(allocator: std.mem.Allocator) void {
+    allocator.destroy(console_logger);
 }
 
 fn getColor(r: *u8, g: *u8, b: *u8) void {
@@ -33,7 +33,7 @@ fn getColor(r: *u8, g: *u8, b: *u8) void {
 }
 
 fn greet(name: []const u8) void {
-    log.trace(@src(), "Greeting", .{}, .{ .name = name });
+    log.tracekv(@src(), "greeting", .{ .name = name });
 
     common.out.printfln("Hello, {s}!", .{name});
 }

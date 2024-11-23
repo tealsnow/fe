@@ -1,9 +1,9 @@
 logging
-    source location
-    structured
+    source location ./
+    structured (key-value) ./
     tracing - w/ tracy
 
-harden dynlib stuff
+harden dynlib stuff ./
 
 text rendering:
     font finding
@@ -18,8 +18,6 @@ text rendering:
         https://raw.githubusercontent.com/rougier/freetype-gl/master/doc/RectangleBinPack.pdf
     rendering
         wgpu
-    windowing
-        sdl2
 
 other:
     svg rendering

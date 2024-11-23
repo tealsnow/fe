@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 // const log = std.log;
+const Allocator = std.mem.Allocator;
 
 const sdl = @import("sdl.zig");
 
@@ -9,34 +10,35 @@ const out = common.out;
 
 const log = common.log.Scoped("exe");
 
-const debugging = builtin.mode == .Debug;
+const options = @import("options");
+
+const debug_mode = builtin.mode == .Debug;
+const debugger_attached = options.debugger_attached;
 
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
 // FIXME: Keep all global state in one place
-var sdl_allocator: std.mem.Allocator = undefined;
+var sdl_allocator: Allocator = undefined;
 
 pub fn main() !void {
     const exit_code: ExitCode = run() catch |err| switch (err) {
         error.Sdl => blk: {
-            log.fatal(
+            log.fatalkv(
                 @src(),
                 "Fatal SDL error",
-                .{},
                 .{ .err = sdl.getError() },
             );
-            if (debugging)
+            if (debug_mode)
                 return err;
             break :blk .sdl;
         },
         else => blk: {
-            log.fatal(
+            log.fatalkv(
                 @src(),
                 "Fatal error",
-                .{},
                 .{ .err = err },
             );
-            if (debugging)
+            if (debug_mode)
                 return err;
             break :blk .general;
         },
@@ -72,12 +74,23 @@ fn run() !ExitCode {
         }
     }
 
-    var console_logger = try common.log.ConsoleLogger.new(allocator);
-    defer console_logger.deinit(allocator);
-    common.log.setup(allocator, &console_logger.asLog());
+    const level_filter = common.log.LevelFilter.trace;
+    var console_logger = try common.log.ConsoleLogger.new(level_filter);
+    common.log.setup(.{ .allocator = allocator, .level_filter = level_filter, .logger = console_logger.createLog() });
 
-    log.debug(@src(), "Starting application", .{}, .{});
-    defer log.debug(@src(), "Exiting application", .{}, .{});
+    log.debug(@src(), "starting application");
+    defer log.debug(@src(), "exiting application");
+
+    if (debug_mode) {
+        log.info(@src(), "running in debug mode");
+    }
+
+    if (debugger_attached) {
+        log.warn(
+            @src(),
+            "running with the assumption that a debugger will be attached",
+        );
+    }
 
     // sdl_allocator = allocator;
     sdl_allocator = std.heap.raw_c_allocator;
@@ -94,7 +107,7 @@ fn run() !ExitCode {
     defer sdl.quit();
 
     const window = try sdl.Window.init(.{
-        .title = "cu",
+        .title = "fe",
         .position = .{
             .x = .centered,
             .y = .centered,
@@ -114,18 +127,11 @@ fn run() !ExitCode {
     });
     defer renderer.deinit();
 
-    var library: std.DynLib = undefined;
-    var api: common.Api = undefined;
-
-    try loadLibrary(&library, &api);
-    defer library.close();
-
-    api.onStart();
-    defer api.onEnd();
+    var dynlib = try Dynlib.load(allocator);
+    defer dynlib.close(allocator);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
-    // FIXME: Rename for less ambiguity
-    const aallocator = arena.allocator();
+    const arena_allocator = arena.allocator();
 
     const event_timeout = 16; // ms
     const update_60_times_a_second = 16 * 1000 * 1000; // ns
@@ -138,19 +144,19 @@ fn run() !ExitCode {
 
     var show_failed_reset = if (builtin.mode == .Debug) false;
 
+    var should_reload_dynlib = false;
+
     window.show();
     var running = true;
     while (running) {
         defer {
             const failed = arena.reset(.retain_capacity); // FIXME: Limit this accordingly!
-            if (debugging and failed and !show_failed_reset) {
+            if (debug_mode and failed and !show_failed_reset) {
                 show_failed_reset = true;
                 log.err(
                     @src(),
-                    "Arena reset failed. This message will not show again. " ++
-                        "To reset this flag press r",
-                    .{},
-                    .{},
+                    "Arena reset failed. This is likely to happen again " ++
+                        "so this message will not repeat. To reset this flag press r",
                 );
             }
         }
@@ -159,39 +165,40 @@ fn run() !ExitCode {
 
         if (sdl.Event.waitTimeout(event_timeout)) |ev| {
             switch (ev.type) {
-                .quit => running = false,
+                .quit => {
+                    log.trace(@src(), "quit event recived, quiting...");
+                    running = false;
+                },
 
                 .key => |key| blk: {
                     if (key.state != .pressed)
                         break :blk;
                     switch (key.keysym.sym) {
                         .q => {
-                            out.println("Quiting...");
+                            log.trace(@src(), "quiting...");
                             running = false;
                         },
 
                         .r => {
-                            out.print("Reloading...");
-                            defer out.println(" Done");
-
-                            library.close();
-                            try loadLibrary(&library, &api);
-
-                            if (debugging)
+                            should_reload_dynlib = true;
+                            if (debug_mode)
                                 show_failed_reset = false;
                         },
 
                         .h => {
-                            api.greet("main");
+                            const name = "ketan";
+
+                            log.tracekv(@src(), "doing greet", .{ .name = name });
+                            dynlib.api.greet(name);
                         },
 
                         .f => {
                             const msg = try std.fmt.allocPrint(
-                                aallocator,
+                                arena_allocator,
                                 "Some int: {d}",
                                 .{15},
                             );
-                            api.greet(msg);
+                            dynlib.api.greet(msg);
                         },
 
                         else => {},
@@ -203,14 +210,18 @@ fn run() !ExitCode {
         }
 
         while (update.shouldTick()) {
-            if (dynlib_recompiled) {
-                out.print("Reloading (from signal)...");
-                defer out.println(" Done");
+            if (dynlib_recompiled)
+                should_reload_dynlib = true;
+
+            if (should_reload_dynlib) {
+                should_reload_dynlib = false;
+
+                log.trace(@src(), "reloading dynlib...");
+                defer log.trace(@src(), "reloading dynlib done");
 
                 dynlib_recompiled = false;
 
-                library.close();
-                try loadLibrary(&library, &api);
+                try dynlib.reload(allocator);
             }
         }
 
@@ -218,7 +229,7 @@ fn run() !ExitCode {
             var r: u8 = undefined;
             var g: u8 = undefined;
             var b: u8 = undefined;
-            api.getColor(&r, &g, &b);
+            dynlib.api.getColor(&r, &g, &b);
 
             renderer.setDrawColor(r, g, b, 255) catch {};
 
@@ -258,17 +269,44 @@ pub fn TickerTimer(comptime ticker_count: comptime_int) type {
             pub fn shouldTick(self: *Ticker) bool {
                 const cond = self.correction >= self.timestep;
                 if (cond) self.correction -= self.timestep;
+                // This should only allow one iteration at a time in debug mode
+                if (debugger_attached) self.correction = 0;
                 return cond;
             }
         };
     };
 }
 
-fn loadLibrary(lib: *std.DynLib, api: *common.Api) !void {
-    lib.* = try std.DynLib.open("zig-out/lib/libdynlib.so");
-    errdefer lib.close();
-    try api.load(lib);
-}
+pub const Dynlib = struct {
+    library: std.DynLib,
+    api: common.Api,
+
+    const Path = "zig-out/lib/libdynlib.so";
+
+    pub fn load(allocator: Allocator) !Dynlib {
+        var dynlib: Dynlib = undefined;
+        dynlib.library = try std.DynLib.open(Path);
+        errdefer dynlib.library.close();
+        dynlib.api = try common.Api.load(&dynlib.library);
+        dynlib.api.onLoad(allocator);
+        return dynlib;
+    }
+
+    pub fn reload(dynlib: *Dynlib, allocator: Allocator) !void {
+        dynlib.api.onUnload(allocator);
+        dynlib.library.close();
+
+        dynlib.library = try std.DynLib.open(Path);
+        errdefer dynlib.library.close();
+        try dynlib.api.reload(&dynlib.library);
+        dynlib.api.onLoad(allocator);
+    }
+
+    pub fn close(dynlib: *Dynlib, allocator: Allocator) void {
+        dynlib.api.onUnload(allocator);
+        dynlib.library.close();
+    }
+};
 
 fn installSigaction() !void {
     const act = std.os.linux.Sigaction{
@@ -279,10 +317,9 @@ fn installSigaction() !void {
     const sigaction_res = std.os.linux.sigaction(std.os.linux.SIG.USR1, &act, null);
     if (sigaction_res != 0) {
         const err = std.posix.errno(sigaction_res);
-        log.err(
+        log.errkv(
             @src(),
             "Failed to setup sigaction",
-            .{},
             .{ .errno = err },
         );
         return error.FailedToSetSigaction;
@@ -295,16 +332,13 @@ fn handleSignal(sig: c_int) callconv(.C) void {
             log.info(
                 @src(),
                 "Got USR1 signal, dynlib marked out of date",
-                .{},
-                .{},
             );
             dynlib_recompiled = true;
         },
         else => {
-            log.warn(
+            log.warnkv(
                 @src(),
                 "Got unknown signal",
-                .{},
                 .{ .sig = sig },
             );
         },
