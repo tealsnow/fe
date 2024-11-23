@@ -2,6 +2,7 @@ const std = @import("std");
 const SourceLocation = std.builtin.SourceLocation;
 const out = @import("out.zig");
 const Allocator = std.mem.Allocator;
+const DateTime = @import("datetime").DateTime;
 
 pub const LevelFilter = enum(u8) {
     off = 0,
@@ -232,16 +233,36 @@ pub const ConsoleLogger = struct {
     ) void {
         _ = allocator;
 
+        const level_colors = [_][]const u8{
+            "", // off
+            "\x1b[1;41m", // fatal - bold red background
+            "\x1b[0;41m", // err - red background
+            "\x1b[0;43m", // warn - yellow background
+            "\x1b[0;44m", // info - blue background
+            "\x1b[0;45m", // debug - purple background
+            "\x1b[0;42m", // trace - green background
+        };
+        const reset_color = "\x1b[0m";
+        const deemphasis_color = "\x1b[90m"; // grey color
+
+        const dt = DateTime.fromMillis(std.time.milliTimestamp());
+        var dt_buffer: [30]u8 = undefined;
+        const dt_str = dt.toRfc3339(&dt_buffer) catch unreachable;
+
         const self: *ConsoleLogger = @ptrCast(@alignCast(ctx));
         self.bw.writer().print(
-            "[{s} {s}:{}@{s}] {s} - {s}",
+            "{s}[{s} {s} {s}:{d}@{s}] {s}{s} {s} {s} {s}",
             .{
-                // now.timestamp,
+                deemphasis_color,
+                dt_str,
                 target,
                 location.file,
                 location.line,
                 location.fn_name,
+                reset_color,
+                level_colors[@intFromEnum(level)],
                 @tagName(level),
+                reset_color,
                 message,
             },
         ) catch unreachable;

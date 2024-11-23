@@ -43,10 +43,11 @@ pub fn build(b: *std.Build) void {
 
     commonlib.root_module.addOptions("options", options);
 
-    // FIXME: Can we just use `commonlib.root_module` instead?
-    const commonlib_module = b.createModule(.{
-        .root_source_file = commonlib_src,
+    const datetime = b.dependency("datetime", .{
+        .target = target,
+        .optimize = optimize,
     });
+    commonlib.root_module.addImport("datetime", datetime.module("datetime"));
 
     const dynlib = b.addSharedLibrary(.{
         .name = "dynlib",
@@ -64,7 +65,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(dynlib);
 
     dynlib.linkLibrary(commonlib);
-    dynlib.root_module.addImport("common", commonlib_module);
+    dynlib.root_module.addImport("common", &commonlib.root_module);
 
     dynlib.root_module.addOptions("options", options);
 
@@ -104,7 +105,7 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("SDL2");
 
     exe.linkLibrary(commonlib);
-    exe.root_module.addImport("common", commonlib_module);
+    exe.root_module.addImport("common", &commonlib.root_module);
 
     exe.root_module.addOptions("options", options);
 

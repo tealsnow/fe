@@ -5,7 +5,11 @@
 
     .minimum_zig_version = "0.13.0",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .datetime = .{
+            .path = "vendor/datetime",
+        },
+    },
 
     .paths = .{
         "build.zig",
