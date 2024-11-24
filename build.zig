@@ -8,19 +8,27 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // This should be enabled when debugging
+    // this should be enabled when debugging
+    // this is used to ensure that the main loop only runs once per frame, from the time spent stepping
     const debugger_attached = b.option(
         bool,
         "debugger_attached",
-        "whether to be compiled with the assumption that a dubugger will be attached",
+        "Whether to be compiled with the assumption that a dubugger will be attached (default: false)",
     ) orelse false;
 
     // llvm increases compile time a lot, but optimizes better and gives better debugging symbols
     const use_llvm_lld = b.option(
         bool,
         "use_llvm",
-        "Use llvm and lld (default: false) should be true for release, set to true of debugger_attached is true",
+        "Use llvm and lld. Set to true of debugger_attached is true (default: false) ",
     ) orelse debugger_attached;
+
+    // to enable tracing or not
+    const tracy_enable = b.option(
+        bool,
+        "tracy_enable",
+        "Enable profiling (true for debug builds)",
+    ) orelse (optimize == .Debug);
 
     const options = b.addOptions();
     options.addOption(bool, "debugger_attached", debugger_attached);
@@ -31,8 +39,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = commonlib_src,
         .target = target,
         .optimize = optimize,
-        // .version = .{ .major = 0, .minor = 0, .patch = 1 },
         .pic = true,
+        // .version = .{ .major = 0, .minor = 0, .patch = 1 },
 
         .use_llvm = use_llvm_lld,
         .use_lld = use_llvm_lld,
@@ -49,13 +57,27 @@ pub fn build(b: *std.Build) void {
     });
     commonlib.root_module.addImport("datetime", datetime.module("datetime"));
 
+    const tracy = b.dependency("tracy", .{
+        .target = target,
+        .optimize = optimize,
+
+        .tracy_enable = tracy_enable,
+        .tracy_only_localhost = true,
+        .tracy_no_broadcast = true,
+
+        .shared = true,
+    });
+    commonlib.root_module.addImport("tracy", tracy.module("tracy"));
+    commonlib.linkLibrary(tracy.artifact("tracy"));
+    commonlib.linkLibCpp();
+
     const dynlib = b.addSharedLibrary(.{
         .name = "dynlib",
         .root_source_file = b.path("src/dynlib/dynlib.zig"),
         .target = target,
         .optimize = optimize,
-        // .version = .{ .major = 0, .minor = 0, .patch = 1 },
         .pic = true,
+        // .version = .{ .major = 0, .minor = 0, .patch = 1 },
 
         .use_llvm = use_llvm_lld,
         .use_lld = use_llvm_lld,

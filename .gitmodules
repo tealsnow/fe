@@ -1,3 +1,6 @@
 [submodule "vendor/datetime"]
 	path = vendor/datetime
 	url = https://github.com/tealsnow/datetime-zig.git
+[submodule "vendor/tracy"]
+	path = vendor/tracy
+	url = https://github.com/tealsnow/zig-tracy.git

@@ -1,14 +1,11 @@
 .{
     .name = "fe",
-
     .version = "0.0.1",
-
     .minimum_zig_version = "0.13.0",
 
     .dependencies = .{
-        .datetime = .{
-            .path = "vendor/datetime",
-        },
+        .datetime = .{ .path = "vendor/datetime" },
+        .tracy = .{ .path = "vendor/tracy" },
     },
 
     .paths = .{

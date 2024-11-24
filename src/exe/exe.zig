@@ -7,6 +7,7 @@ const sdl = @import("sdl.zig");
 
 const common = @import("common");
 const out = common.out;
+const tracy = common.tracy;
 
 const log = common.log.Scoped("exe");
 
@@ -21,6 +22,9 @@ var dynlib_recompiled = false;
 var sdl_allocator: Allocator = undefined;
 
 pub fn main() !void {
+    tracy.setThreadName("Main");
+    defer tracy.message("Graceful main thread exit");
+
     const exit_code: ExitCode = run() catch |err| switch (err) {
         error.Sdl => blk: {
             log.fatalkv(
@@ -60,6 +64,8 @@ const ExitCode = enum(u8) {
 };
 
 fn run() !ExitCode {
+    const init_zone = tracy.initZone(@src(), .{ .name = "init" });
+
     var gpa = std.heap.GeneralPurposeAllocator(.{
         // .never_unmap = true,
         // .retain_metadata = true,
@@ -148,22 +154,17 @@ fn run() !ExitCode {
 
     window.show();
     var running = true;
-    while (running) {
-        defer {
-            const failed = arena.reset(.retain_capacity); // FIXME: Limit this accordingly!
-            if (debug_mode and failed and !show_failed_reset) {
-                show_failed_reset = true;
-                log.err(
-                    @src(),
-                    "Arena reset failed. This is likely to happen again " ++
-                        "so this message will not repeat. To reset this flag press r",
-                );
-            }
-        }
 
+    init_zone.deinit();
+
+    while (running) {
+        tracy.frameMarkNamed("main loop");
         ticker.lap();
 
         if (sdl.Event.waitTimeout(event_timeout)) |ev| {
+            const events_zone = tracy.initZone(@src(), .{ .name = "events" });
+            defer events_zone.deinit();
+
             switch (ev.type) {
                 .quit => {
                     log.trace(@src(), "quit event recived, quiting...");
@@ -186,6 +187,8 @@ fn run() !ExitCode {
                         },
 
                         .h => {
+                            tracy.message("greet");
+
                             const name = "ketan";
 
                             log.tracekv(@src(), "doing greet", .{ .name = name });
@@ -210,6 +213,9 @@ fn run() !ExitCode {
         }
 
         while (update.shouldTick()) {
+            const update_zone = tracy.initZone(@src(), .{ .name = "update" });
+            defer update_zone.deinit();
+
             if (dynlib_recompiled)
                 should_reload_dynlib = true;
 
@@ -226,6 +232,9 @@ fn run() !ExitCode {
         }
 
         while (render.shouldTick()) {
+            const render_zone = tracy.initZone(@src(), .{ .name = "render" });
+            defer render_zone.deinit();
+
             var r: u8 = undefined;
             var g: u8 = undefined;
             var b: u8 = undefined;
@@ -235,6 +244,16 @@ fn run() !ExitCode {
 
             renderer.clear() catch {};
             renderer.present();
+        }
+
+        const area_reset_failed = arena.reset(.retain_capacity); // FIXME: Limit this accordingly!
+        if (debug_mode and area_reset_failed and !show_failed_reset) {
+            show_failed_reset = true;
+            log.err(
+                @src(),
+                "Arena reset failed. This is likely to happen again " ++
+                    "so this message will not repeat. To reset this flag press r",
+            );
         }
     }
 
