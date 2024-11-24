@@ -996,7 +996,6 @@ pub const TextInputEvent = struct {
     text: [32:0]u8,
 };
 
-
 pub const MemoryFunctions = struct {
     malloc: c.SDL_malloc_func,
     calloc: c.SDL_calloc_func,

@@ -1,8 +1,9 @@
 const std = @import("std");
+const log = @import("log.zig");
 
 const Api = @This();
 
-onLoad: *const fn (allocator: std.mem.Allocator) void,
+onLoad: *const fn (allocator: std.mem.Allocator, log_state: log.State) void,
 onUnload: *const fn (allocator: std.mem.Allocator) void,
 
 getColor: *const fn (r: *u8, g: *u8, b: *u8) void,

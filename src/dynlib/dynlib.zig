@@ -13,17 +13,13 @@ export fn getApi(api: *common.Api) void {
     };
 }
 
-var console_logger: *common.log.ConsoleLogger = undefined;
-
-fn onLoad(allocator: std.mem.Allocator) void {
-    const level_filter = common.log.LevelFilter.trace;
-    console_logger = allocator.create(common.log.ConsoleLogger) catch unreachable;
-    console_logger.* = common.log.ConsoleLogger.new(level_filter) catch unreachable;
-    common.log.setup(.{ .allocator = allocator, .level_filter = level_filter, .logger = console_logger.createLog() });
+fn onLoad(allocator: std.mem.Allocator, log_state: common.log.State) void {
+    _ = allocator;
+    common.log.setup(log_state);
 }
 
 fn onUnload(allocator: std.mem.Allocator) void {
-    allocator.destroy(console_logger);
+    _ = allocator;
 }
 
 fn getColor(r: *u8, g: *u8, b: *u8) void {
@@ -33,6 +29,7 @@ fn getColor(r: *u8, g: *u8, b: *u8) void {
 }
 
 fn greet(name: []const u8) void {
+    common.tracy.message("greet from dynlib");
     log.tracekv(@src(), "greeting", .{ .name = name });
 
     common.out.printfln("Hello, {s}!", .{name});

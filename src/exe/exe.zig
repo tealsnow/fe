@@ -1,6 +1,5 @@
 const builtin = @import("builtin");
 const std = @import("std");
-// const log = std.log;
 const Allocator = std.mem.Allocator;
 
 const sdl = @import("sdl.zig");
@@ -23,7 +22,6 @@ var sdl_allocator: Allocator = undefined;
 
 pub fn main() !void {
     tracy.setThreadName("Main");
-    defer tracy.message("Graceful main thread exit");
 
     const exit_code: ExitCode = run() catch |err| switch (err) {
         error.Sdl => blk: {
@@ -72,17 +70,24 @@ fn run() !ExitCode {
 
         // .verbose_log = true,
     }){};
-    const allocator = gpa.allocator();
+    gpa.backing_allocator = std.heap.c_allocator;
+    // const allocator = gpa.allocator();
+    var tracing_allocator = tracy.TracingAllocator.initNamed("main", gpa.allocator());
+    const allocator = tracing_allocator.allocator();
     defer {
         const status = gpa.deinit();
         if (status == .leak) {
-            out.println("Exited with memory leak");
+            log.fatal(@src(), "Exited with memory leak");
         }
     }
 
     const level_filter = common.log.LevelFilter.trace;
     var console_logger = try common.log.ConsoleLogger.new(level_filter);
-    common.log.setup(.{ .allocator = allocator, .level_filter = level_filter, .logger = console_logger.createLog() });
+    common.log.setup(.{
+        .allocator = allocator,
+        .level_filter = level_filter,
+        .logger = console_logger.logger(),
+    });
 
     log.debug(@src(), "starting application");
     defer log.debug(@src(), "exiting application");
@@ -98,8 +103,16 @@ fn run() !ExitCode {
         );
     }
 
-    // sdl_allocator = allocator;
-    sdl_allocator = std.heap.raw_c_allocator;
+    // We use the (raw) c allocator here and not the gpa since sdl does not
+    // properly deinit its memory on applicaiton exit. Which ends up triggering
+    // the gpa
+    // NOTE(ketanr): I'm not sure if theres much need for this. The only
+    //  usecase I can think of is just trying to so see and minimize
+    //  allocations in our use of sdl. Time will tell
+    var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", std.heap.raw_c_allocator);
+    sdl_allocator = sdl_tracing_allocator.allocator();
+    // sdl_allocator = std.heap.raw_c_allocator;
+
     try sdl.setMemoryFunctions(.{
         .malloc = sdlMalloc,
         .calloc = sdlCalloc,
@@ -137,16 +150,23 @@ fn run() !ExitCode {
     defer dynlib.close(allocator);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
-    const arena_allocator = arena.allocator();
+    // var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var tracing_arena_allocator = tracy.TracingAllocator.initNamed("arena", arena.allocator());
+    defer tracing_arena_allocator.discard();
+    const arena_allocator = tracing_arena_allocator.allocator();
+
+    // HACK: workaround for the memory tracing not getting the right timing
+    //  information. Without it allocations are reported as being a long time
+    //  before actuality
+    _ = arena_allocator.alloc(u8, 1) catch {};
 
     const event_timeout = 16; // ms
     const update_60_times_a_second = 16 * 1000 * 1000; // ns
 
     var ticker = try TickerTimer(2).start();
-    const update = &ticker.tickers[0];
-    const render = &ticker.tickers[1];
-    update.timestep = update_60_times_a_second;
-    render.timestep = update_60_times_a_second;
+    const update = ticker.getTicker(0, update_60_times_a_second);
+    const render = ticker.getTicker(1, update_60_times_a_second);
 
     var show_failed_reset = if (builtin.mode == .Debug) false;
 
@@ -155,10 +175,12 @@ fn run() !ExitCode {
     window.show();
     var running = true;
 
+    common.log.global_state.allocator = arena_allocator;
+
     init_zone.deinit();
 
     while (running) {
-        tracy.frameMarkNamed("main loop");
+        defer tracy.frameMark();
         ticker.lap();
 
         if (sdl.Event.waitTimeout(event_timeout)) |ev| {
@@ -204,6 +226,20 @@ fn run() !ExitCode {
                             dynlib.api.greet(msg);
                         },
 
+                        .l => {
+                            tracy.message("test log");
+                            log.tracekv(
+                                @src(),
+                                "test log message that allocates",
+                                .{
+                                    .foo = "bar",
+                                    .int = 42,
+                                    .float = 36.7,
+                                    .boolean = false,
+                                },
+                            );
+                        },
+
                         else => {},
                     }
                 },
@@ -246,7 +282,11 @@ fn run() !ExitCode {
             renderer.present();
         }
 
-        const area_reset_failed = arena.reset(.retain_capacity); // FIXME: Limit this accordingly!
+        // FIXME: Limit this accordingly!
+        // FIXME: Figure out why this always fails to reset
+        // const area_reset_failed = arena.reset(.retain_capacity);
+        const area_reset_failed = arena.reset(.free_all);
+        tracing_arena_allocator.discard();
         if (debug_mode and area_reset_failed and !show_failed_reset) {
             show_failed_reset = true;
             log.err(
@@ -270,7 +310,7 @@ pub fn TickerTimer(comptime ticker_count: comptime_int) type {
         pub fn start() !Self {
             return Self{
                 .timer = try std.time.Timer.start(),
-                .tickers = [_]Ticker{.{}} ** ticker_count,
+                .tickers = undefined,
             };
         }
 
@@ -281,9 +321,15 @@ pub fn TickerTimer(comptime ticker_count: comptime_int) type {
             }
         }
 
+        pub fn getTicker(self: *Self, comptime index: comptime_int, timestep: u64) *Ticker {
+            const ticker = &self.tickers[index];
+            ticker.* = .{ .timestep = timestep, .correction = timestep };
+            return ticker;
+        }
+
         pub const Ticker = struct {
-            timestep: u64 = 0,
-            correction: u64 = 0,
+            timestep: u64,
+            correction: u64,
 
             pub fn shouldTick(self: *Ticker) bool {
                 const cond = self.correction >= self.timestep;
@@ -307,18 +353,20 @@ pub const Dynlib = struct {
         dynlib.library = try std.DynLib.open(Path);
         errdefer dynlib.library.close();
         dynlib.api = try common.Api.load(&dynlib.library);
-        dynlib.api.onLoad(allocator);
+        dynlib.api.onLoad(allocator, common.log.global_state);
         return dynlib;
     }
 
     pub fn reload(dynlib: *Dynlib, allocator: Allocator) !void {
+        tracy.message("reloading dynamic lib");
+
         dynlib.api.onUnload(allocator);
         dynlib.library.close();
 
         dynlib.library = try std.DynLib.open(Path);
         errdefer dynlib.library.close();
         try dynlib.api.reload(&dynlib.library);
-        dynlib.api.onLoad(allocator);
+        dynlib.api.onLoad(allocator, common.log.global_state);
     }
 
     pub fn close(dynlib: *Dynlib, allocator: Allocator) void {

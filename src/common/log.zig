@@ -4,6 +4,18 @@ const out = @import("out.zig");
 const Allocator = std.mem.Allocator;
 const DateTime = @import("datetime").DateTime;
 
+pub var global_state = State{};
+
+pub const State = struct {
+    allocator: Allocator = std.heap.page_allocator,
+    level_filter: LevelFilter = .trace,
+    logger: Logger = noop_logger,
+};
+
+pub fn setup(state: State) void {
+    global_state = state;
+}
+
 pub const LevelFilter = enum(u8) {
     off = 0,
     fatal = 1,
@@ -42,7 +54,7 @@ pub const Level = enum(u8) {
     }
 };
 
-pub const Log = struct {
+pub const Logger = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
 
@@ -65,7 +77,7 @@ pub const Log = struct {
     };
 
     pub fn enabled(
-        self: Log,
+        self: Logger,
         level: Level,
         target: []const u8,
     ) bool {
@@ -73,7 +85,7 @@ pub const Log = struct {
     }
 
     pub fn log(
-        self: Log,
+        self: Logger,
         allocator: Allocator,
         location: SourceLocation,
         level: Level,
@@ -84,32 +96,69 @@ pub const Log = struct {
         self.vtable.log(self.ptr, allocator, location, level, target, message, kv);
     }
 
-    pub fn flush(self: Log) void {
+    pub fn flush(self: Logger) void {
         self.vtable.flush(self.ptr);
     }
 };
 
-const GlobalState = struct {
-    allocator: Allocator,
-    level_filter: LevelFilter,
-    logger: Log,
-};
-
-var global_state: ?GlobalState = null;
-
-pub fn setup(args: struct {
-    allocator: Allocator,
-    level_filter: LevelFilter = .trace,
-    logger: Log,
-}) void {
-    global_state = .{
-        .allocator = args.allocator,
-        .level_filter = args.level_filter,
-        .logger = args.logger,
-    };
+fn logfnEnabled(level: Level, target: []const u8) bool {
+    if (@intFromEnum(level) > @intFromEnum(global_state.level_filter))
+        return false;
+    const logger = global_state.logger;
+    return logger.enabled(level, target);
 }
 
-pub fn log(
+pub fn logfn(
+    location: SourceLocation,
+    level: Level,
+    target: []const u8,
+    comptime message: []const u8,
+) void {
+    if (!logfnEnabled(level, target)) return;
+
+    global_state.logger.log(global_state.allocator, location, level, target, message, &[_]KeyValue{});
+    global_state.logger.flush();
+}
+
+pub fn logfnf(
+    location: SourceLocation,
+    level: Level,
+    target: []const u8,
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (!logfnEnabled(level, target)) return;
+
+    const message = std.fmt.allocPrint(global_state.allocator, format, args) catch unreachable;
+    defer global_state.allocator.free(message);
+
+    global_state.logger.log(global_state.allocator, location, level, target, message, &[_]KeyValue{});
+    global_state.logger.flush();
+}
+
+pub fn logfnkv(
+    location: SourceLocation,
+    level: Level,
+    target: []const u8,
+    comptime message: []const u8,
+    kv: anytype,
+) void {
+    const KvType = @TypeOf(kv);
+    const kv_type_info = @typeInfo(KvType);
+    if (kv_type_info != .Struct) {
+        @compileError("expected tuple or struct argument, found " ++ @typeName(KvType));
+    }
+
+    if (!logfnEnabled(level, target)) return;
+
+    const kv_array = kvToArray(KvType, kv, global_state.allocator) catch unreachable;
+    defer freeKvArray(KvType, kv_array, global_state.allocator);
+
+    global_state.logger.log(global_state.allocator, location, level, target, message, &kv_array);
+    global_state.logger.flush();
+}
+
+pub fn logfnfkv(
     location: SourceLocation,
     level: Level,
     target: []const u8,
@@ -123,24 +172,16 @@ pub fn log(
         @compileError("expected tuple or struct argument, found " ++ @typeName(KvType));
     }
 
-    const gs = global_state orelse return;
+    if (!logfnEnabled(level, target)) return;
 
-    if (@intFromEnum(level) > @intFromEnum(gs.level_filter))
-        return;
+    const message = std.fmt.allocPrint(global_state.allocator, format, args) catch unreachable;
+    defer global_state.allocator.free(message);
 
-    const logger = gs.logger;
-    if (!logger.enabled(level, target))
-        return;
+    const kv_array = kvToArray(KvType, kv, global_state.allocator) catch unreachable;
+    defer freeKvArray(KvType, kv_array, global_state.allocator);
 
-    const message = std.fmt.allocPrint(gs.allocator, format, args) catch unreachable;
-    defer gs.allocator.free(message);
-
-    const kv_array = kvToArray(KvType, kv, gs.allocator) catch unreachable;
-    defer freeKvArray(KvType, kv_array, gs.allocator);
-
-    logger.log(gs.allocator, location, level, target, message, &kv_array);
-
-    logger.flush();
+    global_state.logger.log(global_state.allocator, location, level, target, message, &kv_array);
+    global_state.logger.flush();
 }
 
 pub const KeyValue = struct {
@@ -188,6 +229,222 @@ fn freeKvArray(comptime KvType: type, kv_array: [std.meta.fields(KvType).len]Key
     }
 }
 
+pub fn fatal(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .fatal, target, message);
+}
+
+pub fn fatalf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .fatal, target, format, args);
+}
+
+pub fn fatalkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .fatal, target, message, kv);
+}
+
+pub fn fatalfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .fatal, target, format, args, kv);
+}
+
+pub fn err(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .err, target, message);
+}
+
+pub fn errf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .err, target, format, args);
+}
+
+pub fn errkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .err, target, message, kv);
+}
+
+pub fn errfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .err, target, format, args, kv);
+}
+
+pub fn warn(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .warn, target, message);
+}
+
+pub fn warnf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .warn, target, format, args);
+}
+
+pub fn warnkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .warn, target, message, kv);
+}
+
+pub fn warnfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .warn, target, format, args, kv);
+}
+
+pub fn info(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .info, target, message);
+}
+
+pub fn infof(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .info, target, format, args);
+}
+
+pub fn infokv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .info, target, message, kv);
+}
+
+pub fn infofkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .info, target, format, args, kv);
+}
+
+pub fn debug(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .debug, target, message);
+}
+
+pub fn debugf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .debug, target, format, args);
+}
+
+pub fn debugkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .debug, target, message, kv);
+}
+
+pub fn debugfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .debug, target, format, args, kv);
+}
+
+pub fn trace(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
+    logfn(location, .trace, target, message);
+}
+
+pub fn tracef(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
+    logfnf(location, .trace, target, format, args);
+}
+
+pub fn tracekv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
+    logfnkv(location, .trace, target, message, kv);
+}
+
+pub fn tracefkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
+    logfnfkv(location, .trace, target, format, args, kv);
+}
+
+pub fn Scoped(comptime target: []const u8) type {
+    return struct {
+        pub fn fatal(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .fatal, target, message);
+        }
+
+        pub fn fatalf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .fatal, target, format, args);
+        }
+
+        pub fn fatalkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .fatal, target, message, kv);
+        }
+
+        pub fn fatalfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .fatal, target, format, args, kv);
+        }
+
+        pub fn err(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .err, target, message);
+        }
+
+        pub fn errf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .err, target, format, args);
+        }
+
+        pub fn errkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .err, target, message, kv);
+        }
+
+        pub fn errfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .err, target, format, args, kv);
+        }
+
+        pub fn warn(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .warn, target, message);
+        }
+
+        pub fn warnf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .warn, target, format, args);
+        }
+
+        pub fn warnkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .warn, target, message, kv);
+        }
+
+        pub fn warnfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .warn, target, format, args, kv);
+        }
+
+        pub fn info(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .info, target, message);
+        }
+
+        pub fn infof(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .info, target, format, args);
+        }
+
+        pub fn infokv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .info, target, message, kv);
+        }
+
+        pub fn infofkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .info, target, format, args, kv);
+        }
+
+        pub fn debug(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .debug, target, message);
+        }
+
+        pub fn debugf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .debug, target, format, args);
+        }
+
+        pub fn debugkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .debug, target, message, kv);
+        }
+
+        pub fn debugfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .debug, target, format, args, kv);
+        }
+
+        pub fn trace(location: SourceLocation, comptime message: []const u8) void {
+            logfn(location, .trace, target, message);
+        }
+
+        pub fn tracef(location: SourceLocation, comptime format: []const u8, args: anytype) void {
+            logfnf(location, .trace, target, format, args);
+        }
+
+        pub fn tracekv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
+            logfnkv(location, .trace, target, message, kv);
+        }
+
+        pub fn tracefkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
+            logfnfkv(location, .trace, target, format, args, kv);
+        }
+    };
+}
+
+pub const noop_logger = Logger{
+    .ptr = undefined,
+    .vtable = &noop_logger_vtable,
+};
+const noop_logger_vtable = Logger.VTable{
+    .enabled = &NoopLogger.enabled,
+    .log = &NoopLogger.log,
+    .flush = &NoopLogger.flush,
+};
+
+const NoopLogger = struct {
+    pub fn enabled(_: *anyopaque, _: Level, _: []const u8) bool {
+        return false;
+    }
+
+    pub fn log(_: *anyopaque, _: Allocator, _: SourceLocation, _: Level, _: []const u8, _: []const u8, _: []const KeyValue) void {}
+
+    pub fn flush(_: *anyopaque) void {}
+};
+
 pub const ConsoleLogger = struct {
     level_filter: LevelFilter,
     bw: BufferedWriter,
@@ -204,12 +461,12 @@ pub const ConsoleLogger = struct {
         return .{ .level_filter = level_filter, .bw = bw };
     }
 
-    pub fn createLog(self: *ConsoleLogger) Log {
+    pub fn logger(self: *ConsoleLogger) Logger {
         return .{
             .ptr = @ptrCast(self),
             .vtable = &.{
                 .enabled = &enabled,
-                .log = &doLog,
+                .log = &log,
                 .flush = &flush,
             },
         };
@@ -222,7 +479,7 @@ pub const ConsoleLogger = struct {
         return true;
     }
 
-    pub fn doLog(
+    pub fn log(
         ctx: *anyopaque,
         allocator: Allocator,
         location: SourceLocation,
@@ -293,199 +550,3 @@ pub const ConsoleLogger = struct {
         self.bw.flush() catch unreachable;
     }
 };
-
-pub fn fatal(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .fatal, target, message, .{}, .{});
-}
-
-pub fn fatalf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .fatal, target, format, args, .{});
-}
-
-pub fn fatalkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .fatal, target, message, .{}, kv);
-}
-
-pub fn fatalfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .fatal, target, format, args, kv);
-}
-
-pub fn err(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .err, target, message, .{}, .{});
-}
-
-pub fn errf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .err, target, format, args, .{});
-}
-
-pub fn errkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .err, target, message, .{}, kv);
-}
-
-pub fn errfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .err, target, format, args, kv);
-}
-
-pub fn warn(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .warn, target, message, .{}, .{});
-}
-
-pub fn warnf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .warn, target, format, args, .{});
-}
-
-pub fn warnkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .warn, target, message, .{}, kv);
-}
-
-pub fn warnfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .warn, target, format, args, kv);
-}
-
-pub fn info(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .info, target, message, .{}, .{});
-}
-
-pub fn infof(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .info, target, format, args, .{});
-}
-
-pub fn infokv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .info, target, message, .{}, kv);
-}
-
-pub fn infofkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .info, target, format, args, kv);
-}
-
-pub fn debug(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .debug, target, message, .{}, .{});
-}
-
-pub fn debugf(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .debug, target, format, args, .{});
-}
-
-pub fn debugkv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .debug, target, message, .{}, kv);
-}
-
-pub fn debugfkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .debug, target, format, args, kv);
-}
-
-pub fn trace(location: SourceLocation, target: []const u8, comptime message: []const u8) void {
-    log(location, .trace, target, message, .{}, .{});
-}
-
-pub fn tracef(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype) void {
-    log(location, .trace, target, format, args, .{});
-}
-
-pub fn tracekv(location: SourceLocation, target: []const u8, comptime message: []const u8, kv: anytype) void {
-    log(location, .trace, target, message, .{}, kv);
-}
-
-pub fn tracefkv(location: SourceLocation, target: []const u8, comptime format: []const u8, args: anytype, kv: anytype) void {
-    log(location, .trace, target, format, args, kv);
-}
-
-pub fn Scoped(comptime target: []const u8) type {
-    return struct {
-        pub fn fatal(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .fatal, target, message, .{}, .{});
-        }
-
-        pub fn fatalf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .fatal, target, format, args, .{});
-        }
-
-        pub fn fatalkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .fatal, target, message, .{}, kv);
-        }
-
-        pub fn fatalfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .fatal, target, format, args, kv);
-        }
-
-        pub fn err(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .err, target, message, .{}, .{});
-        }
-
-        pub fn errf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .err, target, format, args, .{});
-        }
-
-        pub fn errkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .err, target, message, .{}, kv);
-        }
-
-        pub fn errfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .err, target, format, args, kv);
-        }
-
-        pub fn warn(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .warn, target, message, .{}, .{});
-        }
-
-        pub fn warnf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .warn, target, format, args, .{});
-        }
-
-        pub fn warnkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .warn, target, message, .{}, kv);
-        }
-
-        pub fn warnfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .warn, target, format, args, kv);
-        }
-
-        pub fn info(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .info, target, message, .{}, .{});
-        }
-
-        pub fn infof(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .info, target, format, args, .{});
-        }
-
-        pub fn infokv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .info, target, message, .{}, kv);
-        }
-
-        pub fn infofkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .info, target, format, args, kv);
-        }
-
-        pub fn debug(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .debug, target, message, .{}, .{});
-        }
-
-        pub fn debugf(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .debug, target, format, args, .{});
-        }
-
-        pub fn debugkv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .debug, target, message, .{}, kv);
-        }
-
-        pub fn debugfkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .debug, target, format, args, kv);
-        }
-
-        pub fn trace(location: SourceLocation, comptime message: []const u8) void {
-            log(location, .trace, target, message, .{}, .{});
-        }
-
-        pub fn tracef(location: SourceLocation, comptime format: []const u8, args: anytype) void {
-            log(location, .trace, target, format, args, .{});
-        }
-
-        pub fn tracekv(location: SourceLocation, comptime message: []const u8, kv: anytype) void {
-            log(location, .trace, target, message, .{}, kv);
-        }
-
-        pub fn tracefkv(location: SourceLocation, comptime format: []const u8, args: anytype, kv: anytype) void {
-            log(location, .trace, target, format, args, kv);
-        }
-    };
-}
