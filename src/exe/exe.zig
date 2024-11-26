@@ -23,7 +23,32 @@ var sdl_allocator: Allocator = undefined;
 pub fn main() !void {
     tracy.setThreadName("Main");
 
-    const exit_code: ExitCode = run() catch |err| switch (err) {
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        // .never_unmap = true,
+        // .retain_metadata = true,
+
+        // .verbose_log = true,
+    }){};
+    gpa.backing_allocator = std.heap.c_allocator;
+    // const allocator = gpa.allocator();
+    var tracing_allocator = tracy.TracingAllocator.initNamed("main", gpa.allocator());
+    const allocator = tracing_allocator.allocator();
+    defer {
+        const status = gpa.deinit();
+        if (status == .leak) {
+            log.fatal(@src(), "Exited with memory leak");
+        }
+    }
+
+    const level_filter = common.log.LevelFilter.trace;
+    var console_logger = common.log.ConsoleLogger.new(level_filter);
+    common.log.setup(.{
+        .allocator = allocator,
+        .level_filter = level_filter,
+        .logger = console_logger.logger(),
+    });
+
+    const exit_code: ExitCode = run(allocator) catch |err| switch (err) {
         error.Sdl => blk: {
             log.fatalkv(
                 @src(),
@@ -61,33 +86,8 @@ const ExitCode = enum(u8) {
     }
 };
 
-fn run() !ExitCode {
+fn run(allocator: Allocator) !ExitCode {
     const init_zone = tracy.initZone(@src(), .{ .name = "init" });
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        // .never_unmap = true,
-        // .retain_metadata = true,
-
-        // .verbose_log = true,
-    }){};
-    gpa.backing_allocator = std.heap.c_allocator;
-    // const allocator = gpa.allocator();
-    var tracing_allocator = tracy.TracingAllocator.initNamed("main", gpa.allocator());
-    const allocator = tracing_allocator.allocator();
-    defer {
-        const status = gpa.deinit();
-        if (status == .leak) {
-            log.fatal(@src(), "Exited with memory leak");
-        }
-    }
-
-    const level_filter = common.log.LevelFilter.trace;
-    var console_logger = try common.log.ConsoleLogger.new(level_filter);
-    common.log.setup(.{
-        .allocator = allocator,
-        .level_filter = level_filter,
-        .logger = console_logger.logger(),
-    });
 
     log.debug(@src(), "starting application");
     defer log.debug(@src(), "exiting application");
@@ -228,9 +228,10 @@ fn run() !ExitCode {
 
                         .l => {
                             tracy.message("test log");
-                            log.tracekv(
+                            log.tracefkv(
                                 @src(),
-                                "test log message that allocates",
+                                "test log message that {s}",
+                                .{"allocates"},
                                 .{
                                     .foo = "bar",
                                     .int = 42,

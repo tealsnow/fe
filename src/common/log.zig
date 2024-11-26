@@ -451,7 +451,7 @@ pub const ConsoleLogger = struct {
 
     const BufferedWriter = std.io.BufferedWriter(4096, std.fs.File.Writer);
 
-    pub fn new(level_filter: LevelFilter) !ConsoleLogger {
+    pub fn new(level_filter: LevelFilter) ConsoleLogger {
         const stderr = std.io.getStdErr();
         const bw = BufferedWriter{
             .unbuffered_writer = stderr.writer(),

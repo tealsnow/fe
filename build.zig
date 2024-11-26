@@ -20,8 +20,8 @@ pub fn build(b: *std.Build) void {
     const use_llvm_lld = b.option(
         bool,
         "use_llvm",
-        "Use llvm and lld. Set to true of debugger_attached is true (default: false) ",
-    ) orelse debugger_attached;
+        "Use llvm and lld (default: false) ",
+    ) orelse false;
 
     // to enable tracing or not
     const tracy_enable = b.option(
