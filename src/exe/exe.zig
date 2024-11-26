@@ -1,3 +1,5 @@
+const options = @import("options");
+
 const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -8,9 +10,19 @@ const common = @import("common");
 const out = common.out;
 const tracy = common.tracy;
 
-const log = common.log.Scoped("exe");
+const fc = @import("fontconfig.zig");
 
-const options = @import("options");
+const ft = @cImport({
+    @cInclude("ft2build.h");
+    @cInclude("freetype/freetype.h");
+});
+const hb = @cImport({
+    @cDefine("FT_FREETYPE_H", "");
+    @cInclude("hb.h");
+    @cInclude("hb-ft.h");
+});
+
+const log = common.log.Scoped("exe");
 
 const debug_mode = builtin.mode == .Debug;
 const debugger_attached = options.debugger_attached;
@@ -92,16 +104,46 @@ fn run(allocator: Allocator) !ExitCode {
     log.debug(@src(), "starting application");
     defer log.debug(@src(), "exiting application");
 
-    if (debug_mode) {
+    if (debug_mode)
         log.info(@src(), "running in debug mode");
-    }
 
-    if (debugger_attached) {
+    if (debugger_attached)
         log.warn(
             @src(),
             "running with the assumption that a debugger will be attached",
         );
+
+    const font_path = try fc.getFontForFamilyName(allocator, "arial");
+    // const font_path = try fc.getFontForFamilyName(allocator, "monospace");
+    defer allocator.free(font_path);
+
+    log.tracekv(@src(), "got font", .{ .path = font_path });
+
+    var ft_lib: ft.FT_Library = undefined;
+    if (ft.FT_Init_FreeType(&ft_lib) != 0) return error.FtInit;
+    defer _ = ft.FT_Done_FreeType(ft_lib);
+    log.trace(@src(), "loaded truetype");
+
+    var ft_face: ft.FT_Face = undefined;
+    const ft_face_res = ft.FT_New_Face(ft_lib, font_path, 0, &ft_face);
+    if (ft_face_res != 0) {
+        const err = ft.FT_Error_String(ft_face_res);
+        if (err != null)
+            log.errkv(@src(), "truetype error", .{ .code = ft_face_res, .err = err })
+        else
+            log.errkv(@src(), "truetype error", .{ .code = ft_face_res });
+        return error.FtNewFace;
     }
+    defer _ = ft.FT_Done_Face(ft_face);
+    log.trace(@src(), "loaded truetype face");
+
+    _ = ft.FT_Set_Pixel_Sizes(ft_face, 0, 24);
+
+    const hb_font = hb.hb_ft_font_create(@ptrCast(ft_face), null);
+    defer hb.hb_font_destroy(hb_font);
+    const hb_buffer = hb.hb_buffer_create();
+    defer hb.hb_buffer_destroy(hb_buffer);
+    log.trace(@src(), "setup hb");
 
     // We use the (raw) c allocator here and not the gpa since sdl does not
     // properly deinit its memory on applicaiton exit. Which ends up triggering
@@ -278,8 +320,91 @@ fn run(allocator: Allocator) !ExitCode {
             dynlib.api.getColor(&r, &g, &b);
 
             renderer.setDrawColor(r, g, b, 255) catch {};
-
             renderer.clear() catch {};
+
+            const x: c_uint = 20;
+            const y: c_uint = 20;
+            const text = "Hello, (fe) World!";
+
+            hb.hb_buffer_reset(hb_buffer);
+            hb.hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
+            hb.hb_buffer_guess_segment_properties(hb_buffer);
+
+            hb.hb_shape(hb_font, hb_buffer, null, 0);
+
+            var glyph_count: c_uint = 0;
+            const glyph_info = hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_count);
+            const glyph_pos = hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_count);
+
+            const metrics = ft_face.*.size.*.metrics;
+            const baseline = y + (metrics.ascender >> 6); // Convert from 26.6 fixed point
+
+            var pen_x = x;
+
+            var i: c_uint = 0;
+            while (i < glyph_count) : (i += 1) {
+                _ = ft.FT_Load_Glyph(
+                    ft_face,
+                    glyph_info[i].codepoint,
+                    ft.FT_LOAD_RENDER,
+                );
+                const slot = ft_face.*.glyph;
+
+                const glyph_surface = sdl.c.SDL_CreateRGBSurfaceFrom(
+                    slot.*.bitmap.buffer,
+                    @intCast(slot.*.bitmap.width),
+                    @intCast(slot.*.bitmap.rows),
+                    8,
+                    slot.*.bitmap.pitch,
+                    0,
+                    0,
+                    0,
+                    0,
+                );
+                defer sdl.c.SDL_FreeSurface(glyph_surface);
+
+                var colors: [256]sdl.c.SDL_Color = undefined;
+                var j: usize = 0;
+                while (j < 256) : (j += 1) {
+                    colors[j].r = @intCast(j);
+                    colors[j].g = @intCast(j);
+                    colors[j].b = @intCast(j);
+                    colors[j].a = @intCast(j);
+                }
+                _ = sdl.c.SDL_SetPaletteColors(
+                    glyph_surface.*.format.*.palette,
+                    &colors,
+                    0,
+                    256,
+                );
+
+                const glyph_texture = sdl.c.SDL_CreateTextureFromSurface(
+                    @ptrCast(renderer),
+                    glyph_surface,
+                );
+                defer sdl.c.SDL_DestroyTexture(glyph_texture);
+
+                const glyph_x: c_int = @as(c_int, @intCast(pen_x)) + @divFloor(glyph_pos[i].x_offset, 64) + slot.*.bitmap_left;
+                // const glyph_y: c_int = @as(c_int, @intCast(pen_y)) + @divFloor(glyph_pos[i].y_offset, 64) + slot.*.bitmap_top;
+                const glyph_y: c_int = @as(c_int, @intCast(baseline)) - slot.*.bitmap_top;
+
+                const dest_rect = sdl.c.SDL_Rect{
+                    .x = glyph_x,
+                    .y = glyph_y,
+                    .w = @intCast(slot.*.bitmap.width),
+                    .h = @intCast(slot.*.bitmap.rows),
+                };
+
+                _ = sdl.c.SDL_RenderCopy(
+                    @ptrCast(renderer),
+                    glyph_texture,
+                    null,
+                    &dest_rect,
+                );
+
+                pen_x += @intCast(@divFloor(glyph_pos[i].x_advance, 64));
+            }
+
             renderer.present();
         }
 

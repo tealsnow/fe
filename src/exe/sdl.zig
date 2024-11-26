@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = std.log;
 
-const c = @cImport({
+pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 

@@ -124,7 +124,11 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.linkLibC();
-    exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary2("SDL2", .{});
+
+    exe.linkSystemLibrary2("fontconfig", .{});
+    exe.linkSystemLibrary2("freetype", .{});
+    exe.linkSystemLibrary2("harfbuzz", .{});
 
     exe.linkLibrary(commonlib);
     exe.root_module.addImport("common", &commonlib.root_module);
