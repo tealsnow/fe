@@ -29,10 +29,9 @@ const debugger_attached = options.debugger_attached;
 
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
+var dynlib_recompiling = false;
 
 pub fn main() !void {
-    tracy.setThreadName("Main");
-
     var gpa = std.heap.GeneralPurposeAllocator(.{
         // .never_unmap = true,
         // .retain_metadata = true,
@@ -113,7 +112,7 @@ fn run(allocator: Allocator) !ExitCode {
 
     const font_path = try fc.getFontForFamilyName(allocator, "arial");
     // const font_path = try fc.getFontForFamilyName(allocator, "monospace");
-    defer allocator.free(font_path);
+    // defer allocator.free(font_path);
 
     log.tracekv(@src(), "got font", .{ .path = font_path });
 
@@ -123,17 +122,12 @@ fn run(allocator: Allocator) !ExitCode {
     log.trace(@src(), "loaded truetype");
 
     var ft_face: ft.FT_Face = undefined;
-    const ft_face_res = ft.FT_New_Face(ft_lib, font_path, 0, &ft_face);
-    if (ft_face_res != 0) {
-        const err = ft.FT_Error_String(ft_face_res);
-        if (err != null)
-            log.errkv(@src(), "truetype error", .{ .code = ft_face_res, .err = err })
-        else
-            log.errkv(@src(), "truetype error", .{ .code = ft_face_res });
+    if (ft.FT_New_Face(ft_lib, font_path, 0, &ft_face) != 0)
         return error.FtNewFace;
-    }
     defer _ = ft.FT_Done_Face(ft_face);
     log.trace(@src(), "loaded truetype face");
+
+    allocator.free(font_path);
 
     _ = ft.FT_Set_Pixel_Sizes(ft_face, 0, 24);
 
@@ -143,21 +137,22 @@ fn run(allocator: Allocator) !ExitCode {
     defer hb.hb_buffer_destroy(hb_buffer);
     log.trace(@src(), "setup hb");
 
-    // NOTE(ketanr): I'm not sure if theres much need for this. The only
-    //  usecase I can think of is just trying to so see and minimize
-    //  allocations in our use of sdl. Time will tell
-    // var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", allocator);
-    var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", std.heap.raw_c_allocator);
-    const sdl_allocator = sdl_tracing_allocator.allocator();
-    sdl_mem_allocator = sdl_allocator;
-    sdl_mem_allocations = std.AutoHashMap(usize, usize).init(allocator);
+    if (options.tracy_enable) {
+        // NOTE(ketanr): I'm not sure if theres much need for this. The only
+        //  usecase I can think of is just trying to so see and minimize
+        //  allocations in our use of sdl. Time will tell
+        // var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", allocator);
+        var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", std.heap.raw_c_allocator);
+        sdl_mem_allocator = sdl_tracing_allocator.allocator();
+        sdl_mem_allocations = std.AutoHashMap(usize, usize).init(allocator);
 
-    try sdl.setMemoryFunctions(.{
-        .malloc = sdlMalloc,
-        .calloc = sdlCalloc,
-        .realloc = sdlRealloc,
-        .free = sdlFree,
-    });
+        try sdl.setMemoryFunctions(.{
+            .malloc = sdlMalloc,
+            .calloc = sdlCalloc,
+            .realloc = sdlRealloc,
+            .free = sdlFree,
+        });
+    }
 
     try installSigaction();
 
@@ -186,7 +181,7 @@ fn run(allocator: Allocator) !ExitCode {
     defer renderer.deinit();
 
     var dynlib = try Dynlib.load(allocator);
-    defer dynlib.close(allocator);
+    defer dynlib.unload(allocator);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
     // var arena = std.heap.ArenaAllocator.init(allocator);
@@ -200,141 +195,169 @@ fn run(allocator: Allocator) !ExitCode {
     //  before actuality
     _ = arena_allocator.alloc(u8, 1) catch {};
 
-    const event_timeout = 16; // ms
-    const update_60_times_a_second = 16 * 1000 * 1000; // ns
+    const event_timeout_ms: u64 = 15; // ms
+    const ns_60_ps: u64 = 16 * 1000 * 1000; // ns
 
-    var ticker = try TickerTimer(2).start();
-    const update = ticker.getTicker(0, update_60_times_a_second);
-    const render = ticker.getTicker(1, update_60_times_a_second);
+    const ns_per_update = ns_60_ps;
+    const ns_per_render = ns_60_ps;
+
+    var timer = try std.time.Timer.start();
+    var update_lag: u64 = 0;
+    var render_lag: u64 = 0;
 
     var show_failed_reset = if (builtin.mode == .Debug) false;
-
     var should_reload_dynlib = false;
 
-    window.show();
     var running = true;
 
+    var update_tick_count: u32 = 0;
+    var render_frame_count: u32 = 0;
+
     common.log.global_state.allocator = arena_allocator;
+
+    window.show();
 
     init_zone.deinit();
 
     while (running) {
-        defer tracy.frameMark();
-        ticker.lap();
+        tracy.frameMark();
 
-        if (sdl.Event.waitTimeout(event_timeout)) |ev| {
-            const events_zone = tracy.initZone(@src(), .{ .name = "events" });
-            defer events_zone.deinit();
+        const elapsed = timer.lap();
+        update_lag += elapsed;
+        render_lag += elapsed;
 
-            switch (ev.type) {
-                .quit => {
-                    log.trace(@src(), "quit event recived, quiting...");
-                    running = false;
-                },
-
-                .key => |key| blk: {
-                    if (key.state != .pressed)
-                        break :blk;
-                    switch (key.keysym.sym) {
-                        .q => {
-                            log.trace(@src(), "quiting...");
-                            running = false;
-                        },
-
-                        .r => {
-                            should_reload_dynlib = true;
-                            if (debug_mode)
-                                show_failed_reset = false;
-                        },
-
-                        .h => {
-                            tracy.message("greet");
-
-                            const name = "ketan";
-
-                            log.tracekv(@src(), "doing greet", .{ .name = name });
-                            dynlib.api.greet(name);
-                        },
-
-                        .f => {
-                            const msg = try std.fmt.allocPrint(
-                                arena_allocator,
-                                "Some int: {d}",
-                                .{15},
-                            );
-                            dynlib.api.greet(msg);
-                        },
-
-                        .l => {
-                            tracy.message("test log");
-                            log.tracefkv(
-                                @src(),
-                                "test log message that {s}",
-                                .{"allocates"},
-                                .{
-                                    .foo = "bar",
-                                    .int = 42,
-                                    .float = 36.7,
-                                    .boolean = false,
-                                },
-                            );
-                        },
-
-                        else => {},
-                    }
-                },
-
-                else => {},
-            }
-        }
-
-        while (update.shouldTick()) {
+        {
             const update_zone = tracy.initZone(@src(), .{ .name = "update" });
             defer update_zone.deinit();
 
-            if (dynlib_recompiled)
-                should_reload_dynlib = true;
+            const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed / 1000 / 1000));
+            if (sdl.Event.waitTimeout(timeout)) |ev| {
+                switch (ev.type) {
+                    .quit => {
+                        log.trace(@src(), "quit event recived, quiting...");
+                        running = false;
+                    },
 
-            if (should_reload_dynlib) {
+                    .key => |key| blk: {
+                        if (key.state != .pressed)
+                            break :blk;
+                        switch (key.keysym.sym) {
+                            .q => {
+                                log.trace(@src(), "quiting...");
+                                running = false;
+                            },
+
+                            .r => {
+                                should_reload_dynlib = true;
+                                if (debug_mode)
+                                    show_failed_reset = false;
+                            },
+
+                            .h => {
+                                tracy.message("greet");
+
+                                const name = "ketan";
+
+                                log.tracekv(@src(), "doing greet", .{ .name = name });
+                                dynlib.api.greet(name);
+                            },
+
+                            .f => {
+                                const msg = try std.fmt.allocPrint(
+                                    arena_allocator,
+                                    "Some int: {d}",
+                                    .{15},
+                                );
+                                dynlib.api.greet(msg);
+                            },
+
+                            .l => {
+                                tracy.message("test log");
+                                log.tracefkv(
+                                    @src(),
+                                    "test log message that {s}",
+                                    .{"allocates"},
+                                    .{
+                                        .foo = "bar",
+                                        .int = 42,
+                                        .float = 36.7,
+                                        .boolean = false,
+                                    },
+                                );
+                            },
+
+                            else => {},
+                        }
+                    },
+
+                    else => {},
+                }
+            }
+        }
+
+        while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
+            const update_zone = tracy.initZone(@src(), .{ .name = "update" });
+            defer update_zone.deinit();
+
+            update_tick_count +%= 1;
+
+            if (should_reload_dynlib or dynlib_recompiled) {
                 should_reload_dynlib = false;
+                dynlib_recompiled = false;
+                dynlib_recompiling = false;
 
                 log.trace(@src(), "reloading dynlib...");
                 defer log.trace(@src(), "reloading dynlib done");
-
-                dynlib_recompiled = false;
 
                 try dynlib.reload(allocator);
             }
         }
 
-        while (render.shouldTick()) {
+        while (render_lag >= ns_per_render) : (render_lag -= ns_per_render) {
             const render_zone = tracy.initZone(@src(), .{ .name = "render" });
             defer render_zone.deinit();
 
-            var r: u8 = undefined;
-            var g: u8 = undefined;
-            var b: u8 = undefined;
-            dynlib.api.getColor(&r, &g, &b);
+            render_frame_count +%= 1;
 
-            renderer.setDrawColor(r, g, b, 255) catch {};
+            const color = dynlib.api.getColor();
+            renderer.setDrawColor(color.r, color.g, color.b, 255) catch {};
+            // renderer.setDrawColor(30, 30, 30, 255) catch {};
             renderer.clear() catch {};
 
             const x: c_uint = 20;
             const y: c_uint = 20;
-            const text = "Hello, (fe) World!";
+            // const text = "Hello, (fe) World!";
+            const text = if (dynlib_recompiling)
+                "reloading..."
+            else
+                try std.fmt.allocPrint(
+                    arena_allocator,
+                    "{d}",
+                    .{render_frame_count},
+                );
 
             hb.hb_buffer_reset(hb_buffer);
-            hb.hb_buffer_add_utf8(hb_buffer, text, -1, 0, -1);
+            hb.hb_buffer_add_utf8(
+                hb_buffer,
+                text.ptr,
+                @intCast(text.len),
+                0,
+                -1,
+            );
             hb.hb_buffer_guess_segment_properties(hb_buffer);
 
             hb.hb_shape(hb_font, hb_buffer, null, 0);
 
             var glyph_count: c_uint = 0;
-            const glyph_info = hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_count);
-            const glyph_pos = hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_count);
+            const glyph_info =
+                hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_count);
+            const glyph_pos =
+                hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_count);
 
             const metrics = ft_face.*.size.*.metrics;
-            const baseline = y + (metrics.ascender >> 6); // Convert from 26.6 fixed point
+            // Convert from 26.6 fixed point
+            // FIXME: I think this is a times 64?
+            const baseline = y + (metrics.ascender >> 6);
 
             var pen_x = x;
 
@@ -381,8 +404,10 @@ fn run(allocator: Allocator) !ExitCode {
                 );
                 defer sdl.c.SDL_DestroyTexture(glyph_texture);
 
-                const glyph_x: c_int = @as(c_int, @intCast(pen_x)) + @divFloor(glyph_pos[i].x_offset, 64) + slot.*.bitmap_left;
-                // const glyph_y: c_int = @as(c_int, @intCast(pen_y)) + @divFloor(glyph_pos[i].y_offset, 64) + slot.*.bitmap_top;
+                // not too sure of this values sigificance
+                const magic_scale = 64;
+
+                const glyph_x: c_int = @as(c_int, @intCast(pen_x)) + @divFloor(glyph_pos[i].x_offset, magic_scale) + slot.*.bitmap_left;
                 const glyph_y: c_int = @as(c_int, @intCast(baseline)) - slot.*.bitmap_top;
 
                 const dest_rect = sdl.c.SDL_Rect{
@@ -399,22 +424,20 @@ fn run(allocator: Allocator) !ExitCode {
                     &dest_rect,
                 );
 
-                pen_x += @intCast(@divFloor(glyph_pos[i].x_advance, 64));
+                pen_x += @intCast(@divFloor(glyph_pos[i].x_advance, magic_scale));
             }
 
             renderer.present();
         }
 
         // FIXME: Limit this accordingly!
-        // FIXME: Figure out why this always fails to reset
-        // const area_reset_failed = arena.reset(.retain_capacity);
-        const area_reset_failed = arena.reset(.free_all);
+        const area_reset_success = arena.reset(.retain_capacity);
         tracing_arena_allocator.discard();
-        if (debug_mode and area_reset_failed and !show_failed_reset) {
+        if (debug_mode and !area_reset_success and !show_failed_reset) {
             show_failed_reset = true;
             log.err(
                 @src(),
-                "Arena reset failed. This is likely to happen again " ++
+                "arena reset failed. This is likely to happen again " ++
                     "so this message will not repeat. To reset this flag press r",
             );
         }
@@ -423,78 +446,34 @@ fn run(allocator: Allocator) !ExitCode {
     return .successful;
 }
 
-pub fn TickerTimer(comptime ticker_count: comptime_int) type {
-    return struct {
-        timer: std.time.Timer,
-        tickers: [ticker_count]Ticker,
-
-        const Self = @This();
-
-        pub fn start() !Self {
-            return Self{
-                .timer = try std.time.Timer.start(),
-                .tickers = undefined,
-            };
-        }
-
-        pub fn lap(self: *Self) void {
-            const elapsed = self.timer.lap();
-            inline for (0..ticker_count) |i| {
-                self.tickers[i].correction += elapsed;
-            }
-        }
-
-        pub fn getTicker(self: *Self, comptime index: comptime_int, timestep: u64) *Ticker {
-            const ticker = &self.tickers[index];
-            ticker.* = .{ .timestep = timestep, .correction = timestep };
-            return ticker;
-        }
-
-        pub const Ticker = struct {
-            timestep: u64,
-            correction: u64,
-
-            pub fn shouldTick(self: *Ticker) bool {
-                const cond = self.correction >= self.timestep;
-                if (cond) self.correction -= self.timestep;
-                // This should only allow one iteration at a time in debug mode
-                if (debugger_attached) self.correction = 0;
-                return cond;
-            }
-        };
-    };
-}
-
 pub const Dynlib = struct {
-    library: std.DynLib,
+    lib: std.DynLib,
     api: common.Api,
 
     const Path = "zig-out/lib/libdynlib.so";
 
     pub fn load(allocator: Allocator) !Dynlib {
         var dynlib: Dynlib = undefined;
-        dynlib.library = try std.DynLib.open(Path);
-        errdefer dynlib.library.close();
-        dynlib.api = try common.Api.load(&dynlib.library);
-        dynlib.api.onLoad(allocator, common.log.global_state);
+        try dynlib._load(allocator);
         return dynlib;
     }
 
-    pub fn reload(dynlib: *Dynlib, allocator: Allocator) !void {
-        tracy.message("reloading dynamic lib");
+    fn _load(dynlib: *Dynlib, allocator: Allocator) !void {
+        dynlib.lib = try std.DynLib.open(Path);
+        errdefer dynlib.lib.close();
 
-        dynlib.api.onUnload(allocator);
-        dynlib.library.close();
-
-        dynlib.library = try std.DynLib.open(Path);
-        errdefer dynlib.library.close();
-        try dynlib.api.reload(&dynlib.library);
+        try common.Api.load(&dynlib.lib, &dynlib.api);
         dynlib.api.onLoad(allocator, common.log.global_state);
     }
 
-    pub fn close(dynlib: *Dynlib, allocator: Allocator) void {
+    pub fn unload(dynlib: *Dynlib, allocator: Allocator) void {
         dynlib.api.onUnload(allocator);
-        dynlib.library.close();
+        dynlib.lib.close();
+    }
+
+    pub fn reload(dynlib: *Dynlib, allocator: Allocator) !void {
+        dynlib.unload(allocator);
+        try dynlib._load(allocator);
     }
 };
 
@@ -504,15 +483,24 @@ fn installSigaction() !void {
         .mask = std.os.linux.empty_sigset,
         .flags = 0,
     };
-    const sigaction_res = std.os.linux.sigaction(std.os.linux.SIG.USR1, &act, null);
-    if (sigaction_res != 0) {
-        const err = std.posix.errno(sigaction_res);
+    try trySigaction(std.os.linux.SIG.USR1, &act, null);
+    try trySigaction(std.os.linux.SIG.USR2, &act, null);
+}
+
+fn trySigaction(
+    sig: u6,
+    noalias act: ?*const std.os.linux.Sigaction,
+    noalias oact: ?*std.os.linux.Sigaction,
+) !void {
+    const res = std.os.linux.sigaction(sig, act, oact);
+    if (res != 0) {
+        const err = std.posix.errno(res);
         log.errkv(
             @src(),
             "Failed to setup sigaction",
             .{ .errno = err },
         );
-        return error.FailedToSetSigaction;
+        return error.Sigaction;
     }
 }
 
@@ -521,9 +509,16 @@ fn handleSignal(sig: c_int) callconv(.C) void {
         std.os.linux.SIG.USR1 => {
             log.info(
                 @src(),
-                "Got USR1 signal, dynlib marked out of date",
+                "USR1: dynlib recompiled",
             );
             dynlib_recompiled = true;
+        },
+        std.os.linux.SIG.USR2 => {
+            log.info(
+                @src(),
+                "USR2: dynlib recompiling",
+            );
+            dynlib_recompiling = true;
         },
         else => {
             log.warnkv(

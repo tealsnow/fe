@@ -508,11 +508,13 @@ pub const ConsoleLogger = struct {
 
         const self: *ConsoleLogger = @ptrCast(@alignCast(ctx));
         self.bw.writer().print(
-            "{s}[{s} {s} {s}:{d}@{s}] {s}{s} {s} {s} {s}",
+            "{s}[{s} {s}{s}{s} {s}:{d}@{s}] {s}{s} {s} {s} {s}",
             .{
                 deemphasis_color,
                 dt_str,
+                reset_color,
                 target,
+                deemphasis_color,
                 location.file,
                 location.line,
                 location.fn_name,

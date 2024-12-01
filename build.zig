@@ -8,30 +8,50 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // const wasm_target = b.resolveTargetQuery(.{
+    //     .cpu_arch = .wasm64,
+    //     .os_tag = .wasi,
+    // });
+
     // this should be enabled when debugging
-    // this is used to ensure that the main loop only runs once per frame, from the time spent stepping
+    // this is used to ensure that the main loop only runs once per frame,
+    // from the time spent stepping
     const debugger_attached = b.option(
         bool,
         "debugger_attached",
-        "Whether to be compiled with the assumption that a dubugger will be attached (default: false)",
+        "Whether to be compiled with the assumption that a " ++
+            "debugger will be attached (default: false)",
     ) orelse false;
 
-    // llvm increases compile time a lot, but optimizes better and gives better debugging symbols
-    const use_llvm_lld = b.option(
+    // llvm increases compile time a lot,
+    // but optimizes better and gives better debugging symbols
+    //
+    // NOTE: not sure how and when but this disabling this may induce some
+    //  wierdness with hot reloading
+    //
+    // FIXME: not working with zig 0.14.0-dev
+    const use_llvm = b.option(
         bool,
         "use_llvm",
-        "Use llvm and lld (default: false) ",
+        "Use llvm (default: true) ",
+    ) orelse true;
+
+    const use_lld = b.option(
+        bool,
+        "use_lld",
+        "Use lld (default: false)",
     ) orelse false;
 
-    // to enable tracing or not
+    // Note: enabling tracy also seems to completely break hot reloading :(
     const tracy_enable = b.option(
         bool,
         "tracy_enable",
-        "Enable profiling (true for debug builds)",
-    ) orelse (optimize == .Debug);
+        "Enable profiling (default: false)",
+    ) orelse false;
 
     const options = b.addOptions();
     options.addOption(bool, "debugger_attached", debugger_attached);
+    options.addOption(bool, "tracy_enable", tracy_enable);
 
     const commonlib_src = b.path("src/common/common.zig");
     const commonlib = b.addSharedLibrary(.{
@@ -42,13 +62,12 @@ pub fn build(b: *std.Build) void {
         .pic = true,
         // .version = .{ .major = 0, .minor = 0, .patch = 1 },
 
-        .use_llvm = use_llvm_lld,
-        .use_lld = use_llvm_lld,
+        .use_llvm = use_llvm,
+        .use_lld = use_lld,
     });
-
-    commonlib.linkLibC();
     b.installArtifact(commonlib);
 
+    commonlib.linkLibC();
     commonlib.root_module.addOptions("options", options);
 
     const datetime = b.dependency("datetime", .{
@@ -68,19 +87,22 @@ pub fn build(b: *std.Build) void {
         .shared = true,
     });
     commonlib.root_module.addImport("tracy", tracy.module("tracy"));
-    commonlib.linkLibrary(tracy.artifact("tracy"));
-    commonlib.linkLibCpp();
+    if (tracy_enable) {
+        commonlib.linkLibrary(tracy.artifact("tracy"));
+        commonlib.linkLibCpp();
+    }
 
     const dynlib = b.addSharedLibrary(.{
         .name = "dynlib",
         .root_source_file = b.path("src/dynlib/dynlib.zig"),
         .target = target,
+        // .target = wasm_target,
         .optimize = optimize,
         .pic = true,
         // .version = .{ .major = 0, .minor = 0, .patch = 1 },
 
-        .use_llvm = use_llvm_lld,
-        .use_lld = use_llvm_lld,
+        .use_llvm = use_llvm,
+        .use_lld = use_lld,
     });
 
     dynlib.linkLibC();
@@ -93,12 +115,24 @@ pub fn build(b: *std.Build) void {
 
     const dynlib_install = b.addInstallArtifact(dynlib, .{});
 
-    const dynlib_step = b.step("dynlib", "Build only the dynlib shared library");
+    const dynlib_step = b.step(
+        "dynlib",
+        "Build only the dynlib shared library",
+    );
     dynlib_step.dependOn(&dynlib_install.step);
 
-    const notify = NotifyRebuild.create(b);
-    notify.step.dependOn(&dynlib_install.step);
-    dynlib_step.dependOn(&notify.step);
+    const notify_start = SignalNotify.create(b, .{
+        .process_name = "fe",
+        .signal = os.SIG.USR2,
+    });
+    dynlib_install.step.dependOn(&notify_start.step);
+
+    const notify_finish = SignalNotify.create(b, .{
+        .process_name = "fe",
+        .signal = os.SIG.USR1,
+    });
+    notify_finish.step.dependOn(&dynlib_install.step);
+    dynlib_step.dependOn(&notify_finish.step);
 
     const watch_dynlib_cmd = b.addSystemCommand(&.{
         "watchexec",
@@ -109,7 +143,10 @@ pub fn build(b: *std.Build) void {
         "zig",
         "zig build dynlib", // command
     });
-    const watch_dynlib_step = b.step("watch-dynlib", "Watch the dynamic library and rebuild on changes");
+    const watch_dynlib_step = b.step(
+        "watch-dynlib",
+        "Watch the dynamic library and rebuild on changes",
+    );
     watch_dynlib_step.dependOn(&watch_dynlib_cmd.step);
 
     const exe_src = b.path("src/exe/exe.zig");
@@ -119,13 +156,15 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
 
-        .use_llvm = use_llvm_lld,
-        .use_lld = use_llvm_lld,
+        .use_llvm = use_llvm,
+        .use_lld = use_lld,
+
+        .pic = true,
     });
+    b.installArtifact(exe);
 
     exe.linkLibC();
     exe.linkSystemLibrary2("SDL2", .{});
-
     exe.linkSystemLibrary2("fontconfig", .{});
     exe.linkSystemLibrary2("freetype", .{});
     exe.linkSystemLibrary2("harfbuzz", .{});
@@ -135,7 +174,7 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addOptions("options", options);
 
-    b.installArtifact(exe);
+    exe.step.dependOn(&dynlib_install.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -162,12 +201,18 @@ pub fn build(b: *std.Build) void {
     // test_step.dependOn(&run_exe_unit_tests.step);
 }
 
-const NotifyRebuild = struct {
+const SignalNotify = struct {
     step: Step,
     builder: *std.Build,
+    options: Options,
 
-    pub fn create(b: *std.Build) *NotifyRebuild {
-        const self = b.allocator.create(NotifyRebuild) catch unreachable;
+    pub const Options = struct {
+        process_name: []const u8,
+        signal: i32,
+    };
+
+    pub fn create(b: *std.Build, options: Options) *SignalNotify {
+        const self = b.allocator.create(SignalNotify) catch unreachable;
         self.* = .{
             .step = Step.init(.{
                 .id = .custom,
@@ -176,19 +221,20 @@ const NotifyRebuild = struct {
                 .makeFn = make,
             }),
             .builder = b,
+            .options = options,
         };
         return self;
     }
 
     fn make(step: *Step, prog_node: std.Progress.Node) !void {
-        _ = step;
+        const notify: *SignalNotify = @fieldParentPtr("step", step);
 
         var progress = prog_node.start("Notifying fe process", 2);
         defer progress.end();
 
-        if (try findProcessByName("fe")) |pid| {
+        if (try findProcessByName(notify.options.process_name)) |pid| {
             progress.completeOne();
-            _ = os.kill(pid, os.SIG.USR1);
+            _ = os.kill(pid, notify.options.signal);
             progress.completeOne();
         } else {
             progress.setCompletedItems(2);

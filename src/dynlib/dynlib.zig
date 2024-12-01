@@ -1,10 +1,16 @@
 const std = @import("std");
 
 const common = @import("common");
+const Api = common.Api;
+
 const log = common.log.Scoped("dynlib");
 
-export fn getApi(api: *common.Api) void {
-    api.* = .{
+comptime {
+    Api.exportGetApi(getApi);
+}
+
+fn getApi(out_api: *Api) callconv(.C) void {
+    out_api.* = .{
         .onLoad = &onLoad,
         .onUnload = &onUnload,
 
@@ -15,17 +21,19 @@ export fn getApi(api: *common.Api) void {
 
 fn onLoad(allocator: std.mem.Allocator, log_state: common.log.State) void {
     _ = allocator;
+
     common.log.setup(log_state);
+
+    log.debug(@src(), "onLoad");
 }
 
 fn onUnload(allocator: std.mem.Allocator) void {
     _ = allocator;
+    log.debug(@src(), "onUnload");
 }
 
-fn getColor(r: *u8, g: *u8, b: *u8) void {
-    r.* = 30;
-    g.* = 30;
-    b.* = 30;
+fn getColor() Api.Color {
+    return .{ .r = 10, .g = 20, .b = 20 };
 }
 
 fn greet(name: []const u8) void {
