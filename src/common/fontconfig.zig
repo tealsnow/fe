@@ -1,8 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const common = @import("common");
-const log = common.log.Scoped("fontconfig");
+const log = @import("log.zig").Scoped("fontconfig");
 
 pub const fc = @cImport({
     @cInclude("fontconfig/fontconfig.h");

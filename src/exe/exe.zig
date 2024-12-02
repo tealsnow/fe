@@ -4,28 +4,18 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const sdl = @import("sdl.zig");
-
-const common = @import("common");
-const out = common.out;
-const tracy = common.tracy;
-
-const fc = @import("fontconfig.zig");
-
-const ft = @cImport({
-    @cInclude("ft2build.h");
-    @cInclude("freetype/freetype.h");
-});
-const hb = @cImport({
-    @cDefine("FT_FREETYPE_H", "");
-    @cInclude("hb.h");
-    @cInclude("hb-ft.h");
-});
-
 const log = common.log.Scoped("exe");
 
 const debug_mode = builtin.mode == .Debug;
 const debugger_attached = options.debugger_attached;
+
+const common = @import("common");
+const out = common.out;
+const tracy = common.tracy;
+const sdl = common.sdl;
+const fc = common.fc;
+const ft = common.ft;
+const hb = common.hb;
 
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
@@ -336,17 +326,19 @@ fn run(allocator: Allocator) !ExitCode {
                     .{render_frame_count},
                 );
 
-            hb.hb_buffer_reset(hb_buffer);
-            hb.hb_buffer_add_utf8(
-                hb_buffer,
-                text.ptr,
-                @intCast(text.len),
-                0,
-                -1,
-            );
-            hb.hb_buffer_guess_segment_properties(hb_buffer);
+            { // shaping
+                hb.hb_buffer_reset(hb_buffer);
+                hb.hb_buffer_add_utf8(
+                    hb_buffer,
+                    text.ptr,
+                    @intCast(text.len),
+                    0,
+                    -1,
+                );
+                hb.hb_buffer_guess_segment_properties(hb_buffer);
 
-            hb.hb_shape(hb_font, hb_buffer, null, 0);
+                hb.hb_shape(hb_font, hb_buffer, null, 0);
+            }
 
             var glyph_count: c_uint = 0;
             const glyph_info =

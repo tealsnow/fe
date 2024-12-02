@@ -68,6 +68,11 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(commonlib);
 
     commonlib.linkLibC();
+    commonlib.linkSystemLibrary2("SDL2", .{});
+    commonlib.linkSystemLibrary2("fontconfig", .{});
+    commonlib.linkSystemLibrary2("freetype", .{});
+    commonlib.linkSystemLibrary2("harfbuzz", .{});
+
     commonlib.root_module.addOptions("options", options);
 
     const datetime = b.dependency("datetime", .{
@@ -164,10 +169,6 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     exe.linkLibC();
-    exe.linkSystemLibrary2("SDL2", .{});
-    exe.linkSystemLibrary2("fontconfig", .{});
-    exe.linkSystemLibrary2("freetype", .{});
-    exe.linkSystemLibrary2("harfbuzz", .{});
 
     exe.linkLibrary(commonlib);
     exe.root_module.addImport("common", &commonlib.root_module);
