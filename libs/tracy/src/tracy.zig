@@ -264,6 +264,16 @@ pub const TracingAllocator = struct {
         };
     }
 
+    pub fn discard(self: *Self) void {
+        if (!options.tracy_enable) return;
+
+        if (self.pool_name) |name| {
+            c.___tracy_emit_memory_discard(name.ptr, 0);
+        } else {
+            c.___tracy_emit_memory_discard(null, 0);
+        }
+    }
+
     pub fn allocator(self: *Self) std.mem.Allocator {
         return .{
             .ptr = self,
