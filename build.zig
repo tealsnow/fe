@@ -64,15 +64,15 @@ pub fn build(b: *std.Build) void {
 
     tracy_module.addIncludePath(b.path("./tracy/public"));
 
-    const tracy_client = if (shared) b.addSharedLibrary(.{
+    const compile_options = .{
         .name = "tracy",
         .target = target,
         .optimize = optimize,
-    }) else b.addStaticLibrary(.{
-        .name = "tracy",
-        .target = target,
-        .optimize = optimize,
-    });
+    };
+    const tracy_client = if (shared)
+        b.addSharedLibrary(compile_options)
+    else
+        b.addStaticLibrary(compile_options);
 
     if (target.result.os.tag == .windows) {
         tracy_client.linkSystemLibrary("dbghelp");
@@ -93,9 +93,8 @@ pub fn build(b: *std.Build) void {
         tracy_client.defineCMacro("TRACY_ENABLE", null);
     if (tracy_on_demand)
         tracy_client.defineCMacro("TRACY_ON_DEMAND", null);
-    if (tracy_callstack) |depth| {
+    if (tracy_callstack) |depth|
         tracy_client.defineCMacro("TRACY_CALLSTACK", "\"" ++ digits2(depth) ++ "\"");
-    }
     if (tracy_no_callstack)
         tracy_client.defineCMacro("TRACY_NO_CALLSTACK", null);
     if (tracy_no_callstack_inlines)
