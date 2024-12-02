@@ -1,0 +1,14 @@
+.{
+    .name = "zig-tracy",
+    .version = "0.0.4",
+    .minimum_zig_version = "0.13.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "example",
+        "README.md",
+        "LICENSE",
+    },
+    .dependencies = .{},
+}
