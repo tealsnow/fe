@@ -4,8 +4,9 @@
     .minimum_zig_version = "0.13.0",
 
     .dependencies = .{
-        .datetime = .{ .path = "libs/datetime" },
-        .tracy = .{ .path = "libs/tracy" },
+        .datetime = .{ .path = "libs/datetime-zig" },
+        .tracy = .{ .path = "libs/zig-tracy" },
+        .wgpu_native_zig = .{ .path = "libs/wgpu-native-zig" },
     },
 
     .paths = .{

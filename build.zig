@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
         bool,
         "use_llvm",
         "Use llvm (default: true) ",
-    ) orelse true;
+    ) orelse false;
 
     const use_lld = b.option(
         bool,
@@ -67,13 +67,13 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(commonlib);
 
+    commonlib.root_module.addOptions("options", options);
+
     commonlib.linkLibC();
     commonlib.linkSystemLibrary2("SDL2", .{});
     commonlib.linkSystemLibrary2("fontconfig", .{});
     commonlib.linkSystemLibrary2("freetype", .{});
     commonlib.linkSystemLibrary2("harfbuzz", .{});
-
-    commonlib.root_module.addOptions("options", options);
 
     const datetime = b.dependency("datetime", .{
         .target = target,
@@ -96,6 +96,12 @@ pub fn build(b: *std.Build) void {
         commonlib.linkLibrary(tracy.artifact("tracy"));
         commonlib.linkLibCpp();
     }
+
+    const wgpu_native_dep = b.dependency("wgpu_native_zig", .{
+        // .target = target,
+        .optimize = optimize,
+    });
+    commonlib.root_module.addImport("wgpu", wgpu_native_dep.module("wgpu"));
 
     const dynlib = b.addSharedLibrary(.{
         .name = "dynlib",

@@ -183,6 +183,7 @@ fn run(allocator: Allocator) !ExitCode {
     // HACK: workaround for the memory tracing not getting the right timing
     //  information. Without it allocations are reported as being a long time
     //  before actuality
+    //  probably a bug with the in-dev version of tracy I'm using
     _ = arena_allocator.alloc(u8, 1) catch {};
 
     const event_timeout_ms: u64 = 15; // ms

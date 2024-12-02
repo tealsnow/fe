@@ -16,3 +16,5 @@ pub const hb = @cImport({
     @cInclude("hb.h");
     @cInclude("hb-ft.h");
 });
+
+pub const wgpu = @import("wgpu");

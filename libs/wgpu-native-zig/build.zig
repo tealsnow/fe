@@ -3,28 +3,25 @@ const std = @import("std");
 const TargetQuery = std.Target.Query;
 
 // All the targets for which a pre-compiled build of wgpu-native is currently (as of July 9, 2024) available
-const target_whitelist = [_] TargetQuery {
-    TargetQuery {
-        .cpu_arch = .aarch64,
-        .os_tag = .linux
-    },
-    TargetQuery {
+const target_whitelist = [_]TargetQuery{
+    TargetQuery{ .cpu_arch = .aarch64, .os_tag = .linux },
+    TargetQuery{
         .cpu_arch = .aarch64,
         .os_tag = .macos,
     },
-    TargetQuery {
+    TargetQuery{
         .cpu_arch = .x86_64,
         .os_tag = .linux,
     },
-    TargetQuery {
+    TargetQuery{
         .cpu_arch = .x86_64,
         .os_tag = .macos,
     },
-    TargetQuery {
+    TargetQuery{
         .cpu_arch = .x86,
         .os_tag = .windows,
     },
-    TargetQuery {
+    TargetQuery{
         .cpu_arch = .x86_64,
         .os_tag = .windows,
     },
@@ -52,9 +49,9 @@ pub fn build(b: *std.Build) void {
     const arch_str = @tagName(target_res.cpu.arch);
     const mode_str = switch (optimize) {
         .Debug => "debug",
-        else => "release"
+        else => "release",
     };
-    const target_name_slices = [_] [:0]const u8 {"wgpu_", os_str, "_", arch_str, "_", mode_str};
+    const target_name_slices = [_][:0]const u8{ "wgpu_", os_str, "_", arch_str, "_", mode_str };
     const maybe_target_name = std.mem.concatWithSentinel(b.allocator, u8, &target_name_slices, 0);
     const target_name = maybe_target_name catch "wgpu_linux_x86_64_debug";
 
@@ -65,7 +62,7 @@ pub fn build(b: *std.Build) void {
         .link_libcpp = true,
     });
 
-    const wgpu_dep = b.lazyDependency(target_name, .{}).?;
+    const wgpu_dep = b.lazyDependency(target_name, .{}) orelse return;
 
     const lib_name = switch (target_res.os.tag) {
         // There's also some sorf of .pdb file available, which I think is a database of debugging symbols.
@@ -134,12 +131,12 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_compute_test.step);
     test_step.dependOn(&run_compute_test_c.step);
 
-    const test_files = [_] [:0]const u8 {
+    const test_files = [_][:0]const u8{
         "src/instance.zig",
         "src/adapter.zig",
         "src/pipeline.zig",
     };
-    comptime var test_names: [test_files.len] [:0]const u8 = test_files;
+    comptime var test_names: [test_files.len][:0]const u8 = test_files;
     comptime for (test_files, 0..) |test_file, idx| {
         const test_name = test_file[4..(test_file.len - 4)] ++ "-test";
         test_names[idx] = test_name;

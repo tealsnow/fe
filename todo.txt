@@ -15,3 +15,6 @@ text rendering:
 other:
     svg rendering
         nanovg?
+
+
+- [ ] wgpu in sdl
