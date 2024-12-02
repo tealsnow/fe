@@ -1,4 +1,0 @@
-[submodule "vendor/tracy"]
-	path = vendor/tracy
-	url = https://github.com/tealsnow/zig-tracy.git
-	branch = dev
