@@ -176,11 +176,13 @@ pub const DateTime = struct {
         return DateTime{ .year = year, .month = month, .day = day, .hour = @intCast(seconds_since_midnight / 3600), .minute = @intCast(seconds_since_midnight % 3600 / 60), .second = @intCast(seconds_since_midnight % 60), .millisecond = @intCast(@rem(ms, 1000)), .offset = 0 };
     }
 
+    pub const ToRfc3339Error = std.mem.Allocator.Error || std.io.FixedBufferStream(u8).WriteError || error{BufferTooSmall};
+
     /// Converts the DateTime to an RFC 3339 formatted string
-    /// Returns an allocated string that must be freed by the caller
-    pub fn toRfc3339(self: DateTime, allocator: std.mem.Allocator) ![]u8 {
-        var buffer = try allocator.alloc(u8, 30); // Max length: YYYY-MM-DDTHH:mm:ss.sss+HH:mm
-        errdefer allocator.free(buffer);
+    /// Returns a slice of the buffer containing the formatted string
+    /// *The buffer must be at least 30 bytes long*
+    pub fn toRfc3339(self: DateTime, buffer: []u8) ToRfc3339Error![]u8 {
+        if (buffer.len < 30) return error.BufferTooSmall;
 
         var fbs = std.io.fixedBufferStream(buffer);
         var writer = fbs.writer();
@@ -206,8 +208,20 @@ pub const DateTime = struct {
             });
         }
 
-        const out = try allocator.alloc(u8, fbs.pos);
-        @memcpy(out, buffer[0..fbs.pos]);
+        return buffer[0..fbs.pos];
+    }
+
+    /// Converts the DateTime to an RFC 3339 formatted string
+    /// Returns an allocated string that must be freed by the caller
+    /// This makes two allocations and should not be used if you care about performance
+    pub fn toRfc3339Alloc(self: DateTime, allocator: std.mem.Allocator) ToRfc3339Error![]u8 {
+        var buffer = try allocator.alloc(u8, 30); // Max length: YYYY-MM-DDTHH:mm:ss.sss+HH:mm
+        errdefer allocator.free(buffer);
+
+        const res = try self.toRfc3339(buffer);
+
+        const out = try allocator.alloc(u8, res.len);
+        @memcpy(out, buffer[0..res.len]);
         allocator.free(buffer);
 
         return out;
