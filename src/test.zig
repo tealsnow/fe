@@ -29,12 +29,28 @@ test "can use Zig std timestamp millis" {
     try std.testing.expectEqual(@rem(ts, 1000), d.millisecond);
 }
 
-test "datetime equality against known input" {
+test "datetime equality against known input - alloc" {
     const dt = DateTime.fromMillis(SAMPLE_MS);
-    const actual = try dt.toRfc3339(std.testing.allocator);
+    const actual = try dt.toRfc3339Alloc(std.testing.allocator);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualStrings("2024-08-12T02:15:25.483Z", actual);
+}
+
+test "datetime equality against known input - no alloc" {
+    const dt = DateTime.fromMillis(SAMPLE_MS);
+    var buffer: [30]u8 = undefined;
+    const actual = try dt.toRfc3339(&buffer);
+
+    try std.testing.expectEqualStrings("2024-08-12T02:15:25.483Z", actual);
+}
+
+test "buffer to small" {
+    var buffer: [29]u8 = undefined;
+    const dt = DateTime.fromMillis(SAMPLE_MS);
+    const actual = dt.toRfc3339(&buffer);
+
+    try std.testing.expectEqual(error.BufferTooSmall, actual);
 }
 
 test "serializes to JSON in new struct" {

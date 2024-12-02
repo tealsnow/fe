@@ -15,6 +15,7 @@ the supported schema in Dylibso's [XTP](https://getxtp.com) product.
 - Conversion from Unix timestamp (milliseconds)
 - Timezone offset support
 - RFC 3339 string formatting
+- zero allocations if desired
 
 ## Installation
 
@@ -35,7 +36,18 @@ pub fn main() !void {
     const dt = DateTime.fromMillis(std.time.milliTimestamp());
 
     // Directly convert to an RFC 3339 DateTime string
-    const s = try dt.toRfc3339(std.heap.wasm_allocator);
+    const buffer: [30]u8 = undefined;
+    const s = try dt.toRfc3339(buffer);
+    // "2024-08-12T02:15:25.483Z"
+
+    // or
+    const alloc_buffer = std.heap.wasm_allocator.alloc(u8, 30);
+    defer std.heap.wasm_allocator.free(alloc_buffer);
+    const s = try dt.toRfc3339(alloc_buffer);
+    // "2024-08-12T02:15:25.483Z"
+
+    // or
+    const s = try dt.toRfc3339Alloc(std.heap.wasm_allocator);
     defer std.heap.wasm_allocator.free(s);
     // "2024-08-12T02:15:25.483Z"
 
