@@ -1,0 +1,3 @@
+[submodule "libs/zig-tracy/tracy"]
+	path = libs/zig-tracy/tracy
+	url = https://github.com/wolfpld/tracy.git
