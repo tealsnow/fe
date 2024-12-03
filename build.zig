@@ -94,7 +94,8 @@ pub fn build(b: *std.Build) void {
     commonlib.root_module.addImport("tracy", tracy.module("tracy"));
     if (tracy_enable) {
         commonlib.linkLibrary(tracy.artifact("tracy"));
-        commonlib.linkLibCpp();
+        if (target.result.os.tag == .windows)
+            commonlib.linkLibCpp();
     }
 
     const wgpu_native_dep = b.dependency("wgpu_native_zig", .{

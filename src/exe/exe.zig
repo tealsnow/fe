@@ -16,6 +16,8 @@ const sdl = common.sdl;
 const fc = common.fc;
 const ft = common.ft;
 const hb = common.hb;
+const wgpu = common.wgpu;
+const wgpu_sdl = common.wgpu_sdl;
 
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
@@ -164,6 +166,38 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer window.deinit();
 
+    const instance = wgpu.Instance.create(&.{
+        .next_in_chain = null,
+    }) orelse return error.wgpu;
+    defer instance.release();
+
+    const surface = wgpu_sdl.createSurface(instance, window) orelse return error.sdlwgpu;
+    defer surface.release();
+
+    const adapter_res = instance.requestAdapterSync(
+        &.{ .power_preference = .low_power },
+    );
+    if (adapter_res.status != .success) return error.wgpu;
+    const adapter = adapter_res.adapter.?;
+    defer adapter.release();
+
+    const device_res = adapter.requestDeviceSync(&.{
+        .next_in_chain = null,
+        .label = "My Device",
+        .required_feature_count = 0,
+        .required_features = null,
+        .required_limits = null,
+        .default_queue = .{
+            .next_in_chain = null,
+            .label = "Default Queue",
+        },
+    });
+    if (device_res.status != .success) return error.wgpu;
+    const device = device_res.device.?;
+    defer device.release();
+
+    // NOTE: can release adapter and instance here
+
     const renderer = try sdl.Renderer.init(.{
         .window = window,
         .flags = .{ .accelerated = true },
@@ -221,7 +255,9 @@ fn run(allocator: Allocator) !ExitCode {
             const update_zone = tracy.initZone(@src(), .{ .name = "update" });
             defer update_zone.deinit();
 
-            const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed / 1000 / 1000));
+            // elapsed is measured in nano-seconds where sdl wants miliseconds
+            const elapsed_ms = elapsed / 1000 / 1000;
+            const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed_ms));
             if (sdl.Event.waitTimeout(timeout)) |ev| {
                 switch (ev.type) {
                     .quit => {
@@ -289,8 +325,9 @@ fn run(allocator: Allocator) !ExitCode {
         while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
             const update_zone = tracy.initZone(@src(), .{ .name = "update" });
             defer update_zone.deinit();
-
             update_tick_count +%= 1;
+
+            // TODO: Figure out delta-time
 
             if (should_reload_dynlib or dynlib_recompiled) {
                 should_reload_dynlib = false;

@@ -3,6 +3,7 @@ const log = std.log;
 
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
+    @cInclude("SDL2/SDL_syswm.h");
 });
 
 pub const Error = error{Sdl};
