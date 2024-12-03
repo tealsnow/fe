@@ -147,7 +147,7 @@ pub const ColorAttachment = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     view: ?*TextureView,
     resolve_target: ?*TextureView = null,
-    loap_op: LoadOp = LoadOp.clear,
+    load_op: LoadOp = LoadOp.clear,
     store_op: StoreOp = StoreOp.store,
     clear_value: Color = Color {},
 };

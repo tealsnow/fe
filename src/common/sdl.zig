@@ -138,6 +138,12 @@ pub const Window = opaque {
     pub fn show(self: *Window) void {
         c.SDL_ShowWindow(@ptrCast(self));
     }
+
+    pub fn size(self: *Window) Size {
+        var s: Size = undefined;
+        c.SDL_GetWindowSize(@ptrCast(self), &s.w, &s.h);
+        return s;
+    }
 };
 
 pub const Renderer = opaque {

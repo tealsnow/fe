@@ -34,7 +34,7 @@ pub const PipelineLayoutDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     bind_group_layout_count: usize,
-    bind_group_layouts: [*]const BindGroupLayout,
+    bind_group_layouts: [*]*const BindGroupLayout,
 
     pub inline fn withPushConstantRanges(
         self: PipelineLayoutDescriptor,

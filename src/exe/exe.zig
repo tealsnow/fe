@@ -166,9 +166,19 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer window.deinit();
 
-    const instance = wgpu.Instance.create(&.{
+    // const instance = wgpu.Instance.create(&.{
+    //     .next_in_chain = null,
+    // }) orelse return error.wgpu;
+    const instance_desc = wgpu.InstanceDescriptor{
         .next_in_chain = null,
-    }) orelse return error.wgpu;
+    };
+    var instance_desc_extra = wgpu.InstanceExtras{
+        .backends = wgpu.InstanceBackend.all,
+        .flags = 0,
+        .dx12_shader_compiler = .undefined,
+        .gles3_minor_version = .automatic,
+    };
+    const instance = wgpu.Instance.create(&instance_desc.withNativeExtras(&instance_desc_extra)) orelse return error.wgpu;
     defer instance.release();
 
     const surface = wgpu_sdl.createSurface(instance, window) orelse return error.sdlwgpu;
@@ -196,13 +206,103 @@ fn run(allocator: Allocator) !ExitCode {
     const device = device_res.device.?;
     defer device.release();
 
-    // NOTE: can release adapter and instance here
+    const queue = device.getQueue() orelse return error.wgpu;
+    defer queue.release();
 
-    const renderer = try sdl.Renderer.init(.{
-        .window = window,
-        .flags = .{ .accelerated = true },
-    });
-    defer renderer.deinit();
+    const shader_src =
+        \\@vertex
+        \\fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
+        \\    let x = f32(i32(in_vertex_index) - 1);
+        \\    let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
+        \\    return vec4<f32>(x, y, 0.0, 1.0);
+        \\}
+        \\
+        \\@fragment
+        \\fn fs_main() -> @location(0) vec4<f32> {
+        \\    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        \\}
+    ;
+
+    const shader_module = device.createShaderModule(&.{
+        .label = "shader",
+        .next_in_chain = @ptrCast(
+            &wgpu.ShaderModuleWGSLDescriptor{
+                .chain = .{
+                    .s_type = .shader_module_wgsl_descriptor,
+                },
+                .code = shader_src,
+            },
+        ),
+    }) orelse return error.wgpu;
+    defer shader_module.release();
+
+    const pipeline_layout = device.createPipelineLayout(&.{
+        .label = "Pipeline layout",
+        .bind_group_layout_count = 0,
+        .bind_group_layouts = &[_]*const wgpu.BindGroupLayout{},
+    }) orelse return error.wgpu;
+    defer pipeline_layout.release();
+
+    const surface_capabilities = blk: {
+        var caps: wgpu.SurfaceCapabilities = undefined;
+        surface.getCapabilities(adapter, &caps);
+        break :blk caps;
+    };
+
+    const render_pipeline = device.createRenderPipeline(&.{
+        .label = "Render pipeline",
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = "vs_main",
+        },
+        .fragment = &wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = "fs_main",
+            .target_count = 1,
+            .targets = &[_]wgpu.ColorTargetState{
+                wgpu.ColorTargetState{
+                    .format = surface_capabilities.formats[0],
+                    .write_mask = wgpu.ColorWriteMask.all,
+                },
+            },
+        },
+        .primitive = .{
+            .topology = .triangle_list,
+        },
+        .multisample = .{
+            .count = 1,
+            .mask = 0xFFFFFFFF,
+        },
+    }) orelse return error.wgpu;
+    defer render_pipeline.release();
+
+    var config = wgpu.SurfaceConfiguration{
+        .device = device,
+        .usage = wgpu.TextureUsage.render_attachment,
+        .format = surface_capabilities.formats[0],
+        .present_mode = .fifo,
+        .alpha_mode = surface_capabilities.alpha_modes[0],
+
+        .width = 0,
+        .height = 0,
+    };
+
+    {
+        const window_size = window.size();
+        config.width = @intCast(window_size.w);
+        config.height = @intCast(window_size.h);
+    }
+
+    surface.configure(&config);
+
+    // end wgpu setup
+
+    // const renderer = try sdl.Renderer.init(.{
+    //     .window = window,
+    //     .flags = .{ .accelerated = true },
+    // });
+    // defer renderer.deinit();
 
     var dynlib = try Dynlib.load(allocator);
     defer dynlib.unload(allocator);
@@ -317,6 +417,19 @@ fn run(allocator: Allocator) !ExitCode {
                         }
                     },
 
+                    .window => |win| switch (win.event) {
+                        .resized => {
+                            const width = win.data1;
+                            const height = win.data2;
+                            config.width = @intCast(width);
+                            config.height = @intCast(height);
+
+                            surface.configure(&config);
+                        },
+
+                        else => {},
+                    },
+
                     else => {},
                 }
             }
@@ -347,117 +460,184 @@ fn run(allocator: Allocator) !ExitCode {
 
             render_frame_count +%= 1;
 
-            const color = dynlib.api.getColor();
-            renderer.setDrawColor(color.r, color.g, color.b, 255) catch {};
-            // renderer.setDrawColor(30, 30, 30, 255) catch {};
-            renderer.clear() catch {};
+            var surface_texture: wgpu.SurfaceTexture = undefined;
+            surface.getCurrentTexture(&surface_texture);
+            defer surface_texture.texture.?.release();
 
-            const x: c_uint = 20;
-            const y: c_uint = 20;
-            // const text = "Hello, (fe) World!";
-            const text = if (dynlib_recompiling)
-                "reloading..."
-            else
-                try std.fmt.allocPrint(
-                    arena_allocator,
-                    "{d}",
-                    .{render_frame_count},
-                );
+            switch (surface_texture.status) {
+                .success => {
+                    // TODO: check surface_texture.suboptimal
+                },
+                .timeout, .outdated, .lost => {
+                    if (surface_texture.texture != null)
+                        surface_texture.texture.?.release();
 
-            { // shaping
-                hb.hb_buffer_reset(hb_buffer);
-                hb.hb_buffer_add_utf8(
-                    hb_buffer,
-                    text.ptr,
-                    @intCast(text.len),
-                    0,
-                    -1,
-                );
-                hb.hb_buffer_guess_segment_properties(hb_buffer);
-
-                hb.hb_shape(hb_font, hb_buffer, null, 0);
+                    const size = window.size();
+                    if (size.w != 0 and size.h != 0) {
+                        config.width = @intCast(size.w);
+                        config.height = @intCast(size.h);
+                        surface.configure(&config);
+                    }
+                    continue;
+                },
+                .out_of_memory, .device_lost => {
+                    log.fatalkv(@src(), "fatal texture error", .{ .status = surface_texture.status });
+                    return error.wgpu;
+                },
             }
+            if (surface_texture.texture == null)
+                return error.wgpu;
 
-            var glyph_count: c_uint = 0;
-            const glyph_info =
-                hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_count);
-            const glyph_pos =
-                hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_count);
+            const frame = surface_texture.texture.?.createView(&.{}) orelse return error.wgpu;
+            defer frame.release();
 
-            const metrics = ft_face.*.size.*.metrics;
-            // Convert from 26.6 fixed point
-            // FIXME: I think this is a times 64?
-            const baseline = y + (metrics.ascender >> 6);
+            const command_encoder = device.createCommandEncoder(&.{
+                .label = "Command encoder",
+            }) orelse return error.wgpu;
+            defer command_encoder.release();
 
-            var pen_x = x;
+            const render_pass_encoder = command_encoder.beginRenderPass(&.{
+                .label = "Render pass encoder",
+                .color_attachment_count = 1,
+                .color_attachments = &[_]wgpu.ColorAttachment{
+                    wgpu.ColorAttachment{
+                        .view = frame,
+                        .load_op = .clear,
+                        .store_op = .store,
+                        .clear_value = .{
+                            .r = 0.0,
+                            .g = 1.0,
+                            .b = 0.0,
+                            .a = 1.0,
+                        },
+                    },
+                },
+            }) orelse return error.wgpu;
 
-            var i: c_uint = 0;
-            while (i < glyph_count) : (i += 1) {
-                _ = ft.FT_Load_Glyph(
-                    ft_face,
-                    glyph_info[i].codepoint,
-                    ft.FT_LOAD_RENDER,
-                );
-                const slot = ft_face.*.glyph;
+            render_pass_encoder.setPipeline(render_pipeline);
+            render_pass_encoder.draw(3, 1, 0, 0);
+            render_pass_encoder.end();
+            render_pass_encoder.release();
 
-                const glyph_surface = sdl.c.SDL_CreateRGBSurfaceFrom(
-                    slot.*.bitmap.buffer,
-                    @intCast(slot.*.bitmap.width),
-                    @intCast(slot.*.bitmap.rows),
-                    8,
-                    slot.*.bitmap.pitch,
-                    0,
-                    0,
-                    0,
-                    0,
-                );
-                defer sdl.c.SDL_FreeSurface(glyph_surface);
+            const command_buffer = command_encoder.finish(&.{
+                .label = "Command buffer",
+            }) orelse return error.wgpu;
+            defer command_buffer.release();
 
-                var colors: [256]sdl.c.SDL_Color = undefined;
-                var j: usize = 0;
-                while (j < 256) : (j += 1) {
-                    colors[j].r = @intCast(j);
-                    colors[j].g = @intCast(j);
-                    colors[j].b = @intCast(j);
-                    colors[j].a = @intCast(j);
-                }
-                _ = sdl.c.SDL_SetPaletteColors(
-                    glyph_surface.*.format.*.palette,
-                    &colors,
-                    0,
-                    256,
-                );
+            queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
+            surface.present();
 
-                const glyph_texture = sdl.c.SDL_CreateTextureFromSurface(
-                    @ptrCast(renderer),
-                    glyph_surface,
-                );
-                defer sdl.c.SDL_DestroyTexture(glyph_texture);
+            // const color = dynlib.api.getColor();
+            // renderer.setDrawColor(color.r, color.g, color.b, 255) catch {};
+            // // renderer.setDrawColor(30, 30, 30, 255) catch {};
+            // renderer.clear() catch {};
 
-                // not too sure of this values sigificance
-                const magic_scale = 64;
+            // const x: c_uint = 20;
+            // const y: c_uint = 20;
+            // // const text = "Hello, (fe) World!";
+            // const text = if (dynlib_recompiling)
+            //     "reloading..."
+            // else
+            //     try std.fmt.allocPrint(
+            //         arena_allocator,
+            //         "{d}",
+            //         .{render_frame_count},
+            //     );
 
-                const glyph_x: c_int = @as(c_int, @intCast(pen_x)) + @divFloor(glyph_pos[i].x_offset, magic_scale) + slot.*.bitmap_left;
-                const glyph_y: c_int = @as(c_int, @intCast(baseline)) - slot.*.bitmap_top;
+            // { // shaping
+            //     hb.hb_buffer_reset(hb_buffer);
+            //     hb.hb_buffer_add_utf8(
+            //         hb_buffer,
+            //         text.ptr,
+            //         @intCast(text.len),
+            //         0,
+            //         -1,
+            //     );
+            //     hb.hb_buffer_guess_segment_properties(hb_buffer);
 
-                const dest_rect = sdl.c.SDL_Rect{
-                    .x = glyph_x,
-                    .y = glyph_y,
-                    .w = @intCast(slot.*.bitmap.width),
-                    .h = @intCast(slot.*.bitmap.rows),
-                };
+            //     hb.hb_shape(hb_font, hb_buffer, null, 0);
+            // }
 
-                _ = sdl.c.SDL_RenderCopy(
-                    @ptrCast(renderer),
-                    glyph_texture,
-                    null,
-                    &dest_rect,
-                );
+            // var glyph_count: c_uint = 0;
+            // const glyph_info =
+            //     hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_count);
+            // const glyph_pos =
+            //     hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_count);
 
-                pen_x += @intCast(@divFloor(glyph_pos[i].x_advance, magic_scale));
-            }
+            // const metrics = ft_face.*.size.*.metrics;
+            // // Convert from 26.6 fixed point
+            // // FIXME: I think this is a times 64?
+            // const baseline = y + (metrics.ascender >> 6);
 
-            renderer.present();
+            // var pen_x = x;
+
+            // var i: c_uint = 0;
+            // while (i < glyph_count) : (i += 1) {
+            //     _ = ft.FT_Load_Glyph(
+            //         ft_face,
+            //         glyph_info[i].codepoint,
+            //         ft.FT_LOAD_RENDER,
+            //     );
+            //     const slot = ft_face.*.glyph;
+
+            //     const glyph_surface = sdl.c.SDL_CreateRGBSurfaceFrom(
+            //         slot.*.bitmap.buffer,
+            //         @intCast(slot.*.bitmap.width),
+            //         @intCast(slot.*.bitmap.rows),
+            //         8,
+            //         slot.*.bitmap.pitch,
+            //         0,
+            //         0,
+            //         0,
+            //         0,
+            //     );
+            //     defer sdl.c.SDL_FreeSurface(glyph_surface);
+
+            //     var colors: [256]sdl.c.SDL_Color = undefined;
+            //     var j: usize = 0;
+            //     while (j < 256) : (j += 1) {
+            //         colors[j].r = @intCast(j);
+            //         colors[j].g = @intCast(j);
+            //         colors[j].b = @intCast(j);
+            //         colors[j].a = @intCast(j);
+            //     }
+            //     _ = sdl.c.SDL_SetPaletteColors(
+            //         glyph_surface.*.format.*.palette,
+            //         &colors,
+            //         0,
+            //         256,
+            //     );
+
+            //     const glyph_texture = sdl.c.SDL_CreateTextureFromSurface(
+            //         @ptrCast(renderer),
+            //         glyph_surface,
+            //     );
+            //     defer sdl.c.SDL_DestroyTexture(glyph_texture);
+
+            //     // not too sure of this values sigificance
+            //     const magic_scale = 64;
+
+            //     const glyph_x: c_int = @as(c_int, @intCast(pen_x)) + @divFloor(glyph_pos[i].x_offset, magic_scale) + slot.*.bitmap_left;
+            //     const glyph_y: c_int = @as(c_int, @intCast(baseline)) - slot.*.bitmap_top;
+
+            //     const dest_rect = sdl.c.SDL_Rect{
+            //         .x = glyph_x,
+            //         .y = glyph_y,
+            //         .w = @intCast(slot.*.bitmap.width),
+            //         .h = @intCast(slot.*.bitmap.rows),
+            //     };
+
+            //     _ = sdl.c.SDL_RenderCopy(
+            //         @ptrCast(renderer),
+            //         glyph_texture,
+            //         null,
+            //         &dest_rect,
+            //     );
+
+            //     pen_x += @intCast(@divFloor(glyph_pos[i].x_advance, magic_scale));
+            // }
+
+            // renderer.present();
         }
 
         // FIXME: Limit this accordingly!

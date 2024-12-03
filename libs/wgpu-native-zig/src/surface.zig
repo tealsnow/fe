@@ -244,7 +244,7 @@ pub const GetCurrentTextureStatus = enum(u32) {
 };
 
 pub const SurfaceTexture = extern struct {
-    texture: *Texture,
+    texture: ?*Texture,
     suboptimal: WGPUBool,
     status: GetCurrentTextureStatus,
 };
