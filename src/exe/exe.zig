@@ -19,7 +19,6 @@ const hb = common.hb;
 const wgpu = common.wgpu;
 const wgpu_sdl = common.wgpu_sdl;
 
-
 // const enable_vsync = true;
 const enable_vsync = false;
 
@@ -220,7 +219,7 @@ fn run(allocator: Allocator) !ExitCode {
         \\
         \\@fragment
         \\fn fs_main() -> @location(0) vec4<f32> {
-        \\    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        \\    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
         \\}
     ;
 
@@ -575,6 +574,8 @@ fn run(allocator: Allocator) !ExitCode {
             }) orelse return error.wgpu;
             defer command_encoder.release();
 
+            const color = dynlib.api.getColor();
+
             const render_pass_encoder = command_encoder.beginRenderPass(&.{
                 .label = "Render pass encoder",
                 .color_attachment_count = 1,
@@ -584,9 +585,9 @@ fn run(allocator: Allocator) !ExitCode {
                         .load_op = .clear,
                         .store_op = .store,
                         .clear_value = .{
-                            .r = 0.0,
-                            .g = 1.0,
-                            .b = 0.0,
+                            .r = @as(f64, @floatFromInt(color.r)) / 256,
+                            .g = @as(f64, @floatFromInt(color.g)) / 256,
+                            .b = @as(f64, @floatFromInt(color.b)) / 256,
                             .a = 1.0,
                         },
                     },
