@@ -19,6 +19,10 @@ const hb = common.hb;
 const wgpu = common.wgpu;
 const wgpu_sdl = common.wgpu_sdl;
 
+
+// const enable_vsync = true;
+const enable_vsync = false;
+
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
 var dynlib_recompiling = false;
@@ -166,9 +170,6 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer window.deinit();
 
-    // const instance = wgpu.Instance.create(&.{
-    //     .next_in_chain = null,
-    // }) orelse return error.wgpu;
     const instance_desc = wgpu.InstanceDescriptor{
         .next_in_chain = null,
     };
@@ -281,7 +282,11 @@ fn run(allocator: Allocator) !ExitCode {
         .device = device,
         .usage = wgpu.TextureUsage.render_attachment,
         .format = surface_capabilities.formats[0],
-        .present_mode = .fifo,
+
+        // .present_mode = .fifo, // vsync
+        // .present_mode = .immediate,
+        .present_mode = if (enable_vsync) .fifo else .immediate,
+
         .alpha_mode = surface_capabilities.alpha_modes[0],
 
         .width = 0,
@@ -320,17 +325,24 @@ fn run(allocator: Allocator) !ExitCode {
     //  probably a bug with the in-dev version of tracy I'm using
     _ = arena_allocator.alloc(u8, 1) catch {};
 
-    const event_timeout_ms: u64 = 15; // ms
-    const ns_60_ps: u64 = 16 * 1000 * 1000; // ns
-
-    const ns_per_update = ns_60_ps;
-    const ns_per_render = ns_60_ps;
+    const event_timeout_ms: u64 = 16; // ms
+    const ns_60_fps: u64 = 16 * 1000 * 1000; // ns
+    const ns_per_update = ns_60_fps;
+    // const ns_per_render = ns_60_fps;
+    // const ns_per_render = 0;
+    const ns_per_render = if (enable_vsync) 0 else ns_60_fps;
 
     var timer = try std.time.Timer.start();
-    var update_lag: u64 = 0;
-    var render_lag: u64 = 0;
+    var update_lag: u64 = ns_per_update;
+    var render_lag: u64 = ns_per_render;
 
-    var show_failed_reset = if (builtin.mode == .Debug) false;
+    // the maxmimum amount of time a frame/update can be behind before we reset it
+    const max_lag_multiple = 4;
+
+    var fps_last_time = try std.time.Instant.now();
+    var fps_frame_count: u32 = 0;
+
+    var show_failed_reset = false;
     var should_reload_dynlib = false;
 
     var running = true;
@@ -349,15 +361,21 @@ fn run(allocator: Allocator) !ExitCode {
 
         const elapsed = timer.lap();
         update_lag += elapsed;
-        render_lag += elapsed;
+        // wrapping add to avoid the cost of an if in the case that ns_per_render == 0
+        render_lag +%= elapsed;
 
-        {
-            const update_zone = tracy.initZone(@src(), .{ .name = "update" });
-            defer update_zone.deinit();
+        { // events
+            const events_zone = tracy.initZone(@src(), .{ .name = "events" });
+            defer events_zone.deinit();
 
             // elapsed is measured in nano-seconds where sdl wants miliseconds
-            const elapsed_ms = elapsed / 1000 / 1000;
+            const elapsed_ms = elapsed / 1_000_000;
             const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed_ms));
+            // log.tracekv(
+            //     @src(),
+            //     "elapsed",
+            //     .{ .elapsed_ms = elapsed_ms, .timeout = timeout },
+            // );
             if (sdl.Event.waitTimeout(timeout)) |ev| {
                 switch (ev.type) {
                     .quit => {
@@ -435,12 +453,22 @@ fn run(allocator: Allocator) !ExitCode {
             }
         }
 
-        while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
+        while (update_lag >= ns_per_update) : (update_lag -|= ns_per_update) {
             const update_zone = tracy.initZone(@src(), .{ .name = "update" });
             defer update_zone.deinit();
             update_tick_count +%= 1;
 
-            // TODO: Figure out delta-time
+            if (update_lag > ns_per_update * max_lag_multiple) {
+                log.warnkv(
+                    @src(),
+                    "update loop too far behind, setting lag value to zero",
+                    .{ .ns_per_update = ns_per_update, .was = update_lag },
+                );
+                update_lag = 0;
+            }
+
+            const delta_time_ns = elapsed;
+            _ = delta_time_ns;
 
             if (should_reload_dynlib or dynlib_recompiled) {
                 should_reload_dynlib = false;
@@ -452,13 +480,56 @@ fn run(allocator: Allocator) !ExitCode {
 
                 try dynlib.reload(allocator);
             }
+
+            // TODO: Figure out if this is good place to put it
+            //  or if it should be at the end of the loop
+            //   (don't realy want it running as fast a possible)
+            //  or if it should be in its own timestep
+            //  or just stay here
+            // FIXME: Limit this accordingly!
+            //  we should first figure out a good limit
+            const area_reset_success = arena.reset(.retain_capacity);
+            tracing_arena_allocator.discard();
+            if (debug_mode and !area_reset_success and !show_failed_reset) {
+                show_failed_reset = true;
+                log.err(
+                    @src(),
+                    "arena reset failed. This is likely to happen again " ++
+                        "so this message will not repeat. To reset this flag press r",
+                );
+            }
         }
 
-        while (render_lag >= ns_per_render) : (render_lag -= ns_per_render) {
+        // FIXME: still using ~20% cpu at idle
+        //  is there really that much overhead in wgpu?
+        //  stays at ~0-1% if rendering is disabled
+        while (render_lag >= ns_per_render) : (render_lag -|= ns_per_render) {
             const render_zone = tracy.initZone(@src(), .{ .name = "render" });
             defer render_zone.deinit();
-
             render_frame_count +%= 1;
+
+            if (ns_per_render != 0 and render_lag >= ns_per_render * max_lag_multiple) {
+                log.warnkv(
+                    @src(),
+                    "render loop too far behind, setting lag value to zero",
+                    .{ .ns_per_update = ns_per_render, .was = render_lag },
+                );
+                render_lag = 0;
+            }
+
+            fps_frame_count += 1;
+            const current_time = try std.time.Instant.now();
+            const delta_time = current_time.since(fps_last_time);
+
+            if (delta_time >= 1_000_000_000) {
+                const delta_seconds = @as(f64, @floatFromInt(delta_time)) / 1_000_000_000;
+                const fps = @as(f64, @floatFromInt(fps_frame_count)) / delta_seconds;
+                fps_frame_count = 0;
+                fps_last_time = current_time;
+
+                log.infof(@src(), "fps {d:.2}", .{fps});
+                // _ = fps;
+            }
 
             var surface_texture: wgpu.SurfaceTexture = undefined;
             surface.getCurrentTexture(&surface_texture);
@@ -467,6 +538,9 @@ fn run(allocator: Allocator) !ExitCode {
             switch (surface_texture.status) {
                 .success => {
                     // TODO: check surface_texture.suboptimal
+                    if (surface_texture.suboptimal != 0) {
+                        log.warn(@src(), "surface texture is suboptimal");
+                    }
                 },
                 .timeout, .outdated, .lost => {
                     if (surface_texture.texture != null)
@@ -481,14 +555,19 @@ fn run(allocator: Allocator) !ExitCode {
                     continue;
                 },
                 .out_of_memory, .device_lost => {
-                    log.fatalkv(@src(), "fatal texture error", .{ .status = surface_texture.status });
+                    log.fatalkv(
+                        @src(),
+                        "fatal texture error",
+                        .{ .status = surface_texture.status },
+                    );
                     return error.wgpu;
                 },
             }
             if (surface_texture.texture == null)
                 return error.wgpu;
 
-            const frame = surface_texture.texture.?.createView(&.{}) orelse return error.wgpu;
+            const frame = surface_texture.texture.?
+                .createView(&.{}) orelse return error.wgpu;
             defer frame.release();
 
             const command_encoder = device.createCommandEncoder(&.{
@@ -638,18 +717,8 @@ fn run(allocator: Allocator) !ExitCode {
             // }
 
             // renderer.present();
-        }
 
-        // FIXME: Limit this accordingly!
-        const area_reset_success = arena.reset(.retain_capacity);
-        tracing_arena_allocator.discard();
-        if (debug_mode and !area_reset_success and !show_failed_reset) {
-            show_failed_reset = true;
-            log.err(
-                @src(),
-                "arena reset failed. This is likely to happen again " ++
-                    "so this message will not repeat. To reset this flag press r",
-            );
+            if (ns_per_render == 0) break;
         }
     }
 
