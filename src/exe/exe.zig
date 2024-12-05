@@ -22,6 +22,9 @@ const wgpu_sdl = common.wgpu_sdl;
 // const enable_vsync = true;
 const enable_vsync = false;
 
+const limit_framerate = true;
+// const limit_framerate = false;
+
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
 var dynlib_recompiling = false;
@@ -99,6 +102,9 @@ fn run(allocator: Allocator) !ExitCode {
     if (debug_mode)
         log.info(@src(), "running in debug mode");
 
+    if (std.valgrind.runningOnValgrind() > 0)
+        log.info(@src(), "running under valgrind");
+
     if (debugger_attached)
         log.warn(
             @src(),
@@ -173,7 +179,7 @@ fn run(allocator: Allocator) !ExitCode {
         .next_in_chain = null,
     };
     var instance_desc_extra = wgpu.InstanceExtras{
-        .backends = wgpu.InstanceBackend.all,
+        .backends = wgpu.InstanceBackend.primary,
         .flags = 0,
         .dx12_shader_compiler = .undefined,
         .gles3_minor_version = .automatic,
@@ -181,7 +187,7 @@ fn run(allocator: Allocator) !ExitCode {
     const instance = wgpu.Instance.create(&instance_desc.withNativeExtras(&instance_desc_extra)) orelse return error.wgpu;
     defer instance.release();
 
-    const surface = wgpu_sdl.createSurface(instance, window) orelse return error.sdlwgpu;
+    const surface = try wgpu_sdl.createSurface(instance, window) orelse return error.sdlwgpu;
     defer surface.release();
 
     const adapter_res = instance.requestAdapterSync(
@@ -324,12 +330,12 @@ fn run(allocator: Allocator) !ExitCode {
     //  probably a bug with the in-dev version of tracy I'm using
     _ = arena_allocator.alloc(u8, 1) catch {};
 
-    const event_timeout_ms: u64 = 16; // ms
-    const ns_60_fps: u64 = 16 * 1000 * 1000; // ns
+    const event_timeout_ms: u64 = if (limit_framerate) 16 else 0;
+
+    const ns_60_fps: u64 = 16 * 1_000_000; // ns
     const ns_per_update = ns_60_fps;
-    // const ns_per_render = ns_60_fps;
-    // const ns_per_render = 0;
-    const ns_per_render = if (enable_vsync) 0 else ns_60_fps;
+    const ns_per_render =
+        if (enable_vsync or !limit_framerate) 0 else ns_60_fps;
 
     var timer = try std.time.Timer.start();
     var update_lag: u64 = ns_per_update;
@@ -341,7 +347,8 @@ fn run(allocator: Allocator) !ExitCode {
     var fps_last_time = try std.time.Instant.now();
     var fps_frame_count: u32 = 0;
 
-    var show_failed_reset = false;
+    var shown_arena_failed_reset = false;
+    var shown_texture_suboptimal = false;
     var should_reload_dynlib = false;
 
     var running = true;
@@ -354,7 +361,6 @@ fn run(allocator: Allocator) !ExitCode {
     window.show();
 
     init_zone.deinit();
-
     while (running) {
         tracy.frameMark();
 
@@ -363,92 +369,91 @@ fn run(allocator: Allocator) !ExitCode {
         // wrapping add to avoid the cost of an if in the case that ns_per_render == 0
         render_lag +%= elapsed;
 
-        { // events
+        // elapsed is measured in nano-seconds where sdl wants miliseconds
+        const elapsed_ms = elapsed / 1_000_000;
+        const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed_ms));
+        // log.tracekv(
+        //     @src(),
+        //     "elapsed",
+        //     .{ .elapsed_ms = elapsed_ms, .timeout = timeout },
+        // );
+        if (sdl.Event.waitTimeout(timeout)) |ev| {
             const events_zone = tracy.initZone(@src(), .{ .name = "events" });
             defer events_zone.deinit();
 
-            // elapsed is measured in nano-seconds where sdl wants miliseconds
-            const elapsed_ms = elapsed / 1_000_000;
-            const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed_ms));
-            // log.tracekv(
-            //     @src(),
-            //     "elapsed",
-            //     .{ .elapsed_ms = elapsed_ms, .timeout = timeout },
-            // );
-            if (sdl.Event.waitTimeout(timeout)) |ev| {
-                switch (ev.type) {
-                    .quit => {
-                        log.trace(@src(), "quit event recived, quiting...");
-                        running = false;
-                    },
+            switch (ev.type) {
+                .quit => {
+                    log.trace(@src(), "quit event recived, quiting...");
+                    running = false;
+                },
 
-                    .key => |key| blk: {
-                        if (key.state != .pressed)
-                            break :blk;
-                        switch (key.keysym.sym) {
-                            .q => {
-                                log.trace(@src(), "quiting...");
-                                running = false;
-                            },
+                .key => |key| blk: {
+                    if (key.state != .pressed)
+                        break :blk;
+                    switch (key.keysym.sym) {
+                        .q => {
+                            log.trace(@src(), "quiting...");
+                            running = false;
+                        },
 
-                            .r => {
-                                should_reload_dynlib = true;
-                                if (debug_mode)
-                                    show_failed_reset = false;
-                            },
+                        .r => {
+                            should_reload_dynlib = true;
 
-                            .h => {
-                                tracy.message("greet");
+                            shown_texture_suboptimal = false;
+                            shown_arena_failed_reset = false;
+                        },
 
-                                const name = "ketan";
+                        .h => {
+                            tracy.message("greet");
 
-                                log.tracekv(@src(), "doing greet", .{ .name = name });
-                                dynlib.api.greet(name);
-                            },
+                            const name = "ketan";
 
-                            .f => {
-                                const msg = try std.fmt.allocPrint(
-                                    arena_allocator,
-                                    "Some int: {d}",
-                                    .{15},
-                                );
-                                dynlib.api.greet(msg);
-                            },
+                            log.tracekv(@src(), "doing greet", .{ .name = name });
+                            dynlib.api.greet(name);
+                        },
 
-                            .l => {
-                                tracy.message("test log");
-                                log.tracefkv(
-                                    @src(),
-                                    "test log message that {s}",
-                                    .{"allocates"},
-                                    .{
-                                        .foo = "bar",
-                                        .int = 42,
-                                        .float = 36.7,
-                                        .boolean = false,
-                                    },
-                                );
-                            },
+                        .f => {
+                            const msg = try std.fmt.allocPrint(
+                                arena_allocator,
+                                "Some int: {d}",
+                                .{15},
+                            );
+                            dynlib.api.greet(msg);
+                        },
 
-                            else => {},
-                        }
-                    },
-
-                    .window => |win| switch (win.event) {
-                        .resized => {
-                            const width = win.data1;
-                            const height = win.data2;
-                            config.width = @intCast(width);
-                            config.height = @intCast(height);
-
-                            surface.configure(&config);
+                        .l => {
+                            tracy.message("test log");
+                            log.tracefkv(
+                                @src(),
+                                "test log message that {s}",
+                                .{"allocates"},
+                                .{
+                                    .foo = "bar",
+                                    .int = 42,
+                                    .float = 36.7,
+                                    .boolean = false,
+                                },
+                            );
                         },
 
                         else => {},
+                    }
+                },
+
+                .window => |win| switch (win.event) {
+                    .resized => {
+                        const width = win.data1;
+                        const height = win.data2;
+                        config.width = @intCast(width);
+                        config.height = @intCast(height);
+
+                        surface.configure(&config);
                     },
 
                     else => {},
-                }
+                },
+
+                else => {},
             }
         }
 
@@ -485,12 +490,13 @@ fn run(allocator: Allocator) !ExitCode {
             //   (don't realy want it running as fast a possible)
             //  or if it should be in its own timestep
             //  or just stay here
+            //
             // FIXME: Limit this accordingly!
             //  we should first figure out a good limit
             const area_reset_success = arena.reset(.retain_capacity);
             tracing_arena_allocator.discard();
-            if (debug_mode and !area_reset_success and !show_failed_reset) {
-                show_failed_reset = true;
+            if (debug_mode and !area_reset_success and !shown_arena_failed_reset) {
+                shown_arena_failed_reset = true;
                 log.err(
                     @src(),
                     "arena reset failed. This is likely to happen again " ++
@@ -537,7 +543,9 @@ fn run(allocator: Allocator) !ExitCode {
             switch (surface_texture.status) {
                 .success => {
                     // TODO: check surface_texture.suboptimal
-                    if (surface_texture.suboptimal != 0) {
+                    if (!shown_texture_suboptimal and surface_texture.suboptimal != 0) {
+                        // FIXME: triggers when using x11 backend for sdl
+                        shown_texture_suboptimal = true;
                         log.warn(@src(), "surface texture is suboptimal");
                     }
                 },
@@ -574,8 +582,9 @@ fn run(allocator: Allocator) !ExitCode {
             }) orelse return error.wgpu;
             defer command_encoder.release();
 
-            const color = dynlib.api.getColor();
+            command_encoder.insertDebugMarker("my debug marker");
 
+            const color = dynlib.api.getColor();
             const render_pass_encoder = command_encoder.beginRenderPass(&.{
                 .label = "Render pass encoder",
                 .color_attachment_count = 1,

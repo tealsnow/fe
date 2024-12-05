@@ -7,6 +7,9 @@ text rendering:
         Harfbuzz
     altas/textures
         msdfgen (harder) or stb_truetype/freetype
+            slow? maybe
+            macos uses signed distance fields
+
         we will need to implement our own atlas packing though
         https://raw.githubusercontent.com/rougier/freetype-gl/master/doc/RectangleBinPack.pdf
     rendering
@@ -16,5 +19,10 @@ other:
     svg rendering
         nanovg?
 
-
-- [ ] wgpu in sdl
+tools that should work:
+- [x] tracy
+- [ ] valgrind
+    - [ ] memcheck
+    - [ ] cachegrind
+    - [x] callgrind
+- [x] renderdoc
