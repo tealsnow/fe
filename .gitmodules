@@ -1,3 +1,7 @@
 [submodule "libs/zig-tracy/tracy"]
 	path = libs/zig-tracy/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "imgui"]
+    path = libs/cimgui/imgui
+    url = https://github.com/ocornut/imgui.git
+    branch = docking

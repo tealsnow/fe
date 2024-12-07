@@ -81,42 +81,40 @@ pub const Window = opaque {
         h: c_int,
     };
 
-    pub const Flags = packed struct {
-        fullscreen: bool = false,
-        opengl: bool = false,
-        shown: bool = false,
-        hidden: bool = false,
-        borderless: bool = false,
-        resizable: bool = false,
-        minimized: bool = false,
-        maximized: bool = false,
-        input_grabbed: bool = false,
-        input_focus: bool = false,
-        mouse_focus: bool = false,
-        foreign: bool = false,
-        fullscreen_desktop: bool = false,
-        allow_highdpi: bool = false,
-        mouse_capture: bool = false,
-        _padding: u17 = 0,
-
-        pub fn fromInt(value: u32) Flags {
-            return @bitCast(value);
-        }
-
-        pub fn toInt(self: Flags) u32 {
-            return @bitCast(self);
-        }
-
-        comptime {
-            std.debug.assert(@sizeOf(Flags) == @sizeOf(u32));
-        }
+    pub const Flag = struct {
+        pub const fullscreen = @as(Flags, c.SDL_WINDOW_FULLSCREEN);
+        pub const opengl = @as(Flags, c.SDL_WINDOW_OPENGL);
+        pub const shown = @as(Flags, c.SDL_WINDOW_SHOWN);
+        pub const hidden = @as(Flags, c.SDL_WINDOW_HIDDEN);
+        pub const borderless = @as(Flags, c.SDL_WINDOW_BORDERLESS);
+        pub const resizable = @as(Flags, c.SDL_WINDOW_RESIZABLE);
+        pub const minimized = @as(Flags, c.SDL_WINDOW_MINIMIZED);
+        pub const maximized = @as(Flags, c.SDL_WINDOW_MAXIMIZED);
+        pub const mouse_grabbed = @as(Flags, c.SDL_WINDOW_MOUSE_GRABBED);
+        pub const input_focus = @as(Flags, c.SDL_WINDOW_INPUT_FOCUS);
+        pub const mouse_focus = @as(Flags, c.SDL_WINDOW_MOUSE_FOCUS);
+        pub const fullscreen_desktop = @as(Flags, c.SDL_WINDOW_FULLSCREEN_DESKTOP);
+        pub const foreign = @as(Flags, c.SDL_WINDOW_FOREIGN);
+        pub const allow_highdpi = @as(Flags, c.SDL_WINDOW_ALLOW_HIGHDPI);
+        pub const mouse_capture = @as(Flags, c.SDL_WINDOW_MOUSE_CAPTURE);
+        pub const always_on_top = @as(Flags, c.SDL_WINDOW_ALWAYS_ON_TOP);
+        pub const skip_taskbar = @as(Flags, c.SDL_WINDOW_SKIP_TASKBAR);
+        pub const utility = @as(Flags, c.SDL_WINDOW_UTILITY);
+        pub const tooltip = @as(Flags, c.SDL_WINDOW_TOOLTIP);
+        pub const popup_menu = @as(Flags, c.SDL_WINDOW_POPUP_MENU);
+        pub const keyboard_grabbed = @as(Flags, c.SDL_WINDOW_KEYBOARD_GRABBED);
+        pub const vulkan = @as(Flags, c.SDL_WINDOW_VULKAN);
+        pub const metal = @as(Flags, c.SDL_WINDOW_METAL);
+        pub const input_grabbed = @as(Flags, c.SDL_WINDOW_INPUT_GRABBED);
     };
+
+    pub const Flags = c_uint;
 
     pub fn init(params: struct {
         title: [*c]const u8,
-        position: Position = .{},
+        position: Position,
         size: Size,
-        flags: Flags = .{},
+        flags: Flags,
     }) Error!*Window {
         const pos = params.position.resolve();
         const window = c.SDL_CreateWindow(
@@ -125,7 +123,7 @@ pub const Window = opaque {
             pos.y,
             params.size.w,
             params.size.h,
-            params.flags.toInt(),
+            params.flags,
         ) orelse
             return error.Sdl;
         return @ptrCast(window);
@@ -143,6 +141,10 @@ pub const Window = opaque {
         var s: Size = undefined;
         c.SDL_GetWindowSize(@ptrCast(self), &s.w, &s.h);
         return s;
+    }
+
+    pub fn getID(self: *Window) u32 {
+        return c.SDL_GetWindowID(@ptrCast(self));
     }
 };
 
@@ -750,6 +752,7 @@ pub const Keysym = extern struct {
 };
 
 pub const Event = struct {
+    original: *const c.SDL_Event,
     timestamp: u32, // ms
     type: Type,
 
@@ -916,7 +919,7 @@ pub const Event = struct {
 
             else => .todo,
         };
-        return .{ .timestamp = event.common.timestamp, .type = ty };
+        return .{ .original = event, .timestamp = event.common.timestamp, .type = ty };
     }
 
     fn createKeyboardEvent(key: c.SDL_KeyboardEvent) KeyboardEvent {

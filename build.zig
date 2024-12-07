@@ -104,6 +104,38 @@ pub fn build(b: *std.Build) void {
     });
     commonlib.root_module.addImport("wgpu", wgpu_native_dep.module("wgpu"));
 
+    const cxx_flags = [_][]const u8{
+        // "-O2",
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fPIC",
+    };
+    commonlib.addIncludePath(b.path("./libs/cimgui/imgui/"));
+    commonlib.addIncludePath(b.path("./libs/cimgui/"));
+
+    commonlib.addCSourceFiles(.{
+        .flags = &cxx_flags,
+        .root = b.path("./libs/cimgui/"),
+        .files = &[_][]const u8{
+            "imgui/imgui.cpp",
+            "imgui/imgui_draw.cpp",
+            "imgui/imgui_demo.cpp",
+            "imgui/imgui_tables.cpp",
+            "imgui/imgui_widgets.cpp",
+            "cimgui.cpp",
+        },
+    });
+
+    commonlib.addIncludePath(b.path("./src/common/imgui/"));
+    commonlib.addCSourceFiles(.{
+        .flags = &cxx_flags,
+        .root = b.path("./src/common/imgui/"),
+        .files = &[_][]const u8{
+            "imgui_impl_sdl2.cpp",
+            "imgui_impl_sdlrenderer2.cpp",
+        },
+    });
+
     const dynlib = b.addSharedLibrary(.{
         .name = "dynlib",
         .root_source_file = b.path("src/dynlib/dynlib.zig"),

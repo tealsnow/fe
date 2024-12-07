@@ -18,6 +18,7 @@ const ft = common.ft;
 const hb = common.hb;
 const wgpu = common.wgpu;
 const wgpu_sdl = common.wgpu_sdl;
+const imgui = common.imgui;
 
 // const enable_vsync = true;
 const enable_vsync = false;
@@ -111,39 +112,43 @@ fn run(allocator: Allocator) !ExitCode {
             "running with the assumption that a debugger will be attached",
         );
 
-    const font_path = try fc.getFontForFamilyName(allocator, "arial");
-    // const font_path = try fc.getFontForFamilyName(allocator, "monospace");
-    // defer allocator.free(font_path);
+    // const font_path = try fc.getFontForFamilyName(allocator, "arial");
+    // // const font_path = try fc.getFontForFamilyName(allocator, "monospace");
+    // // defer allocator.free(font_path);
 
-    log.tracekv(@src(), "got font", .{ .path = font_path });
+    // log.tracekv(@src(), "got font", .{ .path = font_path });
 
-    var ft_lib: ft.FT_Library = undefined;
-    if (ft.FT_Init_FreeType(&ft_lib) != 0) return error.FtInit;
-    defer _ = ft.FT_Done_FreeType(ft_lib);
-    log.trace(@src(), "loaded truetype");
+    // var ft_lib: ft.FT_Library = undefined;
+    // if (ft.FT_Init_FreeType(&ft_lib) != 0) return error.FtInit;
+    // defer _ = ft.FT_Done_FreeType(ft_lib);
+    // log.trace(@src(), "loaded truetype");
 
-    var ft_face: ft.FT_Face = undefined;
-    if (ft.FT_New_Face(ft_lib, font_path, 0, &ft_face) != 0)
-        return error.FtNewFace;
-    defer _ = ft.FT_Done_Face(ft_face);
-    log.trace(@src(), "loaded truetype face");
+    // var ft_face: ft.FT_Face = undefined;
+    // if (ft.FT_New_Face(ft_lib, font_path, 0, &ft_face) != 0)
+    //     return error.FtNewFace;
+    // defer _ = ft.FT_Done_Face(ft_face);
+    // log.trace(@src(), "loaded truetype face");
 
-    allocator.free(font_path);
+    // allocator.free(font_path);
 
-    _ = ft.FT_Set_Pixel_Sizes(ft_face, 0, 24);
+    // _ = ft.FT_Set_Pixel_Sizes(ft_face, 0, 24);
 
-    const hb_font = hb.hb_ft_font_create(@ptrCast(ft_face), null);
-    defer hb.hb_font_destroy(hb_font);
-    const hb_buffer = hb.hb_buffer_create();
-    defer hb.hb_buffer_destroy(hb_buffer);
-    log.trace(@src(), "setup hb");
+    // const hb_font = hb.hb_ft_font_create(@ptrCast(ft_face), null);
+    // defer hb.hb_font_destroy(hb_font);
+    // const hb_buffer = hb.hb_buffer_create();
+    // defer hb.hb_buffer_destroy(hb_buffer);
+    // log.trace(@src(), "setup hb");
 
     if (options.tracy_enable) {
         // NOTE(ketanr): I'm not sure if theres much need for this. The only
         //  usecase I can think of is just trying to so see and minimize
         //  allocations in our use of sdl. Time will tell
+        //  Or using the arena allocator for sdl during the loop?
         // var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", allocator);
-        var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", std.heap.raw_c_allocator);
+        var sdl_tracing_allocator = tracy.TracingAllocator.initNamed(
+            "sdl",
+            std.heap.raw_c_allocator,
+        );
         sdl_mem_allocator = sdl_tracing_allocator.allocator();
         sdl_mem_allocations = std.AutoHashMap(usize, usize).init(allocator);
 
@@ -160,20 +165,52 @@ fn run(allocator: Allocator) !ExitCode {
     try sdl.init(.{ .video = true, .events = true });
     defer sdl.quit();
 
-    const window = try sdl.Window.init(.{
+    const main_window = try sdl.Window.init(.{
         .title = "fe",
         .position = .{
             .x = .centered,
             .y = .centered,
         },
         .size = .{ .w = 800, .h = 600 },
+        .flags = sdl.Window.Flag.hidden | sdl.Window.Flag.allow_highdpi | sdl.Window.Flag.resizable,
+    });
+    defer main_window.deinit();
+
+    const test_window = try sdl.Window.init(.{
+        .title = "fe - aux window",
+        .position = .{},
+        .size = .{ .w = 800, .h = 600 },
+        .flags = sdl.Window.Flag.hidden | sdl.Window.Flag.allow_highdpi | sdl.Window.Flag.resizable,
+    });
+    defer test_window.deinit();
+
+    const test_renderer = try sdl.Renderer.init(.{
+        .window = test_window,
         .flags = .{
-            .hidden = true,
-            .allow_highdpi = true,
-            .resizable = true,
+            .present_vsync = false,
+            .accelerated = true,
         },
     });
-    defer window.deinit();
+    defer test_renderer.deinit();
+
+    // imgui.
+    _ = imgui.c.igCreateContext(null);
+    defer imgui.c.igDestroyContext(null);
+    const io = imgui.c.igGetIO();
+    io.*.ConfigFlags |= imgui.c.ImGuiConfigFlags_NavEnableKeyboard;
+    io.*.ConfigFlags |= imgui.c.ImGuiConfigFlags_NavEnableGamepad;
+    io.*.ConfigFlags |= imgui.c.ImGuiConfigFlags_DockingEnable;
+
+    imgui.c.igStyleColorsDark(null);
+
+    if (!imgui.impl_sdl2.c.ImGui_ImplSDL2_InitForSDLRenderer(@ptrCast(test_window), @ptrCast(test_renderer)))
+        return error.imgui_sdl;
+    defer imgui.impl_sdl2.c.ImGui_ImplSDL2_Shutdown();
+    if (!imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_Init(@ptrCast(test_renderer)))
+        return error.imgui_sdlrenderer;
+    defer imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_Shutdown();
+
+    // start wgpu setup
 
     const instance_desc = wgpu.InstanceDescriptor{
         .next_in_chain = null,
@@ -187,7 +224,7 @@ fn run(allocator: Allocator) !ExitCode {
     const instance = wgpu.Instance.create(&instance_desc.withNativeExtras(&instance_desc_extra)) orelse return error.wgpu;
     defer instance.release();
 
-    const surface = try wgpu_sdl.createSurface(instance, window) orelse return error.sdlwgpu;
+    const surface = try wgpu_sdl.createSurface(instance, main_window) orelse return error.sdlwgpu;
     defer surface.release();
 
     const adapter_res = instance.requestAdapterSync(
@@ -299,7 +336,7 @@ fn run(allocator: Allocator) !ExitCode {
     };
 
     {
-        const window_size = window.size();
+        const window_size = main_window.size();
         config.width = @intCast(window_size.w);
         config.height = @intCast(window_size.h);
     }
@@ -307,12 +344,6 @@ fn run(allocator: Allocator) !ExitCode {
     surface.configure(&config);
 
     // end wgpu setup
-
-    // const renderer = try sdl.Renderer.init(.{
-    //     .window = window,
-    //     .flags = .{ .accelerated = true },
-    // });
-    // defer renderer.deinit();
 
     var dynlib = try Dynlib.load(allocator);
     defer dynlib.unload(allocator);
@@ -356,9 +387,12 @@ fn run(allocator: Allocator) !ExitCode {
     var update_tick_count: u32 = 0;
     var render_frame_count: u32 = 0;
 
+    const old_log_alloc = common.log.global_state.allocator;
     common.log.global_state.allocator = arena_allocator;
+    defer common.log.global_state.allocator = old_log_alloc;
 
-    window.show();
+    main_window.show();
+    test_window.show();
 
     init_zone.deinit();
     while (running) {
@@ -377,14 +411,18 @@ fn run(allocator: Allocator) !ExitCode {
         //     "elapsed",
         //     .{ .elapsed_ms = elapsed_ms, .timeout = timeout },
         // );
-        if (sdl.Event.waitTimeout(timeout)) |ev| {
+        if (sdl.Event.waitTimeout(timeout)) |ev| ev_block: {
             const events_zone = tracy.initZone(@src(), .{ .name = "events" });
             defer events_zone.deinit();
+
+            if (imgui.impl_sdl2.c.ImGui_ImplSDL2_ProcessEvent(@ptrCast(ev.original)))
+                break :ev_block;
 
             switch (ev.type) {
                 .quit => {
                     log.trace(@src(), "quit event recived, quiting...");
                     running = false;
+                    // log.trace(@src(), "ignoreing quit request");
                 },
 
                 .key => |key| blk: {
@@ -442,12 +480,24 @@ fn run(allocator: Allocator) !ExitCode {
 
                 .window => |win| switch (win.event) {
                     .resized => {
-                        const width = win.data1;
-                        const height = win.data2;
-                        config.width = @intCast(width);
-                        config.height = @intCast(height);
+                        if (win.windowID == main_window.getID()) {
+                            const width = win.data1;
+                            const height = win.data2;
+                            config.width = @intCast(width);
+                            config.height = @intCast(height);
 
-                        surface.configure(&config);
+                            surface.configure(&config);
+                        }
+                    },
+
+                    .close => {
+                        log.tracekv(
+                            @src(),
+                            "window close request recieved",
+                            .{ .window = win.windowID },
+                        );
+
+                        running = false;
                     },
 
                     else => {},
@@ -532,8 +582,34 @@ fn run(allocator: Allocator) !ExitCode {
                 fps_frame_count = 0;
                 fps_last_time = current_time;
 
-                log.infof(@src(), "fps {d:.2}", .{fps});
-                // _ = fps;
+                // log.infof(@src(), "fps {d:.2}", .{fps});
+                _ = fps;
+            }
+
+            { // imgui test window
+                const imgui_zone = tracy.initZone(@src(), .{ .name = "imgui" });
+                defer imgui_zone.deinit();
+
+                imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_NewFrame();
+                imgui.impl_sdl2.c.ImGui_ImplSDL2_NewFrame();
+                imgui.c.igNewFrame();
+
+                var show_demo_window = false;
+                imgui.c.igShowDemoWindow(&show_demo_window);
+
+                imgui.c.igRender();
+                _ = sdl.c.SDL_RenderSetScale(
+                    @ptrCast(test_renderer),
+                    io.*.DisplayFramebufferScale.x,
+                    io.*.DisplayFramebufferScale.y,
+                );
+                test_renderer.setDrawColor(255, 255, 255, 255) catch {};
+                test_renderer.clear() catch {};
+                imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_RenderDrawData(
+                    @ptrCast(imgui.c.igGetDrawData()),
+                    @ptrCast(test_renderer),
+                );
+                test_renderer.present();
             }
 
             var surface_texture: wgpu.SurfaceTexture = undefined;
@@ -550,10 +626,16 @@ fn run(allocator: Allocator) !ExitCode {
                     }
                 },
                 .timeout, .outdated, .lost => {
-                    if (surface_texture.texture != null)
-                        surface_texture.texture.?.release();
+                    log.infokv(
+                        @src(),
+                        "Recreating surface texture",
+                        .{ .status = surface_texture.status },
+                    );
 
-                    const size = window.size();
+                    if (surface_texture.texture) |texture|
+                        texture.release();
+
+                    const size = main_window.size();
                     if (size.w != 0 and size.h != 0) {
                         config.width = @intCast(size.w);
                         config.height = @intCast(size.h);

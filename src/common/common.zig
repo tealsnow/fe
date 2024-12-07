@@ -19,3 +19,5 @@ pub const hb = @cImport({
 
 pub const wgpu = @import("wgpu");
 pub const wgpu_sdl = @import("wgpu_sdl.zig");
+
+pub const imgui = @import("imgui/imgui.zig");
