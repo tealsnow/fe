@@ -6,8 +6,18 @@ const Api = @This();
 onLoad: *const fn (allocator: std.mem.Allocator, log_state: log.State) void,
 onUnload: *const fn (allocator: std.mem.Allocator) void,
 
+init: *const fn (allocator: std.mem.Allocator) void,
+deinit: *const fn (allocator: std.mem.Allocator) void,
+
+getMemory: *const fn () *anyopaque,
+setMemory: *const fn (memory: *anyopaque) void,
+
 getColor: *const fn () Color,
 greet: *const fn (name: []const u8) void,
+
+getCounter: *const fn () u32,
+
+doImgui: *const fn () void,
 
 pub const GetApiSig = struct {
     pub const Name = "fe__getApi";

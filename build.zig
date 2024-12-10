@@ -27,20 +27,21 @@ pub fn build(b: *std.Build) void {
     // but optimizes better and gives better debugging symbols
     //
     // NOTE: not sure how and when but this disabling this may induce some
-    //  wierdness with hot reloading
+    //  weirdness with hot reloading
+    //  Hot reloading doesn't work at all without this now with wgpu
     //
     // FIXME: not working with zig 0.14.0-dev
     const use_llvm = b.option(
         bool,
         "use_llvm",
-        "Use llvm (default: true) ",
-    ) orelse false;
+        "Use llvm (default: true)",
+    ) orelse true;
 
     const use_lld = b.option(
         bool,
         "use_lld",
         "Use lld (default: false)",
-    ) orelse false;
+    ) orelse use_llvm;
 
     // Note: enabling tracy also seems to completely break hot reloading :(
     const tracy_enable = b.option(

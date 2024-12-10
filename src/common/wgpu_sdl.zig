@@ -1,3 +1,5 @@
+const builtin = @import("builtin");
+
 const wgpu = @import("wgpu");
 const sdl = @import("sdl.zig");
 
@@ -9,7 +11,7 @@ pub fn createSurface(instance: *wgpu.Instance, window: *sdl.Window) !?*wgpu.Surf
     _ = sdl.c.SDL_GetWindowWMInfo(@ptrCast(window), &info);
 
     switch (info.subsystem) {
-        sdl.c.SDL_SYSWM_X11 => {
+        sdl.c.SDL_SYSWM_X11 => if (builtin.target.os.tag == .linux) {
             log.debug(@src(), "using x11 backend");
 
             const desc_x11 = wgpu.SurfaceDescriptorFromXlibWindow{
@@ -27,8 +29,8 @@ pub fn createSurface(instance: *wgpu.Instance, window: *sdl.Window) !?*wgpu.Surf
             };
 
             return instance.createSurface(&desc);
-        },
-        sdl.c.SDL_SYSWM_WAYLAND => {
+        } else @panic("got X11 as sdl subsystem on non Linux platform"),
+        sdl.c.SDL_SYSWM_WAYLAND => if (builtin.target.os.tag == .linux) {
             log.debug(@src(), "using wayland backend");
 
             const desc_wl = wgpu.SurfaceDescriptorFromWaylandSurface{
@@ -46,9 +48,50 @@ pub fn createSurface(instance: *wgpu.Instance, window: *sdl.Window) !?*wgpu.Surf
             };
 
             return instance.createSurface(&desc);
-        },
+        } else @panic("got Wayland as sdl subsystem on non Linux platform"),
+        sdl.c.SDL_SYSWM_WINDOWS => if (builtin.target.os.tag == .windows) {
+            const desc_win = wgpu.SurfaceDescriptorFromWindowsHWND{
+                .chain = .{
+                    .next = null,
+                    .s_type = .surface_descriptor_from_wayland_surface,
+                },
+                .hwnd = info.info.win.window,
+                .hinstance = info.info.win.hinstance,
+            };
+
+            const desc = wgpu.SurfaceDescriptor{
+                .label = "Windows Surface Descriptor",
+                .next_in_chain = @ptrCast(&desc_win),
+            };
+
+            return instance.createSurface(&desc);
+        } else @panic("got Windows as sdl subsystem on non Windows platform"),
+        sdl.c.SDL_SYSWM_COCOA => if (builtin.target.os.tag == .macos) {
+            log.err(@src(), "TODO: implement cocoa support");
+            return error.todo;
+
+            // TODO: implment cocoa/macos support
+            //  I mean just look at the code below, I don't even know if I can
+            //  do this obj-c bullshit in zig, let alone debug it
+
+            // NSWindow * nsWindow = info.info.cocoa.window;
+            // [nsWindow.contentView setWantsLayer : YES];
+            // id metalLayer = [CAMetalLayer layer];
+            // [nsWindow.contentView setLayer : metalLayer];
+
+            // WGPUSurfaceDescriptorFromMetalLayer surfaceDescriptorFromMetalLayer;
+            // surfaceDescriptorFromMetalLayer.chain.next = 0;
+            // surfaceDescriptorFromMetalLayer.chain.sType = WGPUSType_SurfaceDescriptorFromMetalLayer;
+            // surfaceDescriptorFromMetalLayer.layer = metalLayer;
+
+            // WGPUSurfaceDescriptor surfaceDescriptor;
+            // surfaceDescriptor.label = 0;
+            // surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescriptorFromMetalLayer;
+
+            // return wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
+        } else @panic("got Cocoa as sdl subsystem on non OSX platform"),
         else => {
-            log.err(@src(), "using unsupported backend");
+            log.err(@src(), "using unsupported sdl backend/platform");
             return error.unsupported;
         },
     }

@@ -97,8 +97,8 @@ const ExitCode = enum(u8) {
 fn run(allocator: Allocator) !ExitCode {
     const init_zone = tracy.initZone(@src(), .{ .name = "init" });
 
-    log.debug(@src(), "starting application");
-    defer log.debug(@src(), "exiting application");
+    log.info(@src(), "starting application");
+    defer log.info(@src(), "exiting application");
 
     if (debug_mode)
         log.info(@src(), "running in debug mode");
@@ -111,6 +111,9 @@ fn run(allocator: Allocator) !ExitCode {
             @src(),
             "running with the assumption that a debugger will be attached",
         );
+
+    log.debug(@src(), "installing signal handlers");
+    try installSigaction();
 
     // const font_path = try fc.getFontForFamilyName(allocator, "arial");
     // // const font_path = try fc.getFontForFamilyName(allocator, "monospace");
@@ -160,11 +163,11 @@ fn run(allocator: Allocator) !ExitCode {
         });
     }
 
-    try installSigaction();
-
+    log.debug(@src(), "initalizing sdl");
     try sdl.init(.{ .video = true, .events = true });
     defer sdl.quit();
 
+    log.debug(@src(), "creating main window (starting hidden)");
     const main_window = try sdl.Window.init(.{
         .title = "fe",
         .position = .{
@@ -176,6 +179,7 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer main_window.deinit();
 
+    log.debug(@src(), "creating test window (starting hidden)");
     const test_window = try sdl.Window.init(.{
         .title = "fe - aux window",
         .position = .{},
@@ -193,9 +197,9 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer test_renderer.deinit();
 
-    // imgui.
-    _ = imgui.c.igCreateContext(null);
-    defer imgui.c.igDestroyContext(null);
+    log.debug(@src(), "initializing imgui");
+    const imgui_context = imgui.c.igCreateContext(null);
+    defer imgui.c.igDestroyContext(imgui_context);
     const io = imgui.c.igGetIO();
     io.*.ConfigFlags |= imgui.c.ImGuiConfigFlags_NavEnableKeyboard;
     io.*.ConfigFlags |= imgui.c.ImGuiConfigFlags_NavEnableGamepad;
@@ -212,6 +216,9 @@ fn run(allocator: Allocator) !ExitCode {
 
     // start wgpu setup
 
+    log.debug(@src(), "initializing wgpu");
+
+    log.debug(@src(), "obtaining instance");
     const instance_desc = wgpu.InstanceDescriptor{
         .next_in_chain = null,
     };
@@ -224,9 +231,11 @@ fn run(allocator: Allocator) !ExitCode {
     const instance = wgpu.Instance.create(&instance_desc.withNativeExtras(&instance_desc_extra)) orelse return error.wgpu;
     defer instance.release();
 
+    log.debug(@src(), "obtaining surface");
     const surface = try wgpu_sdl.createSurface(instance, main_window) orelse return error.sdlwgpu;
     defer surface.release();
 
+    log.debug(@src(), "obtaining adapter");
     const adapter_res = instance.requestAdapterSync(
         &.{ .power_preference = .low_power },
     );
@@ -234,6 +243,7 @@ fn run(allocator: Allocator) !ExitCode {
     const adapter = adapter_res.adapter.?;
     defer adapter.release();
 
+    log.debug(@src(), "obtaining device");
     const device_res = adapter.requestDeviceSync(&.{
         .next_in_chain = null,
         .label = "My Device",
@@ -249,6 +259,7 @@ fn run(allocator: Allocator) !ExitCode {
     const device = device_res.device.?;
     defer device.release();
 
+    log.debug(@src(), "obtaining queue");
     const queue = device.getQueue() orelse return error.wgpu;
     defer queue.release();
 
@@ -266,6 +277,7 @@ fn run(allocator: Allocator) !ExitCode {
         \\}
     ;
 
+    log.debug(@src(), "creating shader");
     const shader_module = device.createShaderModule(&.{
         .label = "shader",
         .next_in_chain = @ptrCast(
@@ -279,6 +291,7 @@ fn run(allocator: Allocator) !ExitCode {
     }) orelse return error.wgpu;
     defer shader_module.release();
 
+    log.debug(@src(), "creating pipline layout");
     const pipeline_layout = device.createPipelineLayout(&.{
         .label = "Pipeline layout",
         .bind_group_layout_count = 0,
@@ -292,6 +305,7 @@ fn run(allocator: Allocator) !ExitCode {
         break :blk caps;
     };
 
+    log.debug(@src(), "creating render pipline");
     const render_pipeline = device.createRenderPipeline(&.{
         .label = "Render pipeline",
         .layout = pipeline_layout,
@@ -320,6 +334,7 @@ fn run(allocator: Allocator) !ExitCode {
     }) orelse return error.wgpu;
     defer render_pipeline.release();
 
+    log.debug(@src(), "configuring surface");
     var config = wgpu.SurfaceConfiguration{
         .device = device,
         .usage = wgpu.TextureUsage.render_attachment,
@@ -327,6 +342,7 @@ fn run(allocator: Allocator) !ExitCode {
 
         // .present_mode = .fifo, // vsync
         // .present_mode = .immediate,
+        // TODO: test to see if .fifo_relaxed may work better for vsync
         .present_mode = if (enable_vsync) .fifo else .immediate,
 
         .alpha_mode = surface_capabilities.alpha_modes[0],
@@ -342,11 +358,15 @@ fn run(allocator: Allocator) !ExitCode {
     }
 
     surface.configure(&config);
+    log.debug(@src(), "finished wgpu setup");
 
     // end wgpu setup
 
+    log.debug(@src(), "initializing dynlib");
     var dynlib = try Dynlib.load(allocator);
     defer dynlib.unload(allocator);
+    dynlib.api.init(allocator);
+    defer dynlib.api.deinit(allocator);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
     // var arena = std.heap.ArenaAllocator.init(allocator);
@@ -395,6 +415,7 @@ fn run(allocator: Allocator) !ExitCode {
     test_window.show();
 
     init_zone.deinit();
+    log.debug(@src(), "initialization done");
     while (running) {
         tracy.frameMark();
 
@@ -406,31 +427,25 @@ fn run(allocator: Allocator) !ExitCode {
         // elapsed is measured in nano-seconds where sdl wants miliseconds
         const elapsed_ms = elapsed / 1_000_000;
         const timeout = @as(c_int, @intCast(event_timeout_ms -| elapsed_ms));
-        // log.tracekv(
-        //     @src(),
-        //     "elapsed",
-        //     .{ .elapsed_ms = elapsed_ms, .timeout = timeout },
-        // );
-        if (sdl.Event.waitTimeout(timeout)) |ev| ev_block: {
+        if (sdl.Event.waitTimeout(timeout)) |ev| events_block: {
             const events_zone = tracy.initZone(@src(), .{ .name = "events" });
             defer events_zone.deinit();
 
             if (imgui.impl_sdl2.c.ImGui_ImplSDL2_ProcessEvent(@ptrCast(ev.original)))
-                break :ev_block;
+                break :events_block;
 
             switch (ev.type) {
                 .quit => {
-                    log.trace(@src(), "quit event recived, quiting...");
+                    log.debug(@src(), "quit event recived, quiting...");
                     running = false;
-                    // log.trace(@src(), "ignoreing quit request");
                 },
 
-                .key => |key| blk: {
+                .key => |key| key_block: {
                     if (key.state != .pressed)
-                        break :blk;
+                        break :key_block;
                     switch (key.keysym.sym) {
                         .q => {
-                            log.trace(@src(), "quiting...");
+                            log.info(@src(), "quiting...");
                             running = false;
                         },
 
@@ -442,36 +457,12 @@ fn run(allocator: Allocator) !ExitCode {
                         },
 
                         .h => {
-                            tracy.message("greet");
-
-                            const name = "ketan";
-
-                            log.tracekv(@src(), "doing greet", .{ .name = name });
-                            dynlib.api.greet(name);
+                            dynlib.api.greet("World");
                         },
 
-                        .f => {
-                            const msg = try std.fmt.allocPrint(
-                                arena_allocator,
-                                "Some int: {d}",
-                                .{15},
-                            );
-                            dynlib.api.greet(msg);
-                        },
-
-                        .l => {
-                            tracy.message("test log");
-                            log.tracefkv(
-                                @src(),
-                                "test log message that {s}",
-                                .{"allocates"},
-                                .{
-                                    .foo = "bar",
-                                    .int = 42,
-                                    .float = 36.7,
-                                    .boolean = false,
-                                },
-                            );
+                        .p => {
+                            const counter = dynlib.api.getCounter();
+                            log.tracef(@src(), "counter: {d}", .{counter});
                         },
 
                         else => {},
@@ -491,9 +482,9 @@ fn run(allocator: Allocator) !ExitCode {
                     },
 
                     .close => {
-                        log.tracekv(
+                        log.debugkv(
                             @src(),
-                            "window close request recieved",
+                            "close request recieved",
                             .{ .window = win.windowID },
                         );
 
@@ -594,22 +585,31 @@ fn run(allocator: Allocator) !ExitCode {
                 imgui.impl_sdl2.c.ImGui_ImplSDL2_NewFrame();
                 imgui.c.igNewFrame();
 
-                var show_demo_window = false;
-                imgui.c.igShowDemoWindow(&show_demo_window);
+                defer {
+                    imgui.c.igRender();
+                    _ = sdl.c.SDL_RenderSetScale(
+                        @ptrCast(test_renderer),
+                        io.*.DisplayFramebufferScale.x,
+                        io.*.DisplayFramebufferScale.y,
+                    );
+                    test_renderer.setDrawColor(255, 255, 255, 255) catch {};
+                    test_renderer.clear() catch {};
+                    imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_RenderDrawData(
+                        @ptrCast(imgui.c.igGetDrawData()),
+                        @ptrCast(test_renderer),
+                    );
+                    test_renderer.present();
+                }
 
-                imgui.c.igRender();
-                _ = sdl.c.SDL_RenderSetScale(
-                    @ptrCast(test_renderer),
-                    io.*.DisplayFramebufferScale.x,
-                    io.*.DisplayFramebufferScale.y,
-                );
-                test_renderer.setDrawColor(255, 255, 255, 255) catch {};
-                test_renderer.clear() catch {};
-                imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_RenderDrawData(
-                    @ptrCast(imgui.c.igGetDrawData()),
-                    @ptrCast(test_renderer),
-                );
-                test_renderer.present();
+                imgui.c.igShowDemoWindow(null);
+
+                if (imgui.c.igBegin("my window", null, 0)) {
+                    const counter = dynlib.api.getCounter();
+                    imgui.c.igText("counter: %d", counter);
+                }
+                imgui.c.igEnd();
+
+                dynlib.api.doImgui();
             }
 
             var surface_texture: wgpu.SurfaceTexture = undefined;
@@ -697,6 +697,10 @@ fn run(allocator: Allocator) !ExitCode {
 
             queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
             surface.present();
+
+            // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= //
+            // ------------------------------- //
+            // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= //
 
             // const color = dynlib.api.getColor();
             // renderer.setDrawColor(color.r, color.g, color.b, 255) catch {};
@@ -830,7 +834,36 @@ pub const Dynlib = struct {
     }
 
     fn _load(dynlib: *Dynlib, allocator: Allocator) !void {
-        dynlib.lib = try std.DynLib.open(Path);
+        const open_path = switch (builtin.os.tag) {
+            // Windows locks open files, so it is a good idea to open a temp
+            // copied file as to avoid any locks
+            .windows => win_blk: {
+                const original_path = Path;
+
+                const last_dot = std.mem.lastIndexOf(u8, original_path, ".");
+                const last_slash = std.mem.lastIndexOf(u8, original_path, "/");
+
+                var temp_path_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                const temp_path = if (last_dot != null and (last_slash == null or last_dot.? > last_slash.?)) path_blk: {
+                    const base = original_path[0..last_dot.?];
+                    const ext = original_path[last_dot.?..];
+                    break :path_blk try std.fmt.bufPrint(&temp_path_buf, "{s}_temp{s}", .{ base, ext });
+                } else try std.fmt.bufPrint(&temp_path_buf, "{s}_temp", .{original_path});
+
+                const source_file = try std.fs.cwd().openFile(original_path, .{});
+                defer source_file.close();
+
+                // create/overwite the tempfile
+                const temp_file = try std.fs.cwd().createFile(temp_path, .{});
+                defer temp_file.close();
+                _ = try source_file.copyRangeAll(0, temp_file, 0, try source_file.getEndPos());
+
+                break :win_blk temp_path;
+            },
+            else => Path,
+        };
+
+        dynlib.lib = try std.DynLib.open(open_path);
         errdefer dynlib.lib.close();
 
         try common.Api.load(&dynlib.lib, &dynlib.api);
@@ -843,8 +876,10 @@ pub const Dynlib = struct {
     }
 
     pub fn reload(dynlib: *Dynlib, allocator: Allocator) !void {
+        const memory = dynlib.api.getMemory();
         dynlib.unload(allocator);
         try dynlib._load(allocator);
+        dynlib.api.setMemory(memory);
     }
 };
 
