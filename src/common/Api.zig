@@ -1,23 +1,31 @@
 const std = @import("std");
 const log = @import("log.zig");
 
+const sdl = @import("sdl.zig");
+
 const Api = @This();
 
+// FIXME: do we need these?
 onLoad: *const fn (allocator: std.mem.Allocator, log_state: log.State) void,
 onUnload: *const fn (allocator: std.mem.Allocator) void,
 
-init: *const fn (allocator: std.mem.Allocator) void,
+init: *const fn (allocator: std.mem.Allocator, window: *sdl.Window) void,
 deinit: *const fn (allocator: std.mem.Allocator) void,
 
 getMemory: *const fn () *anyopaque,
 setMemory: *const fn (memory: *anyopaque) void,
 
-getColor: *const fn () Color,
 greet: *const fn (name: []const u8) void,
 
 getCounter: *const fn () u32,
 
 doImgui: *const fn () void,
+
+onUpdate: *const fn () void,
+onRender: *const fn () void,
+
+// TODO: We should just have a generic event callback
+onResize: *const fn () void,
 
 pub const GetApiSig = struct {
     pub const Name = "fe__getApi";
@@ -39,9 +47,3 @@ pub fn load(lib: *std.DynLib, out_api: *Api) !void {
         return error.LookupError;
     get(out_api);
 }
-
-pub const Color = struct {
-    r: u8,
-    g: u8,
-    b: u8,
-};

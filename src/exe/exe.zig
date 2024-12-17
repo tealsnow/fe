@@ -20,12 +20,6 @@ const wgpu = common.wgpu;
 const wgpu_sdl = common.wgpu_sdl;
 const imgui = common.imgui;
 
-// const enable_vsync = true;
-const enable_vsync = false;
-
-const limit_framerate = true;
-// const limit_framerate = false;
-
 // FIXME: Keep all global state in one place
 var dynlib_recompiled = false;
 var dynlib_recompiling = false;
@@ -217,158 +211,13 @@ fn run(allocator: Allocator) !ExitCode {
         return error.imgui_sdlrenderer;
     defer imgui.impl_sdlrenderer2.c.ImGui_ImplSDLRenderer2_Shutdown();
 
-    // start wgpu setup
-
-    log.debug(@src(), "initializing wgpu");
-
-    log.debug(@src(), "obtaining instance");
-    const instance_desc = wgpu.InstanceDescriptor{
-        .next_in_chain = null,
-    };
-    var instance_desc_extra = wgpu.InstanceExtras{
-        .backends = wgpu.InstanceBackend.primary,
-        .flags = 0,
-        .dx12_shader_compiler = .undefined,
-        .gles3_minor_version = .automatic,
-    };
-    const instance = wgpu.Instance.create(&instance_desc.withNativeExtras(&instance_desc_extra)) orelse return error.wgpu;
-    defer instance.release();
-
-    log.debug(@src(), "obtaining surface");
-    const surface = try wgpu_sdl.createSurface(instance, main_window) orelse return error.sdlwgpu;
-    defer surface.release();
-
-    log.debug(@src(), "obtaining adapter");
-    const adapter_res = instance.requestAdapterSync(
-        &.{ .power_preference = .low_power },
-    );
-    if (adapter_res.status != .success) return error.wgpu;
-    const adapter = adapter_res.adapter.?;
-    defer adapter.release();
-
-    log.debug(@src(), "obtaining device");
-    const device_res = adapter.requestDeviceSync(&.{
-        .next_in_chain = null,
-        .label = "My Device",
-        .required_feature_count = 0,
-        .required_features = null,
-        .required_limits = null,
-        .default_queue = .{
-            .next_in_chain = null,
-            .label = "Default Queue",
-        },
-    });
-    if (device_res.status != .success) return error.wgpu;
-    const device = device_res.device.?;
-    defer device.release();
-
-    log.debug(@src(), "obtaining queue");
-    const queue = device.getQueue() orelse return error.wgpu;
-    defer queue.release();
-
-    const shader_src =
-        \\@vertex
-        \\fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-        \\    let x = f32(i32(in_vertex_index) - 1);
-        \\    let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-        \\    return vec4<f32>(x, y, 0.0, 1.0);
-        \\}
-        \\
-        \\@fragment
-        \\fn fs_main() -> @location(0) vec4<f32> {
-        \\    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
-        \\}
-    ;
-
-    log.debug(@src(), "creating shader");
-    const shader_module = device.createShaderModule(&.{
-        .label = "shader",
-        .next_in_chain = @ptrCast(
-            &wgpu.ShaderModuleWGSLDescriptor{
-                .chain = .{
-                    .s_type = .shader_module_wgsl_descriptor,
-                },
-                .code = shader_src,
-            },
-        ),
-    }) orelse return error.wgpu;
-    defer shader_module.release();
-
-    log.debug(@src(), "creating pipline layout");
-    const pipeline_layout = device.createPipelineLayout(&.{
-        .label = "Pipeline layout",
-        .bind_group_layout_count = 0,
-        .bind_group_layouts = &[_]*const wgpu.BindGroupLayout{},
-    }) orelse return error.wgpu;
-    defer pipeline_layout.release();
-
-    const surface_capabilities = blk: {
-        var caps: wgpu.SurfaceCapabilities = undefined;
-        surface.getCapabilities(adapter, &caps);
-        break :blk caps;
-    };
-
-    log.debug(@src(), "creating render pipline");
-    const render_pipeline = device.createRenderPipeline(&.{
-        .label = "Render pipeline",
-        .layout = pipeline_layout,
-        .vertex = .{
-            .module = shader_module,
-            .entry_point = "vs_main",
-        },
-        .fragment = &wgpu.FragmentState{
-            .module = shader_module,
-            .entry_point = "fs_main",
-            .target_count = 1,
-            .targets = &[_]wgpu.ColorTargetState{
-                wgpu.ColorTargetState{
-                    .format = surface_capabilities.formats[0],
-                    .write_mask = wgpu.ColorWriteMask.all,
-                },
-            },
-        },
-        .primitive = .{
-            .topology = .triangle_list,
-        },
-        .multisample = .{
-            .count = 1,
-            .mask = 0xFFFFFFFF,
-        },
-    }) orelse return error.wgpu;
-    defer render_pipeline.release();
-
-    log.debug(@src(), "configuring surface");
-    var config = wgpu.SurfaceConfiguration{
-        .device = device,
-        .usage = wgpu.TextureUsage.render_attachment,
-        .format = surface_capabilities.formats[0],
-
-        // .present_mode = .fifo, // vsync
-        // .present_mode = .immediate,
-        // TODO: test to see if .fifo_relaxed may work better for vsync
-        .present_mode = if (enable_vsync) .fifo else .immediate,
-
-        .alpha_mode = surface_capabilities.alpha_modes[0],
-
-        .width = 0,
-        .height = 0,
-    };
-
-    {
-        const window_size = main_window.size();
-        config.width = @intCast(window_size.w);
-        config.height = @intCast(window_size.h);
-    }
-
-    surface.configure(&config);
-    log.debug(@src(), "finished wgpu setup");
-
-    // end wgpu setup
+    // var render_state = try RenderState.init(main_window);
+    // defer render_state.deinit();
 
     log.debug(@src(), "initializing dynlib");
     var dynlib = try Dynlib.load(allocator);
     defer dynlib.unload(allocator);
-    dynlib.api.init(allocator);
+    dynlib.api.init(allocator, main_window);
     defer dynlib.api.deinit(allocator);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
@@ -384,12 +233,12 @@ fn run(allocator: Allocator) !ExitCode {
     //  probably a bug with the in-dev version of tracy I'm using
     _ = arena_allocator.alloc(u8, 1) catch {};
 
-    const event_timeout_ms: u64 = if (limit_framerate) 16 else 0;
+    const event_timeout_ms: u64 = if (options.limit_framerate) 16 else 0;
 
     const ns_60_fps: u64 = 16 * 1_000_000; // ns
     const ns_per_update = ns_60_fps;
     const ns_per_render =
-        if (enable_vsync or !limit_framerate) 0 else ns_60_fps;
+        if (options.enable_vsync or !options.limit_framerate) 0 else ns_60_fps;
 
     var timer = try std.time.Timer.start();
     var update_lag: u64 = ns_per_update;
@@ -495,12 +344,7 @@ fn run(allocator: Allocator) !ExitCode {
                 .window => |win| switch (win.event) {
                     .resized => {
                         if (win.windowID == main_window.getID()) {
-                            const width = win.data1;
-                            const height = win.data2;
-                            config.width = @intCast(width);
-                            config.height = @intCast(height);
-
-                            surface.configure(&config);
+                            dynlib.api.onResize();
                         }
                     },
 
@@ -549,11 +393,19 @@ fn run(allocator: Allocator) !ExitCode {
                 try dynlib.reload(allocator);
             }
 
+            dynlib.api.onUpdate();
+
             // TODO: Figure out if this is good place to put it
             //  or if it should be at the end of the loop
             //   (don't realy want it running as fast a possible)
-            //  or if it should be in its own timestep
+            //  or if it should be in its own timestep (probably not)
             //  or just stay here
+            //  The only issue I can think of this being here would be using
+            //  memory in render that has been allocated in update.
+            //  Or what about when it runs a render during an iteration of
+            //  the while loop but not an update?
+            //  maybe the solution is to use the main allocator for memory that
+            //  is to be used between update and render?
             //
             // FIXME: Limit this accordingly!
             //  we should first figure out a good limit
@@ -624,6 +476,9 @@ fn run(allocator: Allocator) !ExitCode {
                 imgui.c.igShowDemoWindow(null);
 
                 if (imgui.c.igBegin("my window", null, 0)) {
+                    if (dynlib_recompiling)
+                        imgui.c.igText("reloading...");
+
                     imgui.c.igText("fps: %.2f", fps);
 
                     const counter = dynlib.api.getCounter();
@@ -634,91 +489,7 @@ fn run(allocator: Allocator) !ExitCode {
                 dynlib.api.doImgui();
             }
 
-            var surface_texture: wgpu.SurfaceTexture = undefined;
-            surface.getCurrentTexture(&surface_texture);
-            defer surface_texture.texture.?.release();
-
-            switch (surface_texture.status) {
-                .success => {
-                    // TODO: check surface_texture.suboptimal
-                    if (!shown_texture_suboptimal and surface_texture.suboptimal != 0) {
-                        // FIXME: triggers when using x11 backend for sdl
-                        shown_texture_suboptimal = true;
-                        log.warn(@src(), "surface texture is suboptimal");
-                    }
-                },
-                .timeout, .outdated, .lost => {
-                    log.infokv(
-                        @src(),
-                        "Recreating surface texture",
-                        .{ .status = surface_texture.status },
-                    );
-
-                    if (surface_texture.texture) |texture|
-                        texture.release();
-
-                    const size = main_window.size();
-                    if (size.w != 0 and size.h != 0) {
-                        config.width = @intCast(size.w);
-                        config.height = @intCast(size.h);
-                        surface.configure(&config);
-                    }
-                    continue;
-                },
-                .out_of_memory, .device_lost => {
-                    log.fatalkv(
-                        @src(),
-                        "fatal texture error",
-                        .{ .status = surface_texture.status },
-                    );
-                    return error.wgpu;
-                },
-            }
-            if (surface_texture.texture == null)
-                return error.wgpu;
-
-            const frame = surface_texture.texture.?
-                .createView(&.{}) orelse return error.wgpu;
-            defer frame.release();
-
-            const command_encoder = device.createCommandEncoder(&.{
-                .label = "Command encoder",
-            }) orelse return error.wgpu;
-            defer command_encoder.release();
-
-            command_encoder.insertDebugMarker("my debug marker");
-
-            const color = dynlib.api.getColor();
-            const render_pass_encoder = command_encoder.beginRenderPass(&.{
-                .label = "Render pass encoder",
-                .color_attachment_count = 1,
-                .color_attachments = &[_]wgpu.ColorAttachment{
-                    wgpu.ColorAttachment{
-                        .view = frame,
-                        .load_op = .clear,
-                        .store_op = .store,
-                        .clear_value = .{
-                            .r = @as(f64, @floatFromInt(color.r)) / 256,
-                            .g = @as(f64, @floatFromInt(color.g)) / 256,
-                            .b = @as(f64, @floatFromInt(color.b)) / 256,
-                            .a = 1.0,
-                        },
-                    },
-                },
-            }) orelse return error.wgpu;
-
-            render_pass_encoder.setPipeline(render_pipeline);
-            render_pass_encoder.draw(3, 1, 0, 0);
-            render_pass_encoder.end();
-            render_pass_encoder.release();
-
-            const command_buffer = command_encoder.finish(&.{
-                .label = "Command buffer",
-            }) orelse return error.wgpu;
-            defer command_buffer.release();
-
-            queue.submit(&[_]*const wgpu.CommandBuffer{command_buffer});
-            surface.present();
+            dynlib.api.onRender();
 
             // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= //
             // ------------------------------- //

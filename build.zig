@@ -43,6 +43,18 @@ pub fn build(b: *std.Build) void {
         "Use lld (default: false)",
     ) orelse use_llvm;
 
+    const enable_vsync = b.option(
+        bool,
+        "enable_vsync",
+        "(default: false)",
+    ) orelse false;
+
+    const limit_framerate = b.option(
+        bool,
+        "limit_framerate",
+        "(default: true)",
+    ) orelse true;
+
     // Note: enabling tracy also seems to completely break hot reloading :(
     const tracy_enable = b.option(
         bool,
@@ -53,6 +65,8 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption(bool, "debugger_attached", debugger_attached);
     options.addOption(bool, "tracy_enable", tracy_enable);
+    options.addOption(bool, "enable_vsync", enable_vsync);
+    options.addOption(bool, "limit_framerate", limit_framerate);
 
     const commonlib_src = b.path("src/common/common.zig");
     const commonlib = b.addSharedLibrary(.{
