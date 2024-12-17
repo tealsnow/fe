@@ -95,7 +95,14 @@ const ExitCode = enum(u8) {
 };
 
 fn run(allocator: Allocator) !ExitCode {
-    const init_zone = tracy.initZone(@src(), .{ .name = "init" });
+    const init_span = common.log.Span.start(@src(), .{
+        .name = "init",
+        .log = .{
+            .level = .debug,
+            .target = "exe",
+        },
+        .tracy = .{},
+    });
 
     log.info(@src(), "starting application");
     defer log.info(@src(), "exiting application");
@@ -188,6 +195,7 @@ fn run(allocator: Allocator) !ExitCode {
     });
     defer test_window.deinit();
 
+    log.debug(@src(), "creating test window renderer");
     const test_renderer = try sdl.Renderer.init(.{
         .window = test_window,
         .flags = .{
@@ -411,10 +419,24 @@ fn run(allocator: Allocator) !ExitCode {
     common.log.global_state.allocator = arena_allocator;
     defer common.log.global_state.allocator = old_log_alloc;
 
+    const deinit_span_options = common.log.Span.Options{
+        .name = "deinit",
+        .log = .{
+            .level = .debug,
+            .target = "exe",
+        },
+    };
+    var deinit_span: ?common.log.Span = null;
+    defer {
+        if (deinit_span) |span| {
+            _ = span.end(@src());
+        }
+    }
+
     main_window.show();
     test_window.show();
 
-    init_zone.deinit();
+    _ = init_span.end(@src());
     log.debug(@src(), "initialization done");
     while (running) {
         tracy.frameMark();
@@ -437,7 +459,10 @@ fn run(allocator: Allocator) !ExitCode {
             switch (ev.type) {
                 .quit => {
                     log.debug(@src(), "quit event recived, quiting...");
+
                     running = false;
+                    std.debug.assert(deinit_span == null);
+                    deinit_span = common.log.Span.start(@src(), deinit_span_options);
                 },
 
                 .key => |key| key_block: {
@@ -445,8 +470,9 @@ fn run(allocator: Allocator) !ExitCode {
                         break :key_block;
                     switch (key.keysym.sym) {
                         .q => {
-                            log.info(@src(), "quiting...");
-                            running = false;
+                            log.info(@src(), "q pressed - quiting...");
+
+                            sdl.Event.push(.quit);
                         },
 
                         .r => {
@@ -488,7 +514,7 @@ fn run(allocator: Allocator) !ExitCode {
                             .{ .window = win.windowID },
                         );
 
-                        running = false;
+                        sdl.Event.push(.quit);
                     },
 
                     else => {},

@@ -86,7 +86,7 @@ pub const ZoneOptions = struct {
     color: ?u32 = null,
 };
 
-const ZoneContext = if (options.tracy_enable) extern struct {
+pub const ZoneContext = if (options.tracy_enable) extern struct {
     ctx: c.___tracy_c_zone_context,
 
     pub inline fn deinit(zone: *const ZoneContext) void {
@@ -121,30 +121,28 @@ const ZoneContext = if (options.tracy_enable) extern struct {
     pub inline fn value(_: *const ZoneContext, _: u64) void {}
 };
 
-pub inline fn initZone(comptime src: std.builtin.SourceLocation, comptime opts: ZoneOptions) ZoneContext {
+pub inline fn initZone(src: std.builtin.SourceLocation, opts: ZoneOptions) ZoneContext {
     if (!options.tracy_enable) return .{};
     const active: c_int = @intFromBool(opts.active);
 
-    const static = struct {
-        var src_loc = c.___tracy_source_location_data{
-            .name = if (opts.name) |name| name.ptr else null,
-            .function = src.fn_name.ptr,
-            .file = src.file,
-            .line = src.line,
-            .color = opts.color orelse 0,
-        };
+    const src_loc = c.___tracy_source_location_data{
+        .name = if (opts.name) |name| name.ptr else null,
+        .function = src.fn_name.ptr,
+        .file = src.file,
+        .line = src.line,
+        .color = opts.color orelse 0,
     };
 
     if (!options.tracy_no_callstack) {
         if (options.tracy_callstack) |depth| {
             return .{
-                .ctx = c.___tracy_emit_zone_begin_callstack(&static.src_loc, depth, active),
+                .ctx = c.___tracy_emit_zone_begin_callstack(&src_loc, depth, active),
             };
         }
     }
 
     return .{
-        .ctx = c.___tracy_emit_zone_begin(&static.src_loc, active),
+        .ctx = c.___tracy_emit_zone_begin(&src_loc, active),
     };
 }
 

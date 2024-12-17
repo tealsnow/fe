@@ -802,7 +802,7 @@ pub const Event = struct {
     pub fn poll() ?Event {
         var event: c.SDL_Event = undefined;
         return if (c.SDL_PollEvent(&event) != 0)
-            fromSdl(&event)
+            decode(&event)
         else
             null;
     }
@@ -810,7 +810,7 @@ pub const Event = struct {
     pub fn wait() ?Event {
         var event: c.SDL_Event = undefined;
         return if (c.SDL_WaitEvent(&event) != 0)
-            fromSdl(&event)
+            decode(&event)
         else
             null;
     }
@@ -818,12 +818,12 @@ pub const Event = struct {
     pub fn waitTimeout(timeout: c_int) ?Event {
         var event: c.SDL_Event = undefined;
         return if (c.SDL_WaitEventTimeout(&event, timeout) != 0)
-            fromSdl(&event)
+            decode(&event)
         else
             null;
     }
 
-    pub fn fromSdl(event: *const c.SDL_Event) Event {
+    pub fn decode(event: *const c.SDL_Event) Event {
         const ty: Type = switch (event.type) {
             c.SDL_QUIT => .quit,
 
@@ -920,6 +920,18 @@ pub const Event = struct {
             else => .todo,
         };
         return .{ .original = event, .timestamp = event.common.timestamp, .type = ty };
+    }
+
+    pub fn encode(ty: Type) c.SDL_Event {
+        switch (ty) {
+            .quit => return .{ .type = c.SDL_QUIT },
+            else => @panic("todo")
+        }
+    }
+
+    pub fn push(ty: Type) void {
+        var event = encode(ty);
+        _ = c.SDL_PushEvent(&event);
     }
 
     fn createKeyboardEvent(key: c.SDL_KeyboardEvent) KeyboardEvent {

@@ -3,6 +3,7 @@ const SourceLocation = std.builtin.SourceLocation;
 const out = @import("out.zig");
 const Allocator = std.mem.Allocator;
 const DateTime = @import("datetime").DateTime;
+const tracy = @import("tracy");
 
 pub var global_state = State{};
 
@@ -425,6 +426,160 @@ pub fn Scoped(comptime target: []const u8) type {
     };
 }
 
+pub const Span = struct {
+    src: SourceLocation,
+    start_time: std.time.Instant,
+    opts: Options,
+    tracy_ctx: ?tracy.ZoneContext = null,
+
+    pub const LogContext = struct {
+        level: Level,
+        target: []const u8,
+    };
+
+    pub const TracyOptions = struct {
+        active: bool = true,
+        color: ?u32 = null,
+    };
+
+    pub const Options = struct {
+        name: ?[:0]const u8 = null,
+        log: ?LogContext = null,
+        tracy: ?TracyOptions = null,
+    };
+
+    pub fn start(src: SourceLocation, options: Options) Span {
+        const now = std.time.Instant.now() catch @panic("can't time");
+
+        var self = Span{
+            .src = src,
+            .start_time = now,
+            .opts = options,
+            .tracy_ctx = undefined,
+        };
+
+        if (self.opts.log) |ctx| {
+            logfnf(
+                src,
+                ctx.level,
+                ctx.target,
+                "span '{s}' start",
+                .{self.opts.name orelse "null"},
+            );
+        }
+
+        self.tracy_ctx = if (self.opts.tracy) |opts|
+            tracy.initZone(src, .{
+                .name = self.opts.name,
+                .active = opts.active,
+                .color = opts.color,
+            })
+        else
+            null;
+
+        return self;
+    }
+
+    // returns elapsed time in nanoseconds
+    pub fn end(self: *const Span, src: SourceLocation) u64 {
+        const now = std.time.Instant.now() catch @panic("can't time");
+        const elapsed = now.since(self.start_time);
+
+        const duration = NsDurationFormatter { .duration = elapsed };
+
+        if (self.opts.log) |ctx| {
+            logfnf(
+                src,
+                ctx.level,
+                ctx.target,
+                "span '{s}' end - elapsed: {} ({d})",
+                .{ self.opts.name orelse "null", duration, elapsed },
+            );
+        }
+
+        if (self.tracy_ctx) |ctx| {
+            ctx.deinit();
+        }
+
+        return elapsed;
+    }
+};
+
+pub const NsDurationFormatter = struct {
+    duration: u64, // ns
+
+    pub fn format(
+        self: NsDurationFormatter,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        var accum: u64 = 0;
+
+        const weeks = (self.duration - accum) / std.time.ns_per_week;
+        accum += weeks * std.time.ns_per_week;
+
+        const days = (self.duration - accum) / std.time.ns_per_day;
+        accum += days * std.time.ns_per_day;
+
+        const hours = (self.duration - accum) / std.time.ns_per_hour;
+        accum += hours * std.time.ns_per_hour;
+
+        const mins = (self.duration - accum) / std.time.ns_per_min;
+        accum += mins * std.time.ns_per_min;
+
+        const s = (self.duration - accum) / std.time.ns_per_s;
+        accum += s * std.time.ns_per_s;
+
+        const ms = (self.duration - accum) / std.time.ns_per_ms;
+        accum += ms * std.time.ns_per_ms;
+
+        const us = (self.duration - accum) / std.time.ns_per_us;
+        accum += us * std.time.ns_per_us;
+
+        const ns = self.duration - accum;
+
+        const Spacer = struct {
+            do_space: bool = false,
+
+            const Self = @This();
+
+            pub inline fn put(spacer: *Self, w: anytype) !void {
+                if (spacer.do_space)
+                    try w.writeByte(' ');
+                spacer.do_space = false;
+            }
+
+            pub inline fn mark(spacer: *Self) void {
+                spacer.do_space = true;
+            }
+
+            pub inline fn print(spacer: *Self, w: anytype, comptime f: []const u8, args: anytype) !void {
+                try spacer.put(w);
+                try w.print(f, args);
+                spacer.mark();
+            }
+        };
+
+        var spacer = Spacer{};
+
+        if (weeks > 0) {
+            try writer.print("{d} weeks", .{weeks});
+            spacer.mark();
+        }
+        if (days > 0) try spacer.print(writer, "{d} days", .{days});
+        if (hours > 0) try spacer.print(writer, "{d} hours", .{hours});
+        if (mins > 0) try spacer.print(writer, "{d} mins", .{mins});
+        if (s > 0) try spacer.print(writer, "{d} s", .{s});
+        if (ms > 0) try spacer.print(writer, "{d} ms", .{ms});
+        if (us > 0) try spacer.print(writer, "{d} us", .{us});
+        if (ns > 0) try spacer.print(writer, "{d} ns", .{ns});
+    }
+};
+
 pub const noop_logger = Logger{
     .ptr = undefined,
     .vtable = &noop_logger_vtable,
@@ -440,7 +595,7 @@ const NoopLogger = struct {
         return false;
     }
 
-    pub fn log(_: *anyopaque, _: Allocator, _: SourceLocation, _: Level, _: []const u8, _: []const u8, _: []const KeyValue) void {}
+    pub fn log(_: *anyopaque, _: Allocator, _: SourceLocation, _: Level, _: []const u8, _: []const u8, _: []const KeyValue,) void {}
 
     pub fn flush(_: *anyopaque) void {}
 };
