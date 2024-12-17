@@ -30,6 +30,8 @@ const limit_framerate = true;
 var dynlib_recompiled = false;
 var dynlib_recompiling = false;
 
+const sdlmem = @import("sdlmem.zig");
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         // .never_unmap = true,
@@ -149,25 +151,18 @@ fn run(allocator: Allocator) !ExitCode {
     // defer hb.hb_buffer_destroy(hb_buffer);
     // log.trace(@src(), "setup hb");
 
+    // NOTE(ketanr): I'm not sure if theres much need for this. The only
+    //  usecase I can think of is just trying to so see and minimize
+    //  allocations in our use of sdl. Time will tell
+    //  Or using the arena allocator for sdl during the loop?
+    // var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", allocator);
     if (options.tracy_enable) {
-        // NOTE(ketanr): I'm not sure if theres much need for this. The only
-        //  usecase I can think of is just trying to so see and minimize
-        //  allocations in our use of sdl. Time will tell
-        //  Or using the arena allocator for sdl during the loop?
-        // var sdl_tracing_allocator = tracy.TracingAllocator.initNamed("sdl", allocator);
         var sdl_tracing_allocator = tracy.TracingAllocator.initNamed(
             "sdl",
             std.heap.raw_c_allocator,
         );
-        sdl_mem_allocator = sdl_tracing_allocator.allocator();
-        sdl_mem_allocations = std.AutoHashMap(usize, usize).init(allocator);
-
-        try sdl.setMemoryFunctions(.{
-            .malloc = sdlMalloc,
-            .calloc = sdlCalloc,
-            .realloc = sdlRealloc,
-            .free = sdlFree,
-        });
+        sdlmem.init(allocator);
+        sdlmem.setAllocator(sdl_tracing_allocator.allocator());
     }
 
     log.debug(@src(), "initalizing sdl");
@@ -959,84 +954,5 @@ fn handleSignal(sig: c_int) callconv(.C) void {
                 .{ .sig = sig },
             );
         },
-    }
-}
-
-// FIXME: Keep all global state in one place
-var sdl_mem_allocator: ?std.mem.Allocator = null;
-var sdl_mem_allocations: ?std.AutoHashMap(usize, usize) = null;
-var sdl_mem_mutex: std.Thread.Mutex = .{};
-const sdl_mem_alignment = 16;
-
-export fn sdlMalloc(size: usize) callconv(.C) ?*anyopaque {
-    sdl_mem_mutex.lock();
-    defer sdl_mem_mutex.unlock();
-
-    const mem = sdl_mem_allocator.?.alignedAlloc(
-        u8,
-        sdl_mem_alignment,
-        size,
-    ) catch @panic("sdl alloc: out of memory");
-
-    sdl_mem_allocations.?.put(@intFromPtr(mem.ptr), size) catch
-        @panic("sdl alloc: out of memory");
-
-    return mem.ptr;
-}
-
-export fn sdlCalloc(count: usize, size: usize) callconv(.C) ?*anyopaque {
-    sdl_mem_mutex.lock();
-    defer sdl_mem_mutex.unlock();
-
-    const total_size = count * size;
-    const mem = sdl_mem_allocator.?.alignedAlloc(
-        u8,
-        sdl_mem_alignment,
-        total_size,
-    ) catch @panic("sdl alloc: out of memory");
-
-    @memset(mem, 0);
-
-    sdl_mem_allocations.?.put(@intFromPtr(mem.ptr), total_size) catch
-        @panic("sdl alloc: out of memory");
-
-    return mem.ptr;
-}
-
-export fn sdlRealloc(ptr: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
-    sdl_mem_mutex.lock();
-    defer sdl_mem_mutex.unlock();
-
-    const old_size = if (ptr != null)
-        sdl_mem_allocations.?.get(@intFromPtr(ptr.?)).?
-    else
-        0;
-    const old_mem = if (old_size > 0)
-        @as([*]align(sdl_mem_alignment) u8, @ptrCast(@alignCast(ptr)))[0..old_size]
-    else
-        @as([*]align(sdl_mem_alignment) u8, undefined)[0..0];
-
-    const new_mem = sdl_mem_allocator.?.realloc(old_mem, size) catch
-        @panic("sdl alloc: out of memory");
-
-    if (ptr != null) {
-        const removed = sdl_mem_allocations.?.remove(@intFromPtr(ptr.?));
-        std.debug.assert(removed);
-    }
-
-    sdl_mem_allocations.?.put(@intFromPtr(new_mem.ptr), size) catch
-        @panic("sdl alloc: out of memory");
-
-    return new_mem.ptr;
-}
-
-export fn sdlFree(maybe_ptr: ?*anyopaque) callconv(.C) void {
-    if (maybe_ptr) |ptr| {
-        sdl_mem_mutex.lock();
-        defer sdl_mem_mutex.unlock();
-
-        const size = sdl_mem_allocations.?.fetchRemove(@intFromPtr(ptr)).?.value;
-        const mem = @as([*]align(sdl_mem_alignment) u8, @ptrCast(@alignCast(ptr)))[0..size];
-        sdl_mem_allocator.?.free(mem);
     }
 }
