@@ -410,6 +410,8 @@ fn run(allocator: Allocator) !ExitCode {
     var update_tick_count: u32 = 0;
     var render_frame_count: u32 = 0;
 
+    var fps: f64 = 0;
+
     const old_log_alloc = common.log.global_state.allocator;
     common.log.global_state.allocator = arena_allocator;
     defer common.log.global_state.allocator = old_log_alloc;
@@ -590,12 +592,9 @@ fn run(allocator: Allocator) !ExitCode {
 
             if (delta_time >= 1_000_000_000) {
                 const delta_seconds = @as(f64, @floatFromInt(delta_time)) / 1_000_000_000;
-                const fps = @as(f64, @floatFromInt(fps_frame_count)) / delta_seconds;
+                fps = @as(f64, @floatFromInt(fps_frame_count)) / delta_seconds;
                 fps_frame_count = 0;
                 fps_last_time = current_time;
-
-                // log.infof(@src(), "fps {d:.2}", .{fps});
-                _ = fps;
             }
 
             { // imgui test window
@@ -625,6 +624,8 @@ fn run(allocator: Allocator) !ExitCode {
                 imgui.c.igShowDemoWindow(null);
 
                 if (imgui.c.igBegin("my window", null, 0)) {
+                    imgui.c.igText("fps: %.2f", fps);
+
                     const counter = dynlib.api.getCounter();
                     imgui.c.igText("counter: %d", counter);
                 }
