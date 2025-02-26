@@ -12,10 +12,8 @@ pub fn deinit() void {
 
 pub const Font = opaque {
     pub fn open(file: [*c]u8, ptsize: c_int) !*Font {
-        const font = c.TTF_OpenFont(file, ptsize);
-        if (font == null)
-            return error.ttf_open_font;
-        return @ptrCast(font.?);
+        const font = c.TTF_OpenFont(file, ptsize) orelse return error.ttf_open_font;
+        return @ptrCast(font);
     }
 
     pub fn deinit(self: *Font) void {
@@ -23,9 +21,16 @@ pub const Font = opaque {
     }
 
     pub fn renderTextSolid(self: *Font, text: [*c]const u8, color: sdl.Color) !*sdl.Surface {
-        const surface = c.TTF_RenderText_Solid(@ptrCast(self), text, color);
-        if (surface == null)
-            return error.ttf_render_text_solid;
-        return @ptrCast(surface.?);
+        const surface = c.TTF_RenderText_Solid(
+            @ptrCast(self),
+            text,
+            color,
+        ) orelse return error.tff_render_text_sold;
+        return @ptrCast(@alignCast(surface));
+    }
+
+    pub fn sizeText(self: *Font, text: [*c]const u8, w: *c_int, h: *c_int) !void {
+        if (c.TTF_SizeText(@ptrCast(self), text, w, h) != 0)
+            return error.ttf_size_text;
     }
 };

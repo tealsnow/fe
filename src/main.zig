@@ -3,26 +3,21 @@ const std = @import("std");
 const sdl = @import("sdl/sdl.zig");
 const fontconfig = @import("fontconfig.zig");
 
-const ui = @import("ui/ui.zig");
-
-const alloca = @import("alloca.zig");
+const cu = @import("cu/cu.zig");
 
 pub fn main() !void {
-    // try alloca.chainingAllocatorTest();
-    // if (true) std.process.exit(0);
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // gpa.backing_allocator = std.heap.c_allocator;
-    // defer {
-    //     const result = gpa.deinit();
-    //     if (result == .leak) {
-    //         std.debug.print("Memory leak detected\n", .{});
-    //     }
-    // }
+    gpa.backing_allocator = std.heap.c_allocator;
+    defer {
+        const result = gpa.deinit();
+        if (result == .leak) {
+            std.debug.print("Memory leak detected\n", .{});
+        }
+    }
     const alloc = gpa.allocator();
 
     try sdl.init(sdl.InitFlags.All);
-    // defer sdl.quit();
+    defer sdl.quit();
 
     try sdl.ttf.init();
     defer sdl.ttf.deinit();
@@ -39,7 +34,7 @@ pub fn main() !void {
         .window = window,
         .flags = .{ .accelerated = true },
     });
-    // defer renderer.deinit();
+    defer renderer.deinit();
 
     try fontconfig.init();
     defer fontconfig.deinit();
@@ -52,40 +47,20 @@ pub fn main() !void {
     const font = try sdl.ttf.Font.open(font_path, 24);
     defer font.deinit();
 
-    const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-    const surface = try font.renderTextSolid("Hello, World!", font_color);
-    defer surface.deinit();
+    // const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+    // const surface = try font.renderTextSolid("Hello, World!", font_color);
+    // defer surface.deinit();
 
-    const texture = try renderer.createTextureFromSurface(surface);
-    defer texture.deinit();
+    // const texture = try renderer.createTextureFromSurface(surface);
+    // defer texture.deinit();
 
-    var tex_w: c_int = 0;
-    var tex_h: c_int = 0;
-    try texture.query(null, null, &tex_w, &tex_h);
-    const dst_rect = sdl.Rect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };
+    // var tex_w: c_int = 0;
+    // var tex_h: c_int = 0;
+    // try texture.query(null, null, &tex_w, &tex_h);
+    // const dst_rect = sdl.Rect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };
 
-    // ui.gs = try ui.GlobalState.init(alloc, renderer, font);
-    // defer ui.gs.deinit();
-
-    var temp_alloc = std.heap.ArenaAllocator.init(alloc);
-    defer temp_alloc.deinit();
-
-    var widget_pool =
-        try ui.GlobalState.WidgetPool
-        .initPreheated(alloc, ui.GlobalState.MaxWidgets);
-    defer widget_pool.deinit();
-
-    ui.gs = .{
-        .renderer = renderer,
-        .font = font,
-
-        .alloc_temp = temp_alloc.allocator(),
-        // .widget_alloc = alloc,
-        .alloc_persistent = alloc,
-
-        .widget_pool = widget_pool,
-    };
-    // defer ui.gs.deinit();
+    try cu.init(alloc, renderer, font);
+    defer cu.deinit();
 
     var running = true;
     while (running) {
@@ -110,171 +85,126 @@ pub fn main() !void {
             }
         }
 
+        cu.startFrame();
+        defer cu.endFrame();
+
         try renderer.setDrawColor(18, 18, 18, 255);
         try renderer.clear();
 
-        try renderer.renderCopy(texture, null, &dst_rect);
+        // try renderer.renderCopy(texture, null, &dst_rect);
 
-        ui.start(window);
+        cu.startBuild(window);
 
-        ui.ui("my_root")(.{
-            .layout_axis = .x,
-            .size = .{ .sz = .{
-                .w = ui.Size.grow,
-                .h = ui.Size.grow,
-            } },
-        })({
-            ui.ui("left pane")(.{
-                .layout_axis = .y,
-                .size = .{ .sz = .{
-                    .w = ui.Size.percent(0.3),
-                    .h = ui.Size.percent(1.0),
-                } },
-            })({
-                //
-            });
+        { // root
+            const root = cu.ui(.{}, "root");
+            defer root.end();
+            root.layout_axis = .x;
+            root.size.sz = .{ .w = .full, .h = .full };
 
-            ui.ui("right pane")(.{
-                .layout_axis = .y,
-                .size = .{ .sz = .{
-                    .w = ui.Size.grow,
-                    .h = ui.Size.percent(1),
-                } },
-            })({
-                //
-            });
-        });
+            { // left pane
+                const pane = cu.ui(.{}, "left pane");
+                defer pane.end();
+                pane.layout_axis = .y;
+                pane.size.sz = .{ .w = .percent(0.3), .h = .full };
 
-        // if (ui.open("my_root", .{
-        //     .layout_axis = .x,
-        //     .size = .{ .sz = .{
-        //         .w = ui.Size.px(@floatFromInt(window_size.w)),
-        //         .h = ui.Size.px(@floatFromInt(window_size.h)),
-        //     } },
-        // })) |my_root| {
-        //     defer my_root.close();
+                {
+                    const header = cu.ui(.{}, "left header");
+                    defer header.end();
+                    header.equipDisplayString();
+                    header.size.sz.w = .grow;
+                }
 
-        //     if (ui.open("left pane", .{
-        //         .layout_axis = .y,
-        //         .size = .{ .sz = .{
-        //             .w = ui.Size.percent(0.3),
-        //             .h = ui.Size.percent(1.0),
-        //         } },
-        //     })) |left_pane| {
-        //         defer left_pane.close();
+                {
+                    const content = cu.ui(.{}, "left content");
+                    defer content.end();
+                    content.size.sz = .{ .w = .grow, .h = .grow };
+                }
+            }
 
-        //         if (ui.open("left header", .{
-        //             .size = .{ .sz = .{
-        //                 .w = ui.Size.grow,
-        //                 .h = ui.Size.text,
-        //             } },
-        //         })) |left_header| {
-        //             defer left_header.close();
-        //         }
+            { // right pane
+                const pane = cu.ui(.{}, "right pane");
+                defer pane.end();
+                pane.layout_axis = .y;
+                pane.size.sz = .{ .w = .grow, .h = .full };
 
-        //         if (ui.open("left content", .{
-        //             .size = .{ .sz = .{
-        //                 .w = ui.Size.grow,
-        //                 .h = ui.Size.grow,
-        //             } },
-        //         })) |left_content| {
-        //             defer left_content.close();
-        //         }
-        //     }
+                {
+                    const header = cu.ui(.{}, "right header");
+                    defer header.end();
+                    header.equipDisplayString();
+                    header.size.sz.w = .grow;
+                    header.flags.text_centered = true;
+                }
 
-        //     if (ui.open("right pane", .{
-        //         .layout_axis = .y,
-        //         .size = .{ .sz = .{
-        //             .w = ui.Size.grow,
-        //             .h = ui.Size.percent(1),
-        //         } },
-        //     })) |right_pane| {
-        //         defer right_pane.close();
+                {
+                    const content = cu.ui(.{}, "right content");
+                    defer content.end();
+                    content.size.sz = .{ .w = .grow, .h = .grow };
+                }
+            }
 
-        //         if (ui.open("right header", .{
-        //             .size = .{ .sz = .{
-        //                 .w = ui.Size.grow,
-        //                 .h = ui.Size.text,
-        //             } },
-        //         })) |right_header| {
-        //             defer right_header.close();
-        //         }
+            { // right bar
+                const bar = cu.ui(.{}, "right bar");
+                defer bar.end();
+                bar.layout_axis = .y;
+                bar.size.sz = .{ .w = .px(16), .h = .grow };
 
-        //         if (ui.open("right content", .{
-        //             .size = .{ .sz = .{
-        //                 .w = ui.Size.grow,
-        //                 .h = ui.Size.grow,
-        //             } },
-        //         })) |right_content| {
-        //             defer right_content.close();
-        //         }
-        //     }
+                {
+                    const inner = cu.ui(.{}, "right bar inner");
+                    defer inner.end();
+                    bar.layout_axis = .y;
+                    inner.size.sz = .{ .w = .full, .h = .sum };
 
-        //     if (ui.open("right bar", .{
-        //         .layout_axis = .y,
-        //         .size = .{ .sz = .{
-        //             .w = ui.Size.px(16),
-        //             .h = ui.Size.grow,
-        //         } },
-        //     })) |right_bar| {
-        //         defer right_bar.close();
+                    for (0..2) |i| {
+                        const icon = cu.uif(.{}, "right bar icon {d}", .{i});
+                        defer icon.end();
+                        icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+                    }
+                }
+            }
+        }
 
-        //         if (ui.open("right bar inner", .{
-        //             .layout_axis = .y,
-        //             .size = .{ .sz = .{
-        //                 .w = ui.Size.percent(1),
-        //                 .h = ui.Size.sum,
-        //             } },
-        //         })) |right_bar_inner| {
-        //             defer right_bar_inner.close();
-
-        //             if (ui.open("right bar icon 1", .{
-        //                 .size = .{ .sz = .{
-        //                     .w = ui.Size.px(16),
-        //                     .h = ui.Size.px(16),
-        //                 } },
-        //             })) |icon_1| {
-        //                 defer icon_1.close();
-        //             }
-
-        //             if (ui.open("right bar icon 2", .{
-        //                 .size = .{ .sz = .{
-        //                     .w = ui.Size.px(16),
-        //                     .h = ui.Size.px(16),
-        //                 } },
-        //             })) |icon_2| {
-        //                 defer icon_2.close();
-        //             }
-        //         }
-        //     }
-        // }
-
-        const root = try ui.end();
-        try render(root, renderer);
+        cu.endBuild();
+        try render(cu.state.ui_root, renderer);
 
         renderer.present();
-
-        _ = temp_alloc.reset(.retain_capacity);
-        // _ = ui.gs.widget_pool.reset(.retain_capacity);
-
-        // if (ui.gs.current_frame_index > 10) {
-        //     running = false;
-        // }
-        // std.debug.print("frame_index: {d}\n", .{ui.gs.current_frame_index});
     }
 }
 
-fn render(root: *ui.Widget, renderer: *sdl.Renderer) !void {
-    try renderer.setDrawColorT(root.color);
-    try renderer.drawRectF(&.{
-        .x = root.rect.vec.x0,
-        .y = root.rect.vec.y0,
-        .w = root.rect.vec.x1 - root.rect.vec.x0,
-        .h = root.rect.vec.y1 - root.rect.vec.y0,
-    });
+fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
+    try renderer.setDrawColorT(atom.color);
+    const rect = sdl.FRect{
+        .x = atom.rect.vec.x0,
+        .y = atom.rect.vec.y0,
+        .w = atom.rect.vec.x1 - atom.rect.vec.x0,
+        .h = atom.rect.vec.y1 - atom.rect.vec.y0,
+    };
+    try renderer.drawRectF(&rect);
 
-    if (root.children) |children| {
-        var maybe_child: ?*ui.Widget = children.first;
+    if (atom.flags.draw_text) {
+        const text_data = atom.text_data.?;
+
+        // const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        // const surface = try cu.gs.font.renderTextSolid(text_data.zstring, font_color);
+        // defer surface.deinit();
+
+        // const texture = try renderer.createTextureFromSurface(surface);
+        // defer texture.deinit();
+
+        const dst_rect = sdl.Rect{
+            .x = @intFromFloat(rect.x),
+            .y = @intFromFloat(rect.y),
+            .w = text_data.size.sz.w,
+            .h = text_data.size.sz.h,
+        };
+
+        // try renderer.renderCopy(texture, null, &dst_rect);
+
+        try renderer.setDrawColorT(sdl.Color{ .r = 255, .g = 0, .b = 0, .a = 255 });
+        try renderer.drawRect(&dst_rect);
+    }
+
+    if (atom.children) |children| {
+        var maybe_child: ?*cu.Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             try render(child, renderer);
         }

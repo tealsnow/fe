@@ -1,11 +1,11 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const ui = @import("ui.zig");
-const Widget = ui.Widget;
-const AxisKind = ui.AxisKind;
-const TextData = ui.TextData;
-const SizeKind = ui.SizeKind;
+const cu = @import("cu.zig");
+const Widget = cu.Atom;
+const AxisKind = cu.AxisKind;
+const TextData = cu.TextData;
+const SizeKind = cu.SizeKind;
 
 const TermColor = @import("../TermColor.zig");
 
@@ -73,7 +73,7 @@ fn layoutSingleStandalone(widget: *Widget) !void {
     for (widget.size.arr, 0..) |size, axis_i| {
         switch (size.kind) {
             .none => {
-                widget.fixed_size.arr[axis_i] = 0;
+                // widget.fixed_size.arr[axis_i] = 0;
             },
             .pixels => {
                 widget.fixed_size.arr[axis_i] = size.value;
@@ -82,7 +82,7 @@ fn layoutSingleStandalone(widget: *Widget) !void {
                 const data = try TextData.init(widget.string);
                 widget.text_data = data;
 
-                widget.fixed_size.arr[axis_i] = data.size.arr[axis_i];
+                widget.fixed_size.arr[axis_i] = @floatFromInt(data.size.arr[axis_i]);
             },
             else => {},
         }
@@ -164,7 +164,8 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
             const child_size = child.fixed_size.arr[axis_i];
             const violation = child_size - allowed_size;
             const max_fixup = child_size;
-            const fixup = std.math.clamp(0, violation, max_fixup);
+            // const fixup = std.math.clamp(0, violation, max_fixup);
+            const fixup = @max(violation, @min(0, max_fixup));
             if (fixup > 0)
                 child.fixed_size.arr[axis_i] -= fixup;
         }
@@ -190,8 +191,8 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
         if (violation > 0) {
             // figure out how much we can take in total
             // var child_fixup_sum: f32 = 0;
-            const child_fixups = try ui.gs.alloc_temp.alloc(f32, children.count);
-            defer ui.gs.alloc_temp.free(child_fixups);
+            const child_fixups = try cu.state.alloc_temp.alloc(f32, children.count);
+            defer cu.state.alloc_temp.free(child_fixups);
             {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Widget = children.first;
@@ -211,7 +212,7 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
                 var maybe_child: ?*Widget = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                     var fixup_pct = (violation / total_weighted_size);
-                    fixup_pct = std.math.clamp(0, fixup_pct, 1);
+                    fixup_pct = @max(fixup_pct, 0);
                     child.fixed_size.arr[axis_i] -= child_fixups[child_idx] * fixup_pct;
 
                     child_idx += 1;

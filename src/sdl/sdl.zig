@@ -216,6 +216,11 @@ pub const Renderer = opaque {
             return error.Sdl;
     }
 
+    pub fn drawRect(self: *Renderer, rect: *const Rect) Error!void {
+        if (c.SDL_RenderDrawRect(@ptrCast(self), rect) != 0)
+            return error.Sdl;
+    }
+
     pub fn drawRectF(self: *Renderer, rect: *const FRect) Error!void {
         if (c.SDL_RenderDrawRectF(@ptrCast(self), rect) != 0)
             return error.Sdl;
@@ -244,10 +249,8 @@ pub const Renderer = opaque {
         const texture = c.SDL_CreateTextureFromSurface(
             @ptrCast(self),
             @alignCast(@ptrCast(surface)),
-        );
-        if (texture == null)
-            return error.Sdl;
-        return @ptrCast(texture);
+        ) orelse return error.Sdl;
+        return @ptrCast(@alignCast(texture));
     }
 
     pub fn renderCopy(
@@ -1225,7 +1228,7 @@ pub fn getMemoryFunctions() MemoryFunctions {
 
 pub const Surface = opaque {
     pub fn deinit(self: *Surface) void {
-        c.SDL_FreeSurface(@alignCast(@ptrCast(self)));
+        c.SDL_FreeSurface(@ptrCast(@alignCast(self)));
     }
 };
 

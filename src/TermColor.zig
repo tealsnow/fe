@@ -60,16 +60,16 @@ pub const Layer = enum {
 };
 
 pub const Color = enum(u8) {
-    // normal / bright / background / background bright
-    black, // 30 / 30;1 / 40 / 40;1
-    red, // 31 / 31;1 / 41 / 41;1
-    green, // 32 / 32;1 / 42 / 42;1
-    yellow, // 33 / 33;1 / 43 / 43;1
-    blue, // 34 / 34;1 / 44 / 44;1
-    magenta, // 35 / 35;1 / 45 / 45;1
-    cyan, // 36 / 36;1 / 46 / 46;1
-    white, // 37 / 37;1 / 47 / 47;1
-    reset, // 0
+    //          normal /  bright /  bg  /  bg bright
+    black, //   30     /  30;1   /  40  /  40;1
+    red, //     31     /  31;1   /  41  /  41;1
+    green, //   32     /  32;1   /  42  /  42;1
+    yellow, //  33     /  33;1   /  43  /  43;1
+    blue, //    34     /  34;1   /  44  /  44;1
+    magenta, // 35     /  35;1   /  45  /  45;1
+    cyan, //    36     /  36;1   /  46  /  46;1
+    white, //   37     /  37;1   /  47  /  47;1
+    reset, //   0
     none,
 };
 
