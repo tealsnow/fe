@@ -2,164 +2,120 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const cu = @import("cu.zig");
-const Widget = cu.Atom;
+const Atom = cu.Atom;
 const AxisKind = cu.AxisKind;
 const TextData = cu.TextData;
 const SizeKind = cu.SizeKind;
 
 const TermColor = @import("../TermColor.zig");
 
-pub fn layout(root: *Widget) !void {
-    // @TODO: maybe move to do each axis one at a time like in solve violations
-
-    try layoutStandalone(root);
-
-    // std.debug.print("standalone: \n", .{});
-    // debugPrintTree(root, 0, .{
-    //     .targeted_size_kind = &.{ .none, .pixels, .text_content },
-    // });
-    // std.debug.print("\n", .{});
-
-    layoutUpwardsDependent(root);
-
-    // std.debug.print("upwards dependent: \n", .{});
-    // debugPrintTree(root, 0, .{
-    //     .targeted_size_kind = &.{.percent_of_parent},
-    // });
-    // std.debug.print("\n", .{});
-
-    layoutDownardsDependent(root);
-
-    // std.debug.print("downwards dependent: \n", .{});
-    // debugPrintTree(root, 0, .{
-    //     .targeted_size_kind = &.{.children_sum},
-    // });
-    // std.debug.print("\n", .{});
-
+pub fn layout(root: *Atom) !void {
     for (AxisKind.Array) |axis| {
-        try layoutSolveViolations(root, axis);
+        standalone(root, axis);
+        upwardsDependent(root, axis);
+        downwardsDependnt(root, axis);
+        solveViolations(root, axis);
+        position(root, axis);
     }
-
-    // std.debug.print("solved violations: \n", .{});
-    // debugPrintTree(root, 0, .{});
-    // std.debug.print("\n", .{});
-
-    for (AxisKind.Array) |axis| {
-        layoutPosition(root, axis);
-    }
-
-    // std.debug.print("position: \n", .{});
-    // debugPrintTree(root, 0, .{
-    //     .size = false,
-    //     .computed_size = true,
-    //     .rel_position = true,
-    //     .rect = true,
-    // });
-    // std.debug.print("\n", .{});
 }
 
-fn layoutStandalone(widget: *Widget) !void {
+fn standalone(atom: *Atom, axis: AxisKind) void {
     // any-order
-    try layoutSingleStandalone(widget);
-    if (widget.children) |children| {
-        var maybe_child: ?*Widget = children.first;
+
+    const axis_i = @intFromEnum(axis);
+    const size = atom.size.arr[axis_i];
+    switch (size.kind) {
+        .none => {},
+        .pixels => {
+            atom.fixed_size.arr[axis_i] = size.value;
+        },
+        .text_content => {
+            const data = TextData.init(atom.string) catch @panic("oom");
+            atom.text_data = data;
+
+            atom.fixed_size.arr[axis_i] = @floatFromInt(data.size.arr[axis_i]);
+        },
+        else => {},
+    }
+
+    if (atom.children) |children| {
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            try layoutStandalone(child);
+            standalone(child, axis);
         }
     }
 }
 
-fn layoutSingleStandalone(widget: *Widget) !void {
-    for (widget.size.arr, 0..) |size, axis_i| {
-        switch (size.kind) {
-            .none => {
-                // widget.fixed_size.arr[axis_i] = 0;
-            },
-            .pixels => {
-                widget.fixed_size.arr[axis_i] = size.value;
-            },
-            .text_content => {
-                const data = try TextData.init(widget.string);
-                widget.text_data = data;
-
-                widget.fixed_size.arr[axis_i] = @floatFromInt(data.size.arr[axis_i]);
-            },
-            else => {},
-        }
-    }
-}
-
-fn layoutUpwardsDependent(widget: *Widget) void {
+fn upwardsDependent(atom: *Atom, axis: AxisKind) void {
     // pre-order
-    layoutSingleUpwardsDependent(widget);
-    if (widget.children) |children| {
-        var maybe_child: ?*Widget = children.first;
+
+    const axis_i = @intFromEnum(axis);
+    const size = atom.size.arr[axis_i];
+
+    switch (size.kind) {
+        .percent_of_parent => {
+            assert(atom.parent != null);
+            assert(size.value >= 0 and size.value <= 1);
+
+            const parent = atom.parent.?;
+            atom.fixed_size.arr[axis_i] = parent.fixed_size.arr[axis_i] * size.value;
+        },
+        else => {},
+    }
+
+    if (atom.children) |children| {
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            layoutUpwardsDependent(child);
+            upwardsDependent(child, axis);
         }
     }
 }
 
-fn layoutSingleUpwardsDependent(widget: *Widget) void {
-    for (widget.size.arr, 0..) |axis, axis_i| {
-        switch (axis.kind) {
-            .percent_of_parent => {
-                assert(widget.parent != null);
-                assert(axis.value >= 0 and axis.value <= 1);
-
-                const parent = widget.parent.?;
-                widget.fixed_size.arr[axis_i] = parent.fixed_size.arr[axis_i] * axis.value;
-            },
-            else => {},
-        }
-    }
-}
-
-fn layoutDownardsDependent(widget: *Widget) void {
+fn downwardsDependnt(atom: *Atom, axis: AxisKind) void {
     // post-order
-    if (widget.children) |children| {
-        var maybe_child: ?*Widget = children.first;
+
+    if (atom.children) |children| {
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            layoutDownardsDependent(child);
+            downwardsDependnt(child, axis);
         }
     }
-    layoutSingleDownwardsDependent(widget);
-}
 
-fn layoutSingleDownwardsDependent(widget: *Widget) void {
-    for (widget.size.arr, 0..) |axis, axis_i| {
-        switch (axis.kind) {
-            .children_sum => {
-                assert(widget.children != null);
-                const children = widget.children.?;
+    const axis_i = @intFromEnum(axis);
+    const size = atom.size.arr[axis_i];
 
-                var accum: f32 = 0;
-                var maybe_child: ?*Widget = children.first;
-                while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    accum += child.fixed_size.arr[axis_i];
-                }
+    switch (size.kind) {
+        .children_sum => {
+            assert(atom.children != null);
+            const children = atom.children.?;
 
-                widget.fixed_size.arr[axis_i] = accum;
-            },
-            else => {},
-        }
+            var accum: f32 = 0;
+            var maybe_child: ?*Atom = children.first;
+            while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+                accum += child.fixed_size.arr[axis_i];
+            }
+
+            atom.fixed_size.arr[axis_i] = accum;
+        },
+        else => {},
     }
 }
 
-fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
+fn solveViolations(atom: *Atom, axis: AxisKind) void {
     // https://github.com/EpicGamesExt/raddebugger/blob/a1e7ec5a0e9c8674f5b0271ce528f6b651d43564/src/ui/ui_core.c#L1705C1-L1705C44
 
     // pre-order
-    if (root.children == null) return;
-    const children = root.children.?;
-    assert(root.layout_axis != .none);
+
+    if (atom.children == null) return;
+    const children = atom.children.?;
+    assert(atom.layout_axis != .none);
 
     const axis_i = @intFromEnum(axis);
 
     // non-layout axis
-    if (root.layout_axis != axis) {
-        const allowed_size = root.fixed_size.arr[axis_i];
-        var maybe_child: ?*Widget = children.first;
+    if (atom.layout_axis != axis) {
+        const allowed_size = atom.fixed_size.arr[axis_i];
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             const child_size = child.fixed_size.arr[axis_i];
             const violation = child_size - allowed_size;
@@ -172,14 +128,14 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
     }
     // layout axis
     else {
-        const total_allowed_size = root.fixed_size.arr[axis_i];
+        const total_allowed_size = atom.fixed_size.arr[axis_i];
         var total_size: f32 = 0;
         var total_weighted_size: f32 = 0;
 
         // scope bc andrew refuses adding a proper c-style for loop
         // prevent 'maybe_child' from poisening the scope
         {
-            var maybe_child: ?*Widget = children.first;
+            var maybe_child: ?*Atom = children.first;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                 total_size += child.fixed_size.arr[axis_i];
                 total_weighted_size += child.fixed_size.arr[axis_i] * (1 - child.size.arr[axis_i].strictness);
@@ -191,11 +147,11 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
         if (violation > 0) {
             // figure out how much we can take in total
             // var child_fixup_sum: f32 = 0;
-            const child_fixups = try cu.state.alloc_temp.alloc(f32, children.count);
+            const child_fixups = cu.state.alloc_temp.alloc(f32, children.count) catch @panic("oom");
             defer cu.state.alloc_temp.free(child_fixups);
             {
                 var child_idx: usize = 0;
-                var maybe_child: ?*Widget = children.first;
+                var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                     var fixup_size_this_child = child.fixed_size.arr[axis_i] * (1 - child.size.arr[axis_i].strictness);
                     fixup_size_this_child = @max(0, fixup_size_this_child);
@@ -209,7 +165,7 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
             // fixup child sizes
             {
                 var child_idx: usize = 0;
-                var maybe_child: ?*Widget = children.first;
+                var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                     var fixup_pct = (violation / total_weighted_size);
                     fixup_pct = @max(fixup_pct, 0);
@@ -224,7 +180,7 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
     // @FIXME: only if overflow is allowed
     // // fix upwards depentent sizes
     // {
-    //     var maybe_child: ?*Widget = children.first;
+    //     var maybe_child: ?*Atom = children.first;
     //     while (maybe_child) |child| : (maybe_child = child.siblings.next) {
     //         if (child.size.arr[axis_i].kind == .percent_of_parent) {
     //             child.fixed_size.arr[axis_i] = root.fixed_size.arr[axis_i] * child.size.arr[axis_i].value;
@@ -234,37 +190,38 @@ fn layoutSolveViolations(root: *Widget, axis: AxisKind) !void {
 
     // recurse
     {
-        var maybe_child: ?*Widget = children.first;
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            try layoutSolveViolations(child, axis);
+            solveViolations(child, axis);
         }
     }
 }
 
-fn layoutPosition(root: *Widget, axis: AxisKind) void {
-    if (root.children == null) return;
-    const children = root.children.?;
+fn position(atom: *Atom, axis: AxisKind) void {
+    // pre-order
+
+    if (atom.children == null) return;
+    const children = atom.children.?;
 
     const axis_i = @intFromEnum(axis);
 
     var bounds: f32 = 0;
     {
         var layout_position: f32 = 0;
-        var maybe_child: ?*Widget = children.first;
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             // // grab original position
             // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
 
             child.rel_position.arr[axis_i] = layout_position;
-            if (root.layout_axis == axis) {
+            if (atom.layout_axis == axis) {
                 layout_position += child.fixed_size.arr[axis_i];
                 bounds += child.fixed_size.arr[axis_i];
             } else {
                 bounds = @max(bounds, child.fixed_size.arr[axis_i]);
             }
 
-            child.rect.pt.p0.arr[axis_i] = root.rect.pt.p0.arr[axis_i] + child.rel_position.arr[axis_i];
-
+            child.rect.pt.p0.arr[axis_i] = atom.rect.pt.p0.arr[axis_i] + child.rel_position.arr[axis_i];
             child.rect.pt.p1.arr[axis_i] = child.rect.pt.p0.arr[axis_i] + child.fixed_size.arr[axis_i];
 
             child.rect.pt.p0.vec.x = @floor(child.rect.pt.p0.vec.x);
@@ -282,14 +239,14 @@ fn layoutPosition(root: *Widget, axis: AxisKind) void {
 
     // store view bounds
     {
-        root.view_bounds.arr[axis_i] = bounds;
+        atom.view_bounds.arr[axis_i] = bounds;
     }
 
     // recurse
     {
-        var maybe_child: ?*Widget = children.first;
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            layoutPosition(child, axis);
+            position(child, axis);
         }
     }
 }
@@ -304,7 +261,7 @@ pub const DebugPrintTreeOptions = struct {
     targeted_size_kind: ?[]const SizeKind = null,
 };
 
-pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOptions) void {
+pub fn debugPrintTree(atom: *Atom, depth: usize, options: DebugPrintTreeOptions) void {
     const red_bg = TermColor{
         .color = .red,
         .layer = .background,
@@ -316,8 +273,8 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
 
     const targeted: bool = if (options.targeted_size_kind) |targets|
         for (targets) |target|
-            if (root.size.sz.w.kind == target or
-                root.size.sz.h.kind == target)
+            if (atom.size.sz.w.kind == target or
+                atom.size.sz.h.kind == target)
                 break true
             else {}
         else
@@ -327,12 +284,12 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
 
     for (0..depth) |_| std.debug.print("    ", .{});
     if (targeted)
-        std.debug.print("- {}{s}{}\n", .{ red_bg, root.string, reset })
+        std.debug.print("- {}{s}{}\n", .{ red_bg, atom.string, reset })
     else
-        std.debug.print("- {s}\n", .{root.string});
+        std.debug.print("- {s}\n", .{atom.string});
 
-    const has_children = root.children != null;
-    const layout_axis = root.layout_axis;
+    const has_children = atom.children != null;
+    const layout_axis = atom.layout_axis;
 
     for (0..depth) |_| std.debug.print("    ", .{});
     std.debug.print("   has children: {}\n", .{has_children});
@@ -340,7 +297,7 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
     std.debug.print("   layout axis: {}\n", .{layout_axis});
 
     if (options.size) {
-        const size = root.size;
+        const size = atom.size;
 
         const kinds: []const []const u8 = &.{ "w", "h" };
 
@@ -375,7 +332,7 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
     }
 
     if (options.computed_size) {
-        const computed_size = root.fixed_size;
+        const computed_size = atom.fixed_size;
         for (0..depth) |_| std.debug.print("    ", .{});
         if (targeted)
             std.debug.print(
@@ -390,7 +347,7 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
     }
 
     if (options.rel_position) {
-        const rel_position = root.rel_position;
+        const rel_position = atom.rel_position;
         for (0..depth) |_| std.debug.print("    ", .{});
         std.debug.print(
             "   relative position: {d} x {d}\n",
@@ -399,7 +356,7 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
     }
 
     if (options.rect) {
-        const rect = root.rect;
+        const rect = atom.rect;
         for (0..depth) |_| std.debug.print("    ", .{});
         std.debug.print(
             "   rect: {d} x {d} @ {d} x {d}\n",
@@ -408,8 +365,8 @@ pub fn debugPrintTree(root: *Widget, depth: usize, options: DebugPrintTreeOption
     }
 
     if (options.children and has_children) {
-        const children = root.children.?;
-        var maybe_child: ?*Widget = children.first;
+        const children = atom.children.?;
+        var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             debugPrintTree(child, depth + 1, options);
         }

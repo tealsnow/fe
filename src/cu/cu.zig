@@ -23,17 +23,16 @@ pub const GlobalState = struct {
     font: *sdl.ttf.Font,
 
     arena: std.heap.ArenaAllocator,
-
     alloc_temp: Allocator,
     alloc_persistent: Allocator,
 
     atom_pool: AtomPool,
-    atom_stack: AtomStack = .{},
+    atom_stack: AtomStack = .empty,
     atom_map: AtomMap = .empty,
 
-    ui_root: *Atom = undefined, // initalized after `startBuild`
+    ui_root: *Atom = undefined, // only available between `startBuild` and `startFrame` calls; i.e. after `startBuild` but not after `startFrame`
 
-    pub const MaxAtoms = 1024 * 4;
+    pub const MaxAtoms = 1024 * 4; // not 4 kb of memory, 4k (ish) of atoms
 
     pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = false });
     pub const AtomStack = std.ArrayListUnmanaged(*Atom);
@@ -93,7 +92,7 @@ pub fn deinit() void {
 }
 
 pub fn startFrame() void {
-    //
+    state.ui_root = undefined;
 }
 
 pub fn endFrame() void {
