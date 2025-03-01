@@ -101,17 +101,38 @@ pub fn main() !void {
             root.layout_axis = .x;
             root.size.sz = .{ .w = .full, .h = .full };
 
+            const payload = cu.provideScopeLocal(Payload, &.{ .value = 32 });
+            defer payload.end();
+
+            const payload2nd = cu.provideScopeLocal(Payload2, &.{ .string = "foo bar" });
+            defer payload2nd.end();
+
             { // left pane
                 const pane = cu.ui(.{}, "left pane");
                 defer pane.end();
                 pane.layout_axis = .y;
                 pane.size.sz = .{ .w = .percent(0.3), .h = .full };
 
+                const pl2nd = cu.getScopeLocal(Payload2);
+                std.debug.print("pl 2nd: {s}\n", .{pl2nd.string});
+
+                const pl = cu.getScopeLocal(Payload);
+                std.debug.print("pl: {d}\n", .{pl.value});
+
+                const payload2 = cu.provideScopeLocal(Payload, &.{ .value = -42 });
+                defer payload2.end();
+
                 {
                     const header = cu.ui(.{}, "left header");
                     defer header.end();
                     header.equipDisplayString();
                     header.size.sz.w = .grow;
+
+                    const pl2 = cu.getScopeLocal(Payload);
+                    std.debug.print("pl2: {d}\n", .{pl2.value});
+
+                    const pl2nd2 = cu.getScopeLocal(Payload2);
+                    std.debug.print("pl 2nd 2: {s}\n", .{pl2nd2.string});
                 }
 
                 {
@@ -121,18 +142,27 @@ pub fn main() !void {
                 }
             }
 
+            const pl3 = cu.getScopeLocal(Payload);
+            std.debug.print("pl3: {d}\n", .{pl3.value});
+
             { // right pane
                 const pane = cu.ui(.{}, "right pane");
                 defer pane.end();
                 pane.layout_axis = .y;
                 pane.size.sz = .{ .w = .grow, .h = .full };
 
+                const payload2nd2 = cu.provideScopeLocal(Payload2, &.{ .string = "hello" });
+                defer payload2nd2.end();
+
                 {
                     const header = cu.ui(.{}, "right header");
                     defer header.end();
                     header.equipDisplayString();
                     header.size.sz.w = .grow;
-                    header.flags.text_centered = true;
+                    header.text_align = .center;
+
+                    const pl2nd3 = cu.getScopeLocal(Payload2);
+                    std.debug.print("pl 2nd 3: {s}\n", .{pl2nd3.string});
                 }
 
                 {
@@ -141,6 +171,9 @@ pub fn main() !void {
                     content.size.sz = .{ .w = .grow, .h = .grow };
                 }
             }
+
+            const pl2nd4 = cu.getScopeLocal(Payload2);
+            std.debug.print("pl 2nd 4: {s}\n", .{pl2nd4.string});
 
             { // right bar
                 const bar = cu.ui(.{}, "right bar");
@@ -167,8 +200,20 @@ pub fn main() !void {
         try render(cu.state.ui_root, renderer);
 
         renderer.present();
+
+        if (cu.state.current_frame_index == 1) {
+            running = false;
+        }
     }
 }
+
+pub const Payload = struct {
+    value: i32,
+};
+
+pub const Payload2 = struct {
+    string: []const u8,
+};
 
 fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
     try renderer.setDrawColorT(atom.color);
