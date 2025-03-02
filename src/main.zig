@@ -1,11 +1,31 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const sdl = @import("sdl/sdl.zig");
 const fontconfig = @import("fontconfig.zig");
 
 const cu = @import("cu/cu.zig");
 
+const one_frame = false;
+
 pub fn main() !void {
+    try sdl.init(sdl.InitFlags.All);
+    defer sdl.quit();
+
+    try sdl.ttf.init();
+    defer sdl.ttf.quit();
+
+    run() catch |err| {
+        const sdl_err = sdl.getError() orelse "[none]";
+        const ttf_err = sdl.ttf.getError() orelse "[none]";
+        std.log.err("[SDL]: {s}", .{sdl_err});
+        std.log.err("[SDL_TTF]: {s}", .{ttf_err});
+
+        return err;
+    };
+}
+
+pub fn run() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     gpa.backing_allocator = std.heap.c_allocator;
     defer {
@@ -15,12 +35,6 @@ pub fn main() !void {
         }
     }
     const alloc = gpa.allocator();
-
-    try sdl.init(sdl.InitFlags.All);
-    defer sdl.quit();
-
-    try sdl.ttf.init();
-    defer sdl.ttf.deinit();
 
     const window = try sdl.Window.init(.{
         .title = "fe",
@@ -86,7 +100,6 @@ pub fn main() !void {
         }
 
         cu.startFrame();
-        defer cu.endFrame();
 
         try renderer.setDrawColor(18, 18, 18, 255);
         try renderer.clear();
@@ -101,38 +114,17 @@ pub fn main() !void {
             root.layout_axis = .x;
             root.size.sz = .{ .w = .full, .h = .full };
 
-            const payload = cu.provideScopeLocal(Payload, &.{ .value = 32 });
-            defer payload.end();
-
-            const payload2nd = cu.provideScopeLocal(Payload2, &.{ .string = "foo bar" });
-            defer payload2nd.end();
-
             { // left pane
                 const pane = cu.ui(.{}, "left pane");
                 defer pane.end();
                 pane.layout_axis = .y;
                 pane.size.sz = .{ .w = .percent(0.3), .h = .full };
 
-                const pl2nd = cu.getScopeLocal(Payload2);
-                std.debug.print("pl 2nd: {s}\n", .{pl2nd.string});
-
-                const pl = cu.getScopeLocal(Payload);
-                std.debug.print("pl: {d}\n", .{pl.value});
-
-                const payload2 = cu.provideScopeLocal(Payload, &.{ .value = -42 });
-                defer payload2.end();
-
                 {
                     const header = cu.ui(.{}, "left header");
                     defer header.end();
                     header.equipDisplayString();
                     header.size.sz.w = .grow;
-
-                    const pl2 = cu.getScopeLocal(Payload);
-                    std.debug.print("pl2: {d}\n", .{pl2.value});
-
-                    const pl2nd2 = cu.getScopeLocal(Payload2);
-                    std.debug.print("pl 2nd 2: {s}\n", .{pl2nd2.string});
                 }
 
                 {
@@ -142,17 +134,11 @@ pub fn main() !void {
                 }
             }
 
-            const pl3 = cu.getScopeLocal(Payload);
-            std.debug.print("pl3: {d}\n", .{pl3.value});
-
             { // right pane
                 const pane = cu.ui(.{}, "right pane");
                 defer pane.end();
                 pane.layout_axis = .y;
                 pane.size.sz = .{ .w = .grow, .h = .full };
-
-                const payload2nd2 = cu.provideScopeLocal(Payload2, &.{ .string = "hello" });
-                defer payload2nd2.end();
 
                 {
                     const header = cu.ui(.{}, "right header");
@@ -160,9 +146,6 @@ pub fn main() !void {
                     header.equipDisplayString();
                     header.size.sz.w = .grow;
                     header.text_align = .center;
-
-                    const pl2nd3 = cu.getScopeLocal(Payload2);
-                    std.debug.print("pl 2nd 3: {s}\n", .{pl2nd3.string});
                 }
 
                 {
@@ -171,9 +154,6 @@ pub fn main() !void {
                     content.size.sz = .{ .w = .grow, .h = .grow };
                 }
             }
-
-            const pl2nd4 = cu.getScopeLocal(Payload2);
-            std.debug.print("pl 2nd 4: {s}\n", .{pl2nd4.string});
 
             { // right bar
                 const bar = cu.ui(.{}, "right bar");
@@ -184,38 +164,41 @@ pub fn main() !void {
                 {
                     const inner = cu.ui(.{}, "right bar inner");
                     defer inner.end();
-                    bar.layout_axis = .y;
-                    inner.size.sz = .{ .w = .full, .h = .sum };
+                    inner.layout_axis = .y;
+                    inner.size.sz = .{ .w = .px(16), .h = .sum };
 
-                    for (0..2) |i| {
-                        const icon = cu.uif(.{}, "right bar icon {d}", .{i});
-                        defer icon.end();
-                        icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+                    for (0..5) |i| {
+                        {
+                            const icon = cu.uif(.{}, "right bar icon {d}", .{i});
+                            defer icon.end();
+                            icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+                        }
+
+                        {
+                            const pad = cu.uif(.{}, "##right bar icon padding {d}", .{i});
+                            defer pad.end();
+                            pad.size.sz = .{ .w = .px(16), .h = .px(4) };
+                            // pad.color = .{ .r = 255, .g = 0, .b = 0, .a = 255 };
+                        }
                     }
                 }
             }
         }
 
         cu.endBuild();
-        try render(cu.state.ui_root, renderer);
 
+        try render(cu.state.ui_root, renderer);
         renderer.present();
 
-        if (cu.state.current_frame_index == 1) {
-            running = false;
-        }
+        cu.endFrame();
+
+        if (one_frame and cu.state.current_frame_index == 1) running = false;
     }
 }
 
-pub const Payload = struct {
-    value: i32,
-};
-
-pub const Payload2 = struct {
-    string: []const u8,
-};
-
 fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
+    // std.log.info("rendering atom[{s}]", .{atom.string});
+
     try renderer.setDrawColorT(atom.color);
     const rect = sdl.FRect{
         .x = atom.rect.vec.x0,
@@ -228,12 +211,12 @@ fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
     if (atom.flags.draw_text) {
         const text_data = atom.text_data.?;
 
-        // const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        // const surface = try cu.gs.font.renderTextSolid(text_data.zstring, font_color);
-        // defer surface.deinit();
+        const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        const surface = try cu.state.font.renderTextSolid(text_data.zstring, font_color);
+        defer surface.deinit();
 
-        // const texture = try renderer.createTextureFromSurface(surface);
-        // defer texture.deinit();
+        const texture = try renderer.createTextureFromSurface(surface);
+        defer texture.deinit();
 
         const dst_rect = sdl.Rect{
             .x = @intFromFloat(rect.x),
@@ -242,10 +225,10 @@ fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
             .h = text_data.size.sz.h,
         };
 
-        // try renderer.renderCopy(texture, null, &dst_rect);
+        try renderer.renderCopy(texture, null, &dst_rect);
 
-        try renderer.setDrawColorT(sdl.Color{ .r = 255, .g = 0, .b = 0, .a = 255 });
-        try renderer.drawRect(&dst_rect);
+        // try renderer.setDrawColorT(sdl.Color{ .r = 255, .g = 0, .b = 0, .a = 255 });
+        // try renderer.drawRect(&dst_rect);
     }
 
     if (atom.children) |children| {

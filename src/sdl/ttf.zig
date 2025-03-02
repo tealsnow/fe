@@ -1,4 +1,6 @@
-pub const sdl = @import("sdl.zig");
+const std = @import("std");
+
+const sdl = @import("sdl.zig");
 const c = sdl.c;
 
 pub fn init() !void {
@@ -6,8 +8,16 @@ pub fn init() !void {
         return error.ttf_init;
 }
 
-pub fn deinit() void {
+pub fn quit() void {
     c.TTF_Quit();
+}
+
+pub fn getError() ?[:0]const u8 {
+    const err = c.TTF_GetError();
+    return if (err != null)
+        std.mem.sliceTo(err, 0)
+    else
+        null;
 }
 
 pub const Font = opaque {
@@ -20,7 +30,7 @@ pub const Font = opaque {
         c.TTF_CloseFont(@ptrCast(self));
     }
 
-    pub fn renderTextSolid(self: *Font, text: [*c]const u8, color: sdl.Color) !*sdl.Surface {
+    pub fn renderTextSolid(self: *Font, text: [:0]const u8, color: sdl.Color) !*sdl.Surface {
         const surface = c.TTF_RenderText_Solid(
             @ptrCast(self),
             text,
@@ -29,7 +39,7 @@ pub const Font = opaque {
         return @ptrCast(@alignCast(surface));
     }
 
-    pub fn sizeText(self: *Font, text: [*c]const u8, w: *c_int, h: *c_int) !void {
+    pub fn sizeText(self: *Font, text: [:0]const u8, w: *c_int, h: *c_int) !void {
         if (c.TTF_SizeText(@ptrCast(self), text, w, h) != 0)
             return error.ttf_size_text;
     }

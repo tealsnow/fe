@@ -1,9 +1,9 @@
 /// # Attribution
 ///
-/// Much of the design of this it taken from a series of blogs on ui by
-/// Ryan Fleury (rfleury.com/i/146446067/ui-programming-series)
+/// Much of the design of this it taken from a series of blogs on UI by
+/// Ryan Fleury (https://rfleury.com/i/146446067/ui-programming-series)
 /// with some parts taken from the implementation of the ui layer of raddebugger
-/// github.com/EpicGamesExt/raddebugger (Copyright (c) 2024 Epic Games Tools)
+/// (https://github.com/EpicGamesExt/raddebugger) (Copyright (c) 2024 Epic Games Tools)
 ///
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -32,7 +32,9 @@ pub const GlobalState = struct {
 
     scope_locals: std.StringArrayHashMapUnmanaged(*ScopeLocalNode) = .empty,
 
-    ui_root: *Atom = undefined, // only available between `startBuild` and `startFrame` calls; i.e. after `startBuild` but not after `startFrame`
+    // only available between `startBuild` and `startFrame` calls
+    // i.e. after `startBuild` but not after `startFrame`
+    ui_root: *Atom = undefined,
 
     pub const MaxAtoms = 1024 * 4; // not 4 kb of memory, 4k (ish) of atoms
 
@@ -145,10 +147,10 @@ pub fn startFrame() void {
 }
 
 pub fn endFrame() void {
-    _ = state.arena.reset(.retain_capacity);
-
     // @FIXME: not sure if this is needed
     state.scope_locals.clearAndFree(state.alloc_temp);
+
+    _ = state.arena.reset(.retain_capacity);
 }
 
 pub fn Vec2(comptime T: type) type {
@@ -238,14 +240,14 @@ pub const Size = extern struct {
     /// what percent of final size do we refuse to give up
     strictness: f32 = 0,
 
-    /// kind: percent_of_parent
-    /// value: 1
-    /// strictness: 0
+    /// kind: percent_of_parent,
+    /// value: 1,
+    /// strictness: 0,
     pub const grow = percent_relaxed(1);
 
-    /// kind: percent_of_parent
-    /// value: 1
-    /// strictness: 1
+    /// kind: percent_of_parent,
+    /// value: 1,
+    /// strictness: 1,
     pub const full = percent(1);
 
     /// kind: children_sum
@@ -254,9 +256,9 @@ pub const Size = extern struct {
     /// kind: text_content
     pub const text = Size{ .kind = .text_content };
 
-    /// kind: pixels
-    /// value: pxs
-    /// strictness: 1
+    /// kind: pixels,
+    /// value: pxs,
+    /// strictness: 1,
     pub fn px(pxs: f32) Size {
         return .{
             .kind = .pixels,
@@ -265,9 +267,9 @@ pub const Size = extern struct {
         };
     }
 
-    /// kind: pixels
-    /// value: px
-    /// strictness: 0
+    /// kind: pixels,
+    /// value: px,
+    /// strictness: 0,
     pub fn px_relaxed(pxs: f32) Size {
         return .{
             .kind = .pixels,
@@ -276,9 +278,9 @@ pub const Size = extern struct {
         };
     }
 
-    /// kind: percent_of_parent
-    /// value: pct
-    /// strictness: 1
+    /// kind: percent_of_parent,
+    /// value: pct,
+    /// strictness: 1,
     pub fn percent(pct: f32) Size {
         return .{
             .kind = .percent_of_parent,
@@ -287,9 +289,9 @@ pub const Size = extern struct {
         };
     }
 
-    /// kind: percent_of_parent
-    /// value: pct
-    /// strictness: 0
+    /// kind: percent_of_parent,
+    /// value: pct,
+    /// strictness: 0,
     pub fn percent_relaxed(pct: f32) Size {
         return .{
             .kind = .percent_of_parent,
@@ -299,7 +301,7 @@ pub const Size = extern struct {
     }
 };
 
-pub const Key = enum(u64) {
+pub const Key = enum(u32) {
     _,
 
     pub const Zero: Key = @enumFromInt(0);
@@ -307,9 +309,7 @@ pub const Key = enum(u64) {
     pub const KeyContext = struct {
         pub fn hash(self: @This(), key: Key) u32 {
             _ = self;
-            // return @intFromEnum(key);
-            _ = key;
-            unreachable;
+            return key.asInt();
         }
 
         pub fn eql(self: @This(), a: Key, b: Key, b_index: usize) bool {
@@ -319,16 +319,20 @@ pub const Key = enum(u64) {
         }
     };
 
-    pub fn eql(left: Key, right: Key) bool {
-        return @intFromEnum(left) == @intFromEnum(right);
+    pub inline fn asInt(self: Key) u32 {
+        return @intFromEnum(self);
+    }
+
+    pub inline fn eql(left: Key, right: Key) bool {
+        return left.asInt() == right.asInt();
     }
 
     // @TODO: Use parent id as seed
     pub fn processString(
-        seed: u64,
+        seed: u32,
         string: []const u8,
     ) struct {
-        string: []const u8,
+        displayString: []const u8,
         key: Key,
     } {
         // hash whole string, only display before '##'
@@ -338,30 +342,34 @@ pub const Key = enum(u64) {
         // or just hash the string
 
         return if (std.mem.indexOf(u8, string, two_hash)) |index| blk: {
-            const hash = std.hash.Wyhash.hash(seed, string);
+            const hash = hashString(seed, string);
 
             const str = string[0..index];
             break :blk .{
-                .string = str,
+                .displayString = str,
                 .key = @enumFromInt(hash),
             };
         } else if (std.mem.indexOf(u8, string, three_hash)) |index| blk: {
             const slice = string[(index + three_hash.len)..];
-            const hash = std.hash.Wyhash.hash(seed, slice);
+            const hash = hashString(seed, slice);
 
             const str = string[0..index];
             break :blk .{
-                .string = str,
+                .displayString = str,
                 .key = @enumFromInt(hash),
             };
         } else blk: {
-            const hash = std.hash.Wyhash.hash(seed, string);
+            const hash = hashString(seed, string);
 
             break :blk .{
-                .string = string,
+                .displayString = string,
                 .key = @enumFromInt(hash),
             };
         };
+    }
+
+    inline fn hashString(seed: u32, string: []const u8) u32 {
+        return std.hash.XxHash32.hash(seed, string);
     }
 };
 
@@ -380,35 +388,35 @@ pub const Atom = struct {
 
     // per-build equipment
     key: Key,
-    flags: AtomFlags,
-    string: []const u8,
+    string: []const u8 = "",
+    displayString: []const u8 = "",
+    flags: AtomFlags = .{},
     size: Axis2(Size) = Axis2(Size).Zero,
-    layout_axis: AxisKind = .none,
+    layout_axis: AxisKind = .none, // ensure this is set if children are added, if not an assertion will fail
     // hover_cursor
     // group_key
     // custom_draw_func
     // custom_draw_data
 
-    // these could be scope locals
+    // @FIXME: these could be scope locals, its worth looking into performance implications first though
     text_align: TextAlignment = .left,
     // pallete (background, text, text_weak, border, overlay, cursor, selection)
     // font (+size)
     // corner_radii: [4]f32
     // transparency: f32 = 1.0,
-
-    color: sdl.Color = .{},
+    color: sdl.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
 
     // per-build artifacts
     fixed_size: Axis2(f32) = Axis2(f32).Zero,
     rel_position: Axis2(f32) = Axis2(f32).Zero,
     rect: Range2(f32) = Range2(f32).Zero,
+    text_data: ?TextData = null,
 
     // persistant data
     frame_touched_first: u64,
     frame_touched_last: u64,
-    // frame_first_disabled
+    // frame_first_disabled: u64,
     view_bounds: Axis2(f32) = Axis2(f32).Zero,
-    text_data: ?TextData = null,
 
     /// Sets `size.{w, h}` to `text_content`
     /// and sets the `draw_text` flag
@@ -422,13 +430,23 @@ pub const Atom = struct {
         assert(Key.eql(self.key, atom.key)); // hit if mismatched ui/end called, likely forgot a defer
     }
 
-    pub fn interation(self: *Atom) Interation {
-        _ = self; // autofix
-        unreachable;
+    pub inline fn interation(self: *Atom) Interation {
+        return interationFromAtom(self);
+    }
+
+    pub fn format(self: *Atom, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print(
+            "atom['{s}'#{d}]",
+            .{ self.string, self.key.asInt() },
+        );
     }
 };
 
-pub const AtomFlags = packed struct {
+pub const AtomFlags = packed struct(u32) {
+    const Self = @This();
+
     // interation
     mouse_clickable: bool = false,
     keyboard_clickable: bool = false,
@@ -463,26 +481,52 @@ pub const AtomFlags = packed struct {
 
     // render_custom: bool = false,
 
-    pub inline fn clickable(self: *AtomFlags, set: bool) void {
-        self.mouse_clickable = set;
-        self.keyboard_clickable = set;
+    _padding: enum(u11) { zero } = .zero,
+
+    pub const clickable = AtomFlags{
+        .mouse_clickable = true,
+        .keyboard_clickable = true,
+    };
+
+    pub const floating = AtomFlags{
+        .floating_x = true,
+        .floating_y = true,
+    };
+
+    pub const allow_overflow = AtomFlags{
+        .allow_overflow_x = true,
+        .allow_overflow_y = true,
+    };
+
+    pub const draw_sides = AtomFlags{
+        .draw_side_top = true,
+        .draw_side_bottom = true,
+        .draw_side_left = true,
+        .draw_side_right = true,
+    };
+
+    inline fn asInt(self: Self) u32 {
+        return @bitCast(self);
     }
 
-    pub inline fn floating(self: *AtomFlags, set: bool) void {
-        self.floating_x = set;
-        self.floating_y = set;
+    inline fn fromInt(value: u32) Self {
+        return @bitCast(value);
     }
 
-    pub inline fn allowOverflow(self: *AtomFlags, set: bool) void {
-        self.allow_overflow_x = set;
-        self.allow_overflow_y = set;
+    inline fn bitOr(self: Self, other: Self) u32 {
+        return fromInt(self.asInt() | other.asInt());
     }
 
-    pub inline fn drawSides(self: *AtomFlags, set: bool) void {
-        self.draw_side_top = set;
-        self.draw_side_bottom = set;
-        self.draw_side_left = set;
-        self.draw_side_right = set;
+    inline fn bitAnd(self: Self, other: Self) Self {
+        return fromInt(self.asInt() & other.asInt());
+    }
+
+    pub inline fn combine(self: Self, other: Self) Self {
+        return bitOr(self, other);
+    }
+
+    pub inline fn containsAny(self: Self, other: Self) bool {
+        return bitAnd(self, other).asInt() > 0;
     }
 };
 
@@ -510,84 +554,144 @@ pub const TextData = struct {
     }
 };
 
-pub const InteractionFlags = packed struct {
+pub const InteractionFlags = packed struct(u32) {
+    const Self = @This();
+
     // mouse press -> atom pressed while hovering
-    left_pressed: bool,
-    middle_pressed: bool,
-    right_pressed: bool,
+    left_pressed: bool = false,
+    middle_pressed: bool = false,
+    right_pressed: bool = false,
 
     // released -> atom was pressed & released, in or out of bounds
-    left_released: bool,
-    middle_released: bool,
-    right_released: bool,
+    left_released: bool = false,
+    middle_released: bool = false,
+    right_released: bool = false,
 
     // clicked -> atom was pressed & released, in bounds
-    left_clicked: bool,
-    middle_clicked: bool,
-    right_clicked: bool,
+    left_clicked: bool = false,
+    middle_clicked: bool = false,
+    right_clicked: bool = false,
 
     // dragging -> atom was pressed, still holding
-    left_dragging: bool,
-    middle_dragging: bool,
-    right_dragging: bool,
+    left_dragging: bool = false,
+    middle_dragging: bool = false,
+    right_dragging: bool = false,
 
     // double clicked -> atom was clicked, pressed again
-    left_double_clicked: bool,
-    middle_double_clicked: bool,
-    right_double_clicked: bool,
+    left_double_clicked: bool = false,
+    middle_double_clicked: bool = false,
+    right_double_clicked: bool = false,
 
     // double dragging -> atom was double-clicked, still holding
-    left_double_dragging: bool,
-    middle_double_dragging: bool,
-    right_double_dragging: bool,
+    left_double_dragging: bool = false,
+    middle_double_dragging: bool = false,
+    right_double_dragging: bool = false,
 
     // triple clicked -> atom was double-clicked, pressed again
-    left_triple_clicked: bool,
-    middle_triple_clicked: bool,
-    right_triple_clicked: bool,
+    left_triple_clicked: bool = false,
+    middle_triple_clicked: bool = false,
+    right_triple_clicked: bool = false,
 
     // triple dragging -> atom was triple-clicked, still holding
-    left_triple_dragging: bool,
-    middle_triple_dragging: bool,
-    right_triple_dragging: bool,
+    left_triple_dragging: bool = false,
+    middle_triple_dragging: bool = false,
+    right_triple_dragging: bool = false,
 
     // keyboard pressed -> atom has focus, activated via keyboard
-    keyboard_pressed: bool,
+    keyboard_pressed: bool = false,
 
-    hovering: bool, // hovering specifically over this atom
-    mouse_over: bool, // mouse is over, but may be occluded
+    hovering: bool = false, // hovering specifically over this atom
+    mouse_over: bool = false, // mouse is over, but may be occluded
 
-    pub inline fn pressed(self: *InteractionFlags) bool {
-        return self.left_pressed or self.keyboard_pressed;
+    _padding: enum(u5) { zero } = .zero,
+
+    pub const pressed = InteractionFlags{
+        .left_pressed = true,
+        .keyboard_pressed = true,
+    };
+
+    pub const released = InteractionFlags{
+        .left_released = true,
+    };
+
+    pub const clicked = InteractionFlags{
+        .left_clicked = true,
+        .keyboard_pressed = true,
+    };
+
+    pub const double_clicked = InteractionFlags{
+        .left_double_clicked = true,
+    };
+
+    pub const triple_clicked = InteractionFlags{
+        .left_triple_clicked = true,
+    };
+
+    pub const dragging = InteractionFlags{
+        .left_dragging = true,
+    };
+
+    inline fn asInt(self: Self) u32 {
+        return @bitCast(self);
     }
 
-    pub inline fn released(self: *InteractionFlags) bool {
-        return self.left_released;
+    inline fn fromInt(value: u32) Self {
+        return @bitCast(value);
     }
 
-    pub inline fn clicked(self: *InteractionFlags) bool {
-        return self.left_clicked or self.keyboard_pressed;
+    inline fn bitOr(self: Self, other: Self) Self {
+        return fromInt(self.asInt() | other.asInt());
     }
 
-    pub inline fn double_clicked(self: *InteractionFlags) bool {
-        return self.left_double_clicked;
+    inline fn bitAnd(self: Self, other: Self) Self {
+        return fromInt(self.asInt() & other.asInt());
     }
 
-    pub inline fn triple_clicked(self: *InteractionFlags) bool {
-        return self.left_triple_clicked;
+    pub inline fn combine(self: Self, other: Self) Self {
+        return bitOr(self, other);
     }
 
-    pub inline fn dragging(self: *InteractionFlags) bool {
-        return self.left_dragging;
+    pub inline fn containsAny(self: Self, other: Self) bool {
+        return bitAnd(self, other).asInt() > 0;
+    }
+
+    pub inline fn isPressed(self: InteractionFlags) bool {
+        return self.containsAny(.pressed);
+    }
+
+    pub inline fn isReleased(self: InteractionFlags) bool {
+        return self.containsAny(.released);
+    }
+
+    pub inline fn isClicked(self: InteractionFlags) bool {
+        return self.containsAny(.clicked);
+    }
+
+    pub inline fn isDoubleClicked(self: InteractionFlags) bool {
+        return self.containsAny(.double_clicked);
+    }
+
+    pub inline fn isTripleClicked(self: InteractionFlags) bool {
+        return self.containsAny(.triple_clicked);
+    }
+
+    pub inline fn isDragging(self: InteractionFlags) bool {
+        return self.containsAny(.dragging);
     }
 };
 
 pub const Interation = struct {
     atom: *Atom,
     scroll: Vec2(f32),
-    // modifiers: ...,
+    modifiers: sdl.Keysym.ModFlags,
     f: InteractionFlags,
 };
+
+// one frame behind is it?
+pub fn interationFromAtom(atom: *Atom) Interation {
+    _ = atom; // autofix
+    unreachable;
+}
 
 pub fn tryAtomFromKey(key: Key) ?*Atom {
     var result: ?*Atom = null;
@@ -602,11 +706,17 @@ pub fn tryAtomFromKey(key: Key) ?*Atom {
 pub fn buildAtomFromKey(key: Key) *Atom {
     state.build_atom_count +%= 1; // wrapping add
 
-    const atom = if (tryAtomFromKey(key)) |atom|
-        atom
-    else blk: {
+    const atom = if (tryAtomFromKey(key)) |atom| blk: {
+        atom.key = key;
+        atom.frame_touched_last = state.current_frame_index;
+        break :blk atom;
+    } else blk: {
         const atom = state.allocAtom();
-        atom.frame_touched_first = state.current_frame_index;
+        atom.* = .{
+            .key = key,
+            .frame_touched_first = state.current_frame_index,
+            .frame_touched_last = state.current_frame_index,
+        };
 
         const bad_atom = state.atom_map.fetchPut(state.alloc_persistent, key, atom) catch @panic("oom");
         assert(bad_atom == null);
@@ -614,11 +724,13 @@ pub fn buildAtomFromKey(key: Key) *Atom {
         break :blk atom;
     };
 
-    atom.parent = null;
+    // zero out per build info
+    atom.children = null;
     atom.siblings.next = null;
     atom.siblings.prev = null;
-    atom.children = null;
+    atom.parent = null;
 
+    // add to parent
     if (state.currentParent()) |parent| {
         atom.parent = parent;
 
@@ -626,7 +738,6 @@ pub fn buildAtomFromKey(key: Key) *Atom {
             const last = children.last;
             last.siblings.next = atom;
             atom.siblings.prev = last;
-
             children.last = atom;
 
             children.count += 1;
@@ -639,9 +750,6 @@ pub fn buildAtomFromKey(key: Key) *Atom {
         }
     }
 
-    atom.key = key;
-    atom.frame_touched_last = state.current_frame_index;
-
     return atom;
 }
 
@@ -650,7 +758,8 @@ pub fn buildAtomFromString(string: []const u8) *Atom {
     const key_str = Key.processString(seed, string);
 
     const atom = buildAtomFromKey(key_str.key);
-    atom.string = key_str.string;
+    atom.string = string;
+    atom.displayString = key_str.displayString;
 
     return atom;
 }
@@ -680,8 +789,8 @@ pub fn startBuild(window: *sdl.Window) void {
 }
 
 pub fn endBuild() void {
-    state.atom_map.lockPointers();
-    defer state.atom_map.unlockPointers();
+    // state.atom_map.lockPointers();
+    // defer state.atom_map.unlockPointers();
 
     for (state.atom_map.values()) |atom| {
         if (atom.frame_touched_last < state.current_frame_index or atom.key.eql(Key.Zero)) {
@@ -700,16 +809,32 @@ pub fn endBuild() void {
     state.current_frame_index +%= 1; // wrapping add
 }
 
-pub inline fn ui(flags: AtomFlags, string: []const u8) *Atom {
+pub fn ui(flags: AtomFlags, string: []const u8) *Atom {
     const atom = buildAtomFromString(string);
     atom.flags = flags;
     state.pushParent(atom);
     return atom;
 }
 
-pub inline fn uif(flags: AtomFlags, comptime fmt: []const u8, args: anytype) *Atom {
+pub fn uif(flags: AtomFlags, comptime fmt: []const u8, args: anytype) *Atom {
     const atom = buildAtomFromStringF(fmt, args);
     atom.flags = flags;
     state.pushParent(atom);
     return atom;
+}
+
+pub fn makeButton(string: []const u8) *Atom {
+    return ui(
+        AtomFlags.clickable.combine(.{
+            .draw_border = true,
+            .draw_text = true,
+            .draw_background = true,
+        }),
+        string,
+    );
+}
+
+pub fn button(string: []const u8) Interation {
+    const btn = makeButton(string);
+    return btn.interation();
 }

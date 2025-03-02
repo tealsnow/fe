@@ -16,7 +16,7 @@ pub const Point = c.SDL_Point;
 pub const FPoint = c.SDL_FPoint;
 pub const Color = c.SDL_Color;
 
-pub const InitFlags = packed struct {
+pub const InitFlags = packed struct(u32) {
     timer: bool = false,
     audio: bool = false,
     video: bool = false,
@@ -25,7 +25,7 @@ pub const InitFlags = packed struct {
     gamecontroller: bool = false,
     events: bool = false,
     sensor: bool = false,
-    _padding: u24 = 0,
+    _padding: enum(u24) { zero } = .zero,
 
     pub const All = InitFlags{
         .timer = true,
@@ -38,21 +38,17 @@ pub const InitFlags = packed struct {
         .sensor = true,
     };
 
-    pub fn fromInt(value: u32) InitFlags {
+    pub inline fn fromInt(value: u32) InitFlags {
         return @bitCast(value);
     }
 
-    pub fn toInt(self: InitFlags) u32 {
+    pub inline fn asInt(self: InitFlags) u32 {
         return @bitCast(self);
-    }
-
-    comptime {
-        std.debug.assert(@sizeOf(InitFlags) == @sizeOf(u32));
     }
 };
 
 pub fn init(flags: InitFlags) Error!void {
-    if (c.SDL_Init(flags.toInt()) != 0)
+    if (c.SDL_Init(flags.asInt()) != 0)
         return error.Sdl;
 }
 
@@ -60,12 +56,12 @@ pub fn quit() void {
     c.SDL_Quit();
 }
 
-pub fn getError() ?[]const u8 {
-    if (c.SDL_GetError()) |err| {
-        return std.mem.sliceTo(err, 0);
-    } else {
-        return null;
-    }
+pub fn getError() ?[:0]const u8 {
+    const err = c.SDL_GetError();
+    return if (err != null)
+        std.mem.sliceTo(err, 0)
+    else
+        null;
 }
 
 pub const Window = opaque {
@@ -100,6 +96,7 @@ pub const Window = opaque {
         h: c_int,
     };
 
+    // @FIXME: might be a better idea to make this an actual bit set
     pub const Flag = struct {
         pub const fullscreen = @as(Flags, c.SDL_WINDOW_FULLSCREEN);
         pub const opengl = @as(Flags, c.SDL_WINDOW_OPENGL);
@@ -168,23 +165,19 @@ pub const Window = opaque {
 };
 
 pub const Renderer = opaque {
-    pub const Flags = packed struct {
+    pub const Flags = packed struct(u32) {
         software: bool = false,
         accelerated: bool = false,
         present_vsync: bool = false,
         target_texture: bool = false,
-        _padding: u28 = 0,
+        _padding: enum(u28) { zero } = .zero,
 
-        pub fn fromInt(value: u32) Flags {
+        pub inline fn fromInt(value: u32) Flags {
             return @bitCast(value);
         }
 
-        pub fn toInt(self: Flags) u32 {
+        pub inline fn asInt(self: Flags) u32 {
             return @bitCast(self);
-        }
-
-        comptime {
-            std.debug.assert(@sizeOf(Flags) == @sizeOf(u32));
         }
     };
 
@@ -196,7 +189,7 @@ pub const Renderer = opaque {
         const renderer = c.SDL_CreateRenderer(
             @ptrCast(params.window),
             params.index,
-            params.flags.toInt(),
+            params.flags.asInt(),
         ) orelse
             return error.Sdl;
         return @ptrCast(renderer);
@@ -773,7 +766,7 @@ pub const Keysym = extern struct {
     mod: ModFlags,
     unused: u32,
 
-    pub const ModFlags = packed struct {
+    pub const ModFlags = packed struct(u16) {
         lshift: bool = false,
         rshift: bool = false,
         lctrl: bool = false,
@@ -786,7 +779,7 @@ pub const Keysym = extern struct {
         caps: bool = false,
         mode: bool = false,
         scroll: bool = false,
-        _reserved: u4 = 0,
+        _reserved: enum(u4) { zero } = .zero,
 
         pub fn ctrl(self: ModFlags) bool {
             return self.lctrl or self.rctrl;
@@ -804,16 +797,12 @@ pub const Keysym = extern struct {
             return self.lgui or self.rgui;
         }
 
-        pub fn fromInt(value: u16) ModFlags {
+        pub inline fn fromInt(value: u16) ModFlags {
             return @bitCast(value);
         }
 
-        pub fn toInt(self: ModFlags) u16 {
+        pub inline fn toInt(self: ModFlags) u16 {
             return @bitCast(self);
-        }
-
-        comptime {
-            std.debug.assert(@sizeOf(ModFlags) == @sizeOf(u16));
         }
     };
 };
@@ -829,7 +818,7 @@ pub const Event = struct {
         key: KeyboardEvent,
         textedit: TextEditingEvent,
         textedit_ext: TextEditingExtEvent,
-        text: c.SDL_TextInputEvent,
+        text: TextInputEvent,
         // motion: c.SDL_MouseMotionEvent,
         // button: c.SDL_MouseButtonEvent,
         // wheel: c.SDL_MouseWheelEvent,
@@ -1082,7 +1071,7 @@ pub const TextEditingExtEvent = struct {
 
 pub const TextInputEvent = struct {
     windowID: u32,
-    text: [32:0]u8,
+    text: [32]u8,
 };
 
 pub const MemoryFunctions = struct {
@@ -1243,6 +1232,7 @@ pub const Texture = opaque {
     }
 };
 
+// @FIXME: fix clashes with `pub const` aliases
 pub const PixelFormat = enum(c_uint) {
     unknown = c.SDL_PIXELFORMAT_UNKNOWN,
     index1lsb = c.SDL_PIXELFORMAT_INDEX1LSB,

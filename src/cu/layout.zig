@@ -9,6 +9,8 @@ const SizeKind = cu.SizeKind;
 
 const TermColor = @import("../TermColor.zig");
 
+const debug_print_atom = false;
+
 pub fn layout(root: *Atom) !void {
     for (AxisKind.Array) |axis| {
         standalone(root, axis);
@@ -19,8 +21,15 @@ pub fn layout(root: *Atom) !void {
     }
 }
 
+inline fn dbgLogAtom(atom: *Atom, what: []const u8) void {
+    if (debug_print_atom)
+        std.log.debug("{} {s}", .{ atom, what });
+}
+
 fn standalone(atom: *Atom, axis: AxisKind) void {
     // any-order
+
+    dbgLogAtom(atom, "layout standalone - pre order");
 
     const axis_i = @intFromEnum(axis);
     const size = atom.size.arr[axis_i];
@@ -30,9 +39,8 @@ fn standalone(atom: *Atom, axis: AxisKind) void {
             atom.fixed_size.arr[axis_i] = size.value;
         },
         .text_content => {
-            const data = TextData.init(atom.string) catch @panic("oom");
+            const data = TextData.init(atom.displayString) catch @panic("oom");
             atom.text_data = data;
-
             atom.fixed_size.arr[axis_i] = @floatFromInt(data.size.arr[axis_i]);
         },
         else => {},
@@ -48,6 +56,8 @@ fn standalone(atom: *Atom, axis: AxisKind) void {
 
 fn upwardsDependent(atom: *Atom, axis: AxisKind) void {
     // pre-order
+
+    dbgLogAtom(atom, "layout upwards-dependant - pre-order");
 
     const axis_i = @intFromEnum(axis);
     const size = atom.size.arr[axis_i];
@@ -73,6 +83,8 @@ fn upwardsDependent(atom: *Atom, axis: AxisKind) void {
 
 fn downwardsDependnt(atom: *Atom, axis: AxisKind) void {
     // post-order
+
+    dbgLogAtom(atom, "layout downwards-dependent - post-order");
 
     if (atom.children) |children| {
         var maybe_child: ?*Atom = children.first;
@@ -105,6 +117,8 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
     // https://github.com/EpicGamesExt/raddebugger/blob/a1e7ec5a0e9c8674f5b0271ce528f6b651d43564/src/ui/ui_core.c#L1705C1-L1705C44
 
     // pre-order
+
+    dbgLogAtom(atom, "layout solve-violations - pre-order");
 
     if (atom.children == null) return;
     const children = atom.children.?;
@@ -148,7 +162,6 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
             // figure out how much we can take in total
             // var child_fixup_sum: f32 = 0;
             const child_fixups = cu.state.alloc_temp.alloc(f32, children.count) catch @panic("oom");
-            defer cu.state.alloc_temp.free(child_fixups);
             {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;
@@ -199,6 +212,8 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
 
 fn position(atom: *Atom, axis: AxisKind) void {
     // pre-order
+
+    dbgLogAtom(atom, "layout position - pre-order");
 
     if (atom.children == null) return;
     const children = atom.children.?;
