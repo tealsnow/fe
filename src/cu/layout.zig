@@ -239,10 +239,10 @@ fn position(atom: *Atom, axis: AxisKind) void {
             child.rect.pt.p0.arr[axis_i] = atom.rect.pt.p0.arr[axis_i] + child.rel_position.arr[axis_i];
             child.rect.pt.p1.arr[axis_i] = child.rect.pt.p0.arr[axis_i] + child.fixed_size.arr[axis_i];
 
-            child.rect.pt.p0.vec.x = @floor(child.rect.pt.p0.vec.x);
-            child.rect.pt.p0.vec.y = @floor(child.rect.pt.p0.vec.y);
-            child.rect.pt.p1.vec.x = @floor(child.rect.pt.p1.vec.x);
-            child.rect.pt.p1.vec.y = @floor(child.rect.pt.p1.vec.y);
+            child.rect.pt.p0.xy.x = @floor(child.rect.pt.p0.xy.x);
+            child.rect.pt.p0.xy.y = @floor(child.rect.pt.p0.xy.y);
+            child.rect.pt.p1.xy.x = @floor(child.rect.pt.p1.xy.x);
+            child.rect.pt.p1.xy.y = @floor(child.rect.pt.p1.xy.y);
 
             // // grab new position
             // const new_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
@@ -375,7 +375,7 @@ pub fn debugPrintTree(atom: *Atom, depth: usize, options: DebugPrintTreeOptions)
         for (0..depth) |_| std.debug.print("    ", .{});
         std.debug.print(
             "   rect: {d} x {d} @ {d} x {d}\n",
-            .{ rect.pt.p0.vec.x, rect.pt.p0.vec.y, rect.pt.p1.vec.x, rect.pt.p1.vec.y },
+            .{ rect.pt.p0.xy.x, rect.pt.p0.xy.y, rect.pt.p1.xy.x, rect.pt.p1.xy.y },
         );
     }
 

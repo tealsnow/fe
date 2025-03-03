@@ -46,7 +46,10 @@ pub fn run() !void {
 
     const renderer = try sdl.Renderer.init(.{
         .window = window,
-        .flags = .{ .accelerated = true },
+        .flags = .{
+            .accelerated = true,
+            .present_vsync = false,
+        },
     });
     defer renderer.deinit();
 
@@ -58,27 +61,34 @@ pub fn run() !void {
 
     std.log.info("font_path: '{s}'", .{font_path});
 
-    const font = try sdl.ttf.Font.open(font_path, 24);
+    const font = try sdl.ttf.Font.open(font_path, 16);
     defer font.deinit();
-
-    // const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-    // const surface = try font.renderTextSolid("Hello, World!", font_color);
-    // defer surface.deinit();
-
-    // const texture = try renderer.createTextureFromSurface(surface);
-    // defer texture.deinit();
-
-    // var tex_w: c_int = 0;
-    // var tex_h: c_int = 0;
-    // try texture.query(null, null, &tex_w, &tex_h);
-    // const dst_rect = sdl.Rect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };
 
     try cu.init(alloc, renderer, font);
     defer cu.deinit();
 
+    const event_timeout_ms = 10;
+    const ns_per_update = 1_000_000_000 / 60; // 16 ms in ns
+    var update_lag: u64 = ns_per_update;
+
+    var fps_count: u32 = 0; // accumulator of frame count
+    var fps: u32 = 0; // set once per second to fps_count
+
+    var prev_fps_calc = try std.time.Instant.now(); // counts to one second, before reset
+    var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
+
+    var render_count: usize = 0;
+
     var running = true;
     while (running) {
-        while (sdl.Event.poll()) |event| {
+        const current_time = try std.time.Instant.now();
+        const elapsed = current_time.since(previous_time);
+        previous_time = current_time;
+        update_lag += elapsed;
+
+        // process input
+        if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
+            // while (sdl.Event.poll()) |event| {
             switch (event.type) {
                 .quit => running = false,
                 .key => |key| key_blk: {
@@ -88,153 +98,219 @@ pub fn run() !void {
                         .escape => {
                             running = false;
                         },
-                        .h => {
-                            std.debug.print("Hello!\n", .{});
-                        },
                         else => {},
                     }
-                    if (key.keysym.scancode == .escape) running = false;
                 },
+                .motion => |motion| {
+                    cu.state.input.mouse_position.xy = .{
+                        .x = @floatFromInt(motion.x),
+                        .y = @floatFromInt(motion.y),
+                    };
+                },
+                .button => |button| {
+                    const index = @intFromEnum(button.button) - 1;
+                    cu.state.input.mouse_buttons[index] = button.state;
+                },
+
                 else => {},
             }
         }
 
-        cu.startFrame();
+        // while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
+        {
+            cu.startBuild(window);
+            defer cu.endBuild();
+            cu.state.ui_root.layout_axis = .y;
 
-        try renderer.setDrawColor(18, 18, 18, 255);
-        try renderer.clear();
-
-        // try renderer.renderCopy(texture, null, &dst_rect);
-
-        cu.startBuild(window);
-
-        { // root
-            const root = cu.ui(.{}, "root");
-            defer root.end();
-            root.layout_axis = .x;
-            root.size.sz = .{ .w = .full, .h = .full };
-
-            { // left pane
-                const pane = cu.ui(.{}, "left pane");
-                defer pane.end();
-                pane.layout_axis = .y;
-                pane.size.sz = .{ .w = .percent(0.3), .h = .full };
+            { // topbar
+                const topbar = cu.ui(.{}, "topbar");
+                defer topbar.end();
+                topbar.layout_axis = .x;
+                topbar.size.sz = .{ .w = .full, .h = .px(24) };
 
                 {
-                    const header = cu.ui(.{}, "left header");
-                    defer header.end();
-                    header.equipDisplayString();
-                    header.size.sz.w = .grow;
+                    const spacer = cu.ui(.{}, "");
+                    defer spacer.end();
+                    spacer.size.sz = .{ .w = .grow, .h = .grow };
                 }
 
-                {
-                    const content = cu.ui(.{}, "left content");
-                    defer content.end();
-                    content.size.sz = .{ .w = .grow, .h = .grow };
+                for (0..3) |i| {
+                    const button = cu.uif(.{}, "top bar button {d}", .{i});
+                    defer button.end();
+                    button.size.sz = .{ .w = .px(24), .h = .px(24) };
+
+                    const inter = button.interation();
+                    button.color =
+                        cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
                 }
+
+                const inter = topbar.interation();
+                topbar.color = cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
             }
 
-            { // right pane
-                const pane = cu.ui(.{}, "right pane");
-                defer pane.end();
-                pane.layout_axis = .y;
-                pane.size.sz = .{ .w = .grow, .h = .full };
+            { // main pane
+                const main_pane = cu.ui(.{}, "main pain");
+                defer main_pane.end();
+                main_pane.layout_axis = .x;
+                main_pane.size.sz = .{ .w = .grow, .h = .grow };
 
-                {
-                    const header = cu.ui(.{}, "right header");
-                    defer header.end();
-                    header.equipDisplayString();
-                    header.size.sz.w = .grow;
-                    header.text_align = .center;
+                { // left pane
+                    const pane = cu.ui(.{}, "left pane");
+                    defer pane.end();
+                    pane.layout_axis = .y;
+                    pane.size.sz = .{ .w = .percent(0.3), .h = .full };
+
+                    {
+                        const header = cu.ui(.{}, "left header");
+                        defer header.end();
+                        header.equipDisplayString();
+                        header.size.sz.w = .grow;
+                        header.displayString = "Left Header gylp";
+                    }
+
+                    {
+                        const content = cu.ui(.{}, "left content");
+                        defer content.end();
+                        content.layout_axis = .y;
+                        content.size.sz = .{ .w = .grow, .h = .grow };
+
+                        _ = cu.labelf("fps: {d}", .{fps});
+                        _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
+                        _ = cu.labelf("render count: {d}", .{render_count});
+                        _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
+                        _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
+                    }
                 }
 
-                {
-                    const content = cu.ui(.{}, "right content");
-                    defer content.end();
-                    content.size.sz = .{ .w = .grow, .h = .grow };
-                }
-            }
+                { // right pane
+                    const pane = cu.ui(.{}, "right pane");
+                    defer pane.end();
+                    pane.layout_axis = .y;
+                    pane.size.sz = .{ .w = .grow, .h = .full };
 
-            { // right bar
-                const bar = cu.ui(.{}, "right bar");
-                defer bar.end();
-                bar.layout_axis = .y;
-                bar.size.sz = .{ .w = .px(16), .h = .grow };
+                    {
+                        const header = cu.ui(.{}, "right header");
+                        defer header.end();
+                        header.equipDisplayString();
+                        header.size.sz.w = .grow;
+                        // header.text_align = .center;
+                    }
 
-                {
-                    const inner = cu.ui(.{}, "right bar inner");
-                    defer inner.end();
-                    inner.layout_axis = .y;
-                    inner.size.sz = .{ .w = .px(16), .h = .sum };
+                    {
+                        const content = cu.ui(.{}, "right content");
+                        defer content.end();
+                        content.layout_axis = .y;
+                        content.size.sz = .{ .w = .grow, .h = .grow };
 
-                    for (0..5) |i| {
-                        {
-                            const icon = cu.uif(.{}, "right bar icon {d}", .{i});
-                            defer icon.end();
-                            icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+                        inline for (cu.state.input.mouse_buttons, 0..) |button, i| {
+                            const mbtn = cu.uif(
+                                .{},
+                                "{s}: {s}",
+                                .{
+                                    std.meta.fields(sdl.MouseButton)[i + 1].name,
+                                    @tagName(button),
+                                },
+                            );
+                            defer mbtn.end();
+                            mbtn.equipDisplayString();
                         }
+                    }
+                }
 
-                        {
-                            const pad = cu.uif(.{}, "##right bar icon padding {d}", .{i});
-                            defer pad.end();
-                            pad.size.sz = .{ .w = .px(16), .h = .px(4) };
-                            // pad.color = .{ .r = 255, .g = 0, .b = 0, .a = 255 };
+                { // right bar
+                    const bar = cu.ui(.{}, "right bar");
+                    defer bar.end();
+                    bar.layout_axis = .y;
+                    bar.size.sz = .{ .w = .px(16), .h = .grow };
+
+                    {
+                        const inner = cu.ui(.{}, "right bar inner");
+                        defer inner.end();
+                        inner.layout_axis = .y;
+                        inner.size.sz = .{ .w = .px(16), .h = .fit };
+
+                        for (0..5) |i| {
+                            {
+                                const icon = cu.uif(.{}, "right bar icon {d}", .{i});
+                                defer icon.end();
+                                icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+
+                                const inter = icon.interation();
+                                icon.color =
+                                    cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
+                            }
+
+                            {
+                                const pad = cu.ui(.{}, "");
+                                defer pad.end();
+                                pad.size.sz = .{ .w = .px(16), .h = .px(4) };
+                            }
                         }
                     }
                 }
             }
         }
 
-        cu.endBuild();
+        try render(renderer);
 
-        try render(cu.state.ui_root, renderer);
-        renderer.present();
+        if (current_time.since(prev_fps_calc) >= 1e9) {
+            fps = fps_count;
+            fps_count = 0;
+            prev_fps_calc = current_time;
+        }
 
-        cu.endFrame();
+        fps_count += 1;
+        render_count += 1;
 
-        if (one_frame and cu.state.current_frame_index == 1) running = false;
+        if (one_frame and cu.state.current_build_index == 1) running = false;
     }
 }
 
-fn render(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
-    // std.log.info("rendering atom[{s}]", .{atom.string});
+fn render(renderer: *sdl.Renderer) !void {
+    try renderer.setDrawColor(18, 18, 18, 255);
+    try renderer.clear();
 
+    try renderAtom(cu.state.ui_root, renderer);
+
+    renderer.present();
+}
+
+fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
     try renderer.setDrawColorT(atom.color);
     const rect = sdl.FRect{
-        .x = atom.rect.vec.x0,
-        .y = atom.rect.vec.y0,
-        .w = atom.rect.vec.x1 - atom.rect.vec.x0,
-        .h = atom.rect.vec.y1 - atom.rect.vec.y0,
+        .x = atom.rect.xy.x0,
+        .y = atom.rect.xy.y0,
+        .w = atom.rect.xy.x1 - atom.rect.xy.x0,
+        .h = atom.rect.xy.y1 - atom.rect.xy.y0,
     };
-    try renderer.drawRectF(&rect);
+    if (!atom.key.eql(cu.Key.Zero))
+        try renderer.drawRectF(&rect);
 
     if (atom.flags.draw_text) {
+        // @TODO: text alignment
         const text_data = atom.text_data.?;
 
         const font_color = sdl.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        const surface = try cu.state.font.renderTextSolid(text_data.zstring, font_color);
+        const surface = try cu.state.font.renderTextBlended(text_data.zstring, font_color);
         defer surface.deinit();
 
         const texture = try renderer.createTextureFromSurface(surface);
         defer texture.deinit();
 
-        const dst_rect = sdl.Rect{
-            .x = @intFromFloat(rect.x),
-            .y = @intFromFloat(rect.y),
-            .w = text_data.size.sz.w,
-            .h = text_data.size.sz.h,
+        const dst_rect = sdl.FRect{
+            .x = rect.x,
+            .y = rect.y,
+            .w = @floatFromInt(text_data.size.sz.w),
+            .h = @floatFromInt(text_data.size.sz.h),
         };
 
-        try renderer.renderCopy(texture, null, &dst_rect);
-
-        // try renderer.setDrawColorT(sdl.Color{ .r = 255, .g = 0, .b = 0, .a = 255 });
-        // try renderer.drawRect(&dst_rect);
+        try renderer.renderCopyF(texture, null, &dst_rect);
     }
 
     if (atom.children) |children| {
         var maybe_child: ?*cu.Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            try render(child, renderer);
+            try renderAtom(child, renderer);
         }
     }
 }

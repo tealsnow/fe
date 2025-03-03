@@ -39,6 +39,35 @@ pub const Font = opaque {
         return @ptrCast(@alignCast(surface));
     }
 
+    pub fn renderTextBlended(self: *Font, text: [:0]const u8, fg: sdl.Color) !*sdl.Surface {
+        const surface = c.TTF_RenderText_Blended(
+            @ptrCast(self),
+            text,
+            fg,
+        ) orelse return error.tff_render_text_blend;
+        return @ptrCast(@alignCast(surface));
+    }
+
+    pub fn renderTextShaded(self: *Font, text: [:0]const u8, fg: sdl.Color, bg: sdl.Color) !*sdl.Surface {
+        const surface = c.TTF_RenderText_Shaded(
+            @ptrCast(self),
+            text,
+            fg,
+            bg,
+        ) orelse return error.tff_render_text_shaded;
+        return @ptrCast(@alignCast(surface));
+    }
+
+    pub fn renderTextLCD(self: *Font, text: [:0]const u8, fg: sdl.Color, bg: sdl.Color) !*sdl.Surface {
+        const surface = c.TTF_RenderText_LCD(
+            @ptrCast(self),
+            text,
+            fg,
+            bg,
+        ) orelse return error.tff_render_text_lcd;
+        return @ptrCast(@alignCast(surface));
+    }
+
     pub fn sizeText(self: *Font, text: [:0]const u8, w: *c_int, h: *c_int) !void {
         if (c.TTF_SizeText(@ptrCast(self), text, w, h) != 0)
             return error.ttf_size_text;

@@ -260,6 +260,21 @@ pub const Renderer = opaque {
         ) != 0)
             return error.Sdl;
     }
+
+    pub fn renderCopyF(
+        self: *Renderer,
+        texture: *Texture,
+        src_rect: ?*const Rect,
+        dest_rect: ?*const FRect,
+    ) Error!void {
+        if (c.SDL_RenderCopyF(
+            @ptrCast(self),
+            @ptrCast(texture),
+            src_rect,
+            dest_rect,
+        ) != 0)
+            return error.Sdl;
+    }
 };
 
 pub const Scancode = enum(c_int) {
@@ -819,27 +834,32 @@ pub const Event = struct {
         textedit: TextEditingEvent,
         textedit_ext: TextEditingExtEvent,
         text: TextInputEvent,
-        // motion: c.SDL_MouseMotionEvent,
-        // button: c.SDL_MouseButtonEvent,
+        motion: MouseMotionEvent,
+        button: MouseButtonEvent,
+        tfinger: TouchFingerEvent,
+        mgesture: MultiGestureEvent,
+        //
         // wheel: c.SDL_MouseWheelEvent,
+        //
         // jaxis: c.SDL_JoyAxisEvent,
         // jball: c.SDL_JoyBallEvent,
         // jhat: c.SDL_JoyHatEvent,
         // jbutton: c.SDL_JoyButtonEvent,
         // jdevice: c.SDL_JoyDeviceEvent,
         // jbattery: c.SDL_JoyBatteryEvent,
+        //
         // caxis: c.SDL_ControllerAxisEvent,
         // cbutton: c.SDL_ControllerButtonEvent,
         // cdevice: c.SDL_ControllerDeviceEvent,
         // ctouchpad: c.SDL_ControllerTouchpadEvent,
         // csensor: c.SDL_ControllerSensorEvent,
+        //
         // adevice: c.SDL_AudioDeviceEvent,
         // sensor: c.SDL_SensorEvent,
+        //
         quit: void,
         // user: c.SDL_UserEvent,
         syswm: ?*anyopaque,
-        // tfinger: c.SDL_TouchFingerEvent,
-        // mgesture: c.SDL_MultiGestureEvent,
         // dgesture: c.SDL_DollarGestureEvent,
         // drop: c.SDL_DropEvent,
 
@@ -907,10 +927,12 @@ pub const Event = struct {
 
             c.SDL_SYSWMEVENT => .{ .syswm = event.syswm.msg },
 
-            // FIXME: Workarround as `c.SDL_KEYDOWN | c.SDL_KEYUP =>` syntax seems to be broken
-            //  it only runs for the last one, resulting in only keyup events
-            c.SDL_KEYDOWN => .{ .key = createKeyboardEvent(event.key) },
-            c.SDL_KEYUP => .{ .key = createKeyboardEvent(event.key) },
+            c.SDL_KEYDOWN, c.SDL_KEYUP => .{ .key = .{
+                .windowID = event.key.windowID,
+                .state = @enumFromInt(event.key.state),
+                .repeat = event.key.repeat,
+                .keysym = @bitCast(event.key.keysym),
+            } },
 
             c.SDL_TEXTEDITING => .{ .textedit = .{
                 .windowID = event.edit.windowID,
@@ -929,11 +951,49 @@ pub const Event = struct {
                 .text = event.text.text,
             } },
 
-            // c.SDL_KEYMAPCHANGED => {},
-            // c.SDL_MOUSEMOTION => {},
-            // c.SDL_MOUSEBUTTONDOWN => {},
-            // c.SDL_MOUSEBUTTONUP => {},
+            c.SDL_MOUSEMOTION => .{ .motion = .{
+                .windowID = event.motion.windowID,
+                .which = event.motion.which,
+                .state = @bitCast(event.motion.state),
+                .x = event.motion.x,
+                .y = event.motion.y,
+                .xrel = event.motion.xrel,
+                .yrel = event.motion.yrel,
+            } },
+            c.SDL_MOUSEBUTTONDOWN, c.SDL_MOUSEBUTTONUP => .{ .button = .{
+                .windowID = event.button.windowID,
+                .which = event.button.which,
+                .button = @enumFromInt(event.button.button),
+                .state = @enumFromInt(event.button.state),
+                .clicks = event.button.clicks,
+                .x = event.button.x,
+                .y = event.button.y,
+            } },
+
+            c.SDL_FINGERDOWN, c.SDL_FINGERUP, c.SDL_FINGERMOTION => .{ .tfinger = .{
+                .type = @enumFromInt(event.tfinger.type),
+                .touchId = event.tfinger.touchId,
+                .fingerId = event.tfinger.fingerId,
+                .x = event.tfinger.x,
+                .y = event.tfinger.y,
+                .dx = event.tfinger.dx,
+                .dy = event.tfinger.dy,
+                .pressure = event.tfinger.pressure,
+                .windowID = event.tfinger.windowID,
+            } },
+            c.SDL_MULTIGESTURE => .{ .mgesture = .{
+                .touchId = event.mgesture.touchId,
+                .dTheta = event.mgesture.dTheta,
+                .dDist = event.mgesture.dDist,
+                .x = event.mgesture.x,
+                .y = event.mgesture.y,
+                .numFingers = event.mgesture.numFingers,
+            } },
+
             // c.SDL_MOUSEWHEEL => {},
+
+            // c.SDL_KEYMAPCHANGED => {},
+            //
             // c.SDL_JOYAXISMOTION => {},
             // c.SDL_JOYBALLMOTION => {},
             // c.SDL_JOYHATMOTION => {},
@@ -942,6 +1002,7 @@ pub const Event = struct {
             // c.SDL_JOYDEVICEADDED => {},
             // c.SDL_JOYDEVICEREMOVED => {},
             // c.SDL_JOYBATTERYUPDATED => {},
+            //
             // c.SDL_CONTROLLERAXISMOTION => {},
             // c.SDL_CONTROLLERBUTTONDOWN => {},
             // c.SDL_CONTROLLERBUTTONUP => {},
@@ -954,28 +1015,36 @@ pub const Event = struct {
             // c.SDL_CONTROLLERSENSORUPDATE => {},
             // c.SDL_CONTROLLERUPDATECOMPLETE_RESERVED_FOR_SDL3 => {},
             // c.SDL_CONTROLLERSTEAMHANDLEUPDATED => {},
-            // c.SDL_FINGERDOWN => {},
-            // c.SDL_FINGERUP => {},
-            // c.SDL_FINGERMOTION => {},
+            //
             // c.SDL_DOLLARGESTURE => {},
             // c.SDL_DOLLARRECORD => {},
-            // c.SDL_MULTIGESTURE => {},
+            //
             // c.SDL_CLIPBOARDUPDATE => {},
+            //
             // c.SDL_DROPFILE => {},
             // c.SDL_DROPTEXT => {},
             // c.SDL_DROPBEGIN => {},
             // c.SDL_DROPCOMPLETE => {},
+            //
             // c.SDL_AUDIODEVICEADDED => {},
             // c.SDL_AUDIODEVICEREMOVED => {},
+            //
             // c.SDL_SENSORUPDATE => {},
+            //
             // c.SDL_RENDER_TARGETS_RESET => {},
             // c.SDL_RENDER_DEVICE_RESET => {},
+            //
             // c.SDL_POLLSENTINEL => {},
+            //
             // c.SDL_USEREVENT => {},
 
             else => .todo,
         };
-        return .{ .original = event, .timestamp = event.common.timestamp, .type = ty };
+        return .{
+            .original = event,
+            .timestamp = event.common.timestamp,
+            .type = ty,
+        };
     }
 
     pub fn encode(ty: Type) c.SDL_Event {
@@ -988,15 +1057,6 @@ pub const Event = struct {
     pub fn push(ty: Type) void {
         var event = encode(ty);
         _ = c.SDL_PushEvent(&event);
-    }
-
-    fn createKeyboardEvent(key: c.SDL_KeyboardEvent) KeyboardEvent {
-        return .{
-            .windowID = key.windowID,
-            .state = @enumFromInt(key.state),
-            .repeat = key.repeat,
-            .keysym = @bitCast(key.keysym),
-        };
     }
 };
 
@@ -1043,16 +1103,16 @@ pub const WindowEvent = struct {
     };
 };
 
+pub const KeyButtonState = enum(u8) {
+    released = 0,
+    pressed = 1,
+};
+
 pub const KeyboardEvent = struct {
     windowID: u32,
-    state: State,
+    state: KeyButtonState,
     repeat: u8,
     keysym: Keysym,
-
-    pub const State = enum(u8) {
-        released = 0,
-        pressed = 1,
-    };
 };
 
 pub const TextEditingEvent = struct {
@@ -1072,6 +1132,76 @@ pub const TextEditingExtEvent = struct {
 pub const TextInputEvent = struct {
     windowID: u32,
     text: [32]u8,
+};
+
+// Flag set to true if button is down for event
+pub const MouseMotionButtonState = packed struct(u32) {
+    none: bool,
+    left: bool,
+    middle: bool,
+    right: bool,
+    back: bool,
+    forward: bool,
+
+    _padding: enum(u26) { zero } = .zero,
+};
+
+pub const MouseMotionEvent = struct {
+    windowID: u32,
+    which: u32,
+    state: MouseMotionButtonState,
+    x: i32,
+    y: i32,
+    xrel: i32,
+    yrel: i32,
+};
+
+// Which button triggered the event,
+// its state (pressed or released) indicated with `MouseButtonEvent.state`
+pub const MouseButton = enum(u8) {
+    none,
+    left,
+    middle,
+    right,
+    back,
+    forward,
+};
+
+pub const MouseButtonEvent = struct {
+    windowID: u32,
+    which: u32,
+    button: MouseButton,
+    state: KeyButtonState,
+    clicks: u8,
+    x: i32,
+    y: i32,
+};
+
+pub const TouchFingerEventType = enum(u32) {
+    motion = c.SDL_FINGERMOTION,
+    down = c.SDL_FINGERDOWN,
+    up = c.SDL_FINGERUP,
+};
+
+pub const TouchFingerEvent = struct {
+    type: TouchFingerEventType,
+    touchId: c.SDL_TouchID,
+    fingerId: c.SDL_FingerID,
+    x: f32,
+    y: f32,
+    dx: f32,
+    dy: f32,
+    pressure: f32,
+    windowID: u32,
+};
+
+pub const MultiGestureEvent = struct {
+    touchId: c.SDL_TouchID,
+    dTheta: f32,
+    dDist: f32,
+    x: f32,
+    y: f32,
+    numFingers: u16,
 };
 
 pub const MemoryFunctions = struct {
