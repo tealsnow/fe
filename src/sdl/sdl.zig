@@ -779,7 +779,7 @@ pub const Keysym = extern struct {
     scancode: Scancode,
     sym: Keycode,
     mod: ModFlags,
-    unused: u32,
+    _unused: u32 = 0,
 
     pub const ModFlags = packed struct(u16) {
         lshift: bool = false,
@@ -838,8 +838,7 @@ pub const Event = struct {
         button: MouseButtonEvent,
         tfinger: TouchFingerEvent,
         mgesture: MultiGestureEvent,
-        //
-        // wheel: c.SDL_MouseWheelEvent,
+        wheel: MouseWheelEvent,
         //
         // jaxis: c.SDL_JoyAxisEvent,
         // jball: c.SDL_JoyBallEvent,
@@ -988,6 +987,18 @@ pub const Event = struct {
                 .x = event.mgesture.x,
                 .y = event.mgesture.y,
                 .numFingers = event.mgesture.numFingers,
+            } },
+
+            c.SDL_MOUSEWHEEL => .{ .wheel = .{
+                .windowID = event.wheel.windowID,
+                .which = event.wheel.which,
+                .x = event.wheel.x,
+                .y = event.wheel.y,
+                .direction = @enumFromInt(event.wheel.direction),
+                .preciseX = event.wheel.preciseX,
+                .preciseY = event.wheel.preciseY,
+                .mouseX = event.wheel.mouseX,
+                .mouseY = event.wheel.mouseY,
             } },
 
             // c.SDL_MOUSEWHEEL => {},
@@ -1158,7 +1169,7 @@ pub const MouseMotionEvent = struct {
 
 // Which button triggered the event,
 // its state (pressed or released) indicated with `MouseButtonEvent.state`
-pub const MouseButton = enum(u8) {
+pub const MouseButton = enum(u3) {
     none,
     left,
     middle,
@@ -1202,6 +1213,23 @@ pub const MultiGestureEvent = struct {
     x: f32,
     y: f32,
     numFingers: u16,
+};
+
+pub const MouseWheelEvent = struct {
+    windowID: u32,
+    which: u32,
+    x: i32,
+    y: i32,
+    direction: Direction,
+    preciseX: f32,
+    preciseY: f32,
+    mouseX: i32,
+    mouseY: i32,
+
+    pub const Direction = enum(u32) {
+        normal = c.SDL_MOUSEWHEEL_NORMAL,
+        flipped = c.SDL_MOUSEWHEEL_FLIPPED,
+    };
 };
 
 pub const MemoryFunctions = struct {

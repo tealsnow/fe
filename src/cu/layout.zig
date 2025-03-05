@@ -12,7 +12,7 @@ const TermColor = @import("../TermColor.zig");
 const debug_print_atom = false;
 
 pub fn layout(root: *Atom) !void {
-    for (AxisKind.Array) |axis| {
+    for (AxisKind.array) |axis| {
         standalone(root, axis);
         upwardsDependent(root, axis);
         downwardsDependnt(root, axis);

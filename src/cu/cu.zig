@@ -15,11 +15,9 @@ const sdl = @import("../sdl/sdl.zig");
 
 pub const layout = @import("layout.zig");
 
-pub const GlobalState = struct {
+pub const State = struct {
     current_build_index: u64 = 0,
     build_atom_count: u64 = 0,
-
-    input: InputState = .{},
 
     renderer: *sdl.Renderer,
     font: *sdl.ttf.Font,
@@ -36,6 +34,15 @@ pub const GlobalState = struct {
 
     ui_root: *Atom = undefined, // undefined until `startBuild` is called
 
+    hot_atom_key: Key = .nil, // currenly over (event consuming) atom
+    active_atom_key: Key = .nil, // currently interacting atom
+
+    event_pool: EventPool,
+    event_node_pool: EventNodePool,
+    event_list: EventList = .{},
+
+    mouse: Vec2(f32) = .inf,
+
     pub const MaxAtoms = 4000; // max 4000 atoms total, not measured in memory
 
     pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = false });
@@ -47,24 +54,36 @@ pub const GlobalState = struct {
         false,
     );
 
-    inline fn allocAtom(self: *GlobalState) *Atom {
+    pub const EventList = std.DoublyLinkedList(*Event);
+    pub const EventNodePool = std.heap.MemoryPoolExtra(EventList.Node, .{ .growable = true });
+    pub const EventPool = std.heap.MemoryPoolExtra(Event, .{ .growable = true });
+
+    inline fn allocAtom(self: *State) *Atom {
         return self.atom_pool.create() catch @panic("oom");
     }
 
-    inline fn pushParent(self: *GlobalState, atom: *Atom) void {
+    inline fn pushParent(self: *State, atom: *Atom) void {
         self.parent_stack.append(self.alloc_temp, atom) catch @panic("oom");
     }
 
-    inline fn popParent(self: *GlobalState) ?*Atom {
+    inline fn popParent(self: *State) ?*Atom {
         return self.parent_stack.pop();
     }
 
-    inline fn currentParent(self: *GlobalState) ?*Atom {
+    inline fn currentParent(self: *State) ?*Atom {
         return self.parent_stack.getLastOrNull();
+    }
+
+    pub fn pushEvent(self: *State, event: Event) void {
+        const evt = self.event_pool.create() catch @panic("oom");
+        evt.* = event;
+        const node = self.event_node_pool.create() catch @panic("oom");
+        node.* = .{ .data = evt };
+        self.event_list.append(node);
     }
 };
 
-pub var state: GlobalState = undefined;
+pub var state: State = undefined;
 
 pub fn init(
     allocator: Allocator,
@@ -77,7 +96,9 @@ pub fn init(
         .arena = std.heap.ArenaAllocator.init(allocator),
         .alloc_temp = undefined,
         .alloc_persistent = allocator,
-        .atom_pool = try GlobalState.AtomPool.initPreheated(allocator, GlobalState.MaxAtoms),
+        .atom_pool = try State.AtomPool.initPreheated(allocator, State.MaxAtoms),
+        .event_pool = State.EventPool.init(allocator),
+        .event_node_pool = State.EventNodePool.init(allocator),
     };
 
     // workaround to ensure that the allocator vtable references the arena stored in gs, not in the stack
@@ -85,21 +106,14 @@ pub fn init(
 }
 
 pub fn deinit() void {
-    state.parent_stack.deinit(state.alloc_temp);
+    // state.parent_stack.deinit(state.alloc_temp);
     state.atom_map.deinit(state.alloc_persistent);
 
     state.arena.deinit();
     state.atom_pool.deinit();
+    state.event_pool.deinit();
+    state.event_node_pool.deinit();
 }
-
-pub const InputState = struct {
-    mouse_position: Vec2(f32) = Vec2(f32).Zero,
-
-    // read as array with the length of the amount of mouse buttons
-    // set all set to released by default
-    mouse_buttons: [std.meta.fields(sdl.MouseButton).len - 1]sdl.KeyButtonState =
-        [_]sdl.KeyButtonState{.released} ** (std.meta.fields(sdl.MouseButton).len - 1),
-};
 
 const ScopeLocalNode = struct {
     ptr: *const anyopaque,
@@ -142,11 +156,12 @@ pub fn pushScopeLocal(comptime T: type, value: *const T) ScopeLocalHandle {
 
 pub fn getScopeLocal(comptime T: type) *const T {
     const name = @typeName(T);
-
     const node = state.scope_locals.get(name) orelse @panic("not such scope local");
-
     return @alignCast(@ptrCast(node.ptr));
 }
+
+// ==============
+// Basic types
 
 pub fn Vec2(comptime T: type) type {
     return extern union {
@@ -156,7 +171,8 @@ pub fn Vec2(comptime T: type) type {
         },
         arr: [2]T,
 
-        pub const Zero = std.mem.zeroes(@This());
+        pub const zero = std.mem.zeroes(@This());
+        pub const inf = vec2(T, std.math.inf(T), std.math.inf(T));
     };
 }
 
@@ -169,7 +185,7 @@ pub const AxisKind = enum(u2) {
     y,
     none = std.math.maxInt(u2),
 
-    pub const Array = [2]AxisKind{ .x, .y };
+    pub const array = [2]AxisKind{ .x, .y };
 };
 
 pub fn Axis2(comptime T: type) type {
@@ -184,7 +200,7 @@ pub fn Axis2(comptime T: type) type {
         },
         arr: [2]T,
 
-        pub const Zero = std.mem.zeroes(@This());
+        pub const zero = std.mem.zeroes(@This());
     };
 }
 
@@ -212,7 +228,7 @@ pub fn Range2(comptime T: type) type {
         // parr: [4]T,
         // pmat: [2][2]T,
 
-        pub const Zero = std.mem.zeroes(@This());
+        pub const zero = std.mem.zeroes(@This());
 
         pub fn contains(self: @This(), vec: Vec2(T)) bool {
             return vec.xy.x > self.xy.x0 and
@@ -332,10 +348,13 @@ pub fn colorHexRgba(hex: u32) Color {
     );
 }
 
+// =======
+// Atom
+
 pub const Key = enum(u32) {
     _,
 
-    pub const Zero: Key = @enumFromInt(0);
+    pub const nil: Key = @enumFromInt(0);
 
     pub const KeyContext = struct {
         pub fn hash(self: @This(), key: Key) u32 {
@@ -358,7 +377,6 @@ pub const Key = enum(u32) {
         return left.asInt() == right.asInt();
     }
 
-    // @TODO: Use parent id as seed
     pub fn processString(
         seed: u32,
         string: []const u8,
@@ -369,7 +387,7 @@ pub const Key = enum(u32) {
         if (string.len == 0) {
             return .{
                 .displayString = "",
-                .key = Key.Zero,
+                .key = .nil,
             };
         }
 
@@ -429,7 +447,7 @@ pub const Atom = struct {
     string: []const u8 = "",
     displayString: []const u8 = "",
     flags: AtomFlags = .{},
-    size: Axis2(Size) = Axis2(Size).Zero,
+    size: Axis2(Size) = .zero,
     layout_axis: AxisKind = .none, // ensure this is set if children are added, if not an assertion will fail
     // hover_cursor
     // group_key
@@ -445,16 +463,16 @@ pub const Atom = struct {
     color: sdl.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
 
     // per-build artifacts
-    fixed_size: Axis2(f32) = Axis2(f32).Zero,
-    rel_position: Axis2(f32) = Axis2(f32).Zero,
-    rect: Range2(f32) = Range2(f32).Zero,
+    fixed_size: Axis2(f32) = .zero,
+    rel_position: Axis2(f32) = .zero,
+    rect: Range2(f32) = .zero,
     text_data: ?TextData = null,
 
     // persistant data
     build_index_touched_first: u64,
     build_index_touched_last: u64,
     // build_index_first_disabled: u64,
-    view_bounds: Axis2(f32) = Axis2(f32).Zero,
+    view_bounds: Axis2(f32) = .zero,
 
     /// Sets `size.{w, h}` to `text_content`
     /// and sets the `draw_text` flag
@@ -551,7 +569,7 @@ pub const AtomFlags = packed struct(u32) {
         return @bitCast(value);
     }
 
-    inline fn bitOr(self: Self, other: Self) u32 {
+    inline fn bitOr(self: Self, other: Self) Self {
         return fromInt(self.asInt() | other.asInt());
     }
 
@@ -590,6 +608,46 @@ pub const TextData = struct {
             .size = axis2(c_int, w, h),
         };
     }
+};
+
+// ===================
+// Input and Events
+
+pub const Event = struct {
+    // key press (key, press/release, modifiers)
+    // mouse press (button)
+    // mouse move (x/y, clicks, press/release)
+    // scroll (vec2)
+    // text input (string)
+
+    kind: Kind,
+    key: sdl.Keysym = .{
+        .scancode = .unknown,
+        .sym = .unknown,
+        .mod = .{},
+    },
+    button: sdl.MouseButton = .none,
+    button_clicks: u8 = 0,
+    state: PressState = .none,
+    pos: Vec2(f32) = .zero,
+    scroll: Vec2(f32) = .zero,
+    text: []const u8 = "",
+
+    consumed: bool = false,
+
+    pub const Kind = enum {
+        key_press, // key, state
+        mouse_press, // button, button_clicks, state, pos
+        mouse_move, // pos
+        scroll, // scroll, pos
+        text_input, // text
+    };
+
+    pub const PressState = enum(u8) {
+        released = 0,
+        pressed,
+        none,
+    };
 };
 
 pub const InteractionFlags = packed struct(u32) {
@@ -720,39 +778,154 @@ pub const InteractionFlags = packed struct(u32) {
 
 pub const Interation = struct {
     atom: *Atom,
-    scroll: Vec2(f32),
-    modifiers: sdl.Keysym.ModFlags,
-    f: InteractionFlags,
+    scroll: Vec2(f32) = .zero,
+    modifiers: sdl.Keysym.ModFlags = .{},
+    f: InteractionFlags = .{},
 };
 
-// one frame behind is it?
 pub fn interationFromAtom(atom: *Atom) Interation {
-    const mouse_over = atom.rect.contains(state.input.mouse_position);
-    var hovering = mouse_over;
+    var inter = Interation{ .atom = atom };
 
-    if (atom.children) |children| {
-        var maybe_child: ?*Atom = children.first;
-        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            if (!child.key.eql(Key.Zero) and child.rect.contains(state.input.mouse_position)) {
-                hovering = false;
+    // @TODO: run through all parents and intersect our rect with clip rect if clipping is enabled for parent
+
+    var maybe_event = state.event_list.first;
+    while (maybe_event) |node| : (maybe_event = node.next) {
+        const event = node.data;
+        if (event.consumed) continue;
+
+        switch (event.kind) {
+            .mouse_press, .mouse_move => {
+                state.mouse = event.pos;
+            },
+            else => {},
+        }
+
+        const in_bounds = atom.rect.contains(event.pos);
+
+        // mouse down in box -> set box as 'active' -> press event
+        if (atom.flags.mouse_clickable and
+            event.state == .pressed and
+            in_bounds and
+            event.button != .none)
+        {
+            state.hot_atom_key = atom.key;
+            state.active_atom_key = atom.key;
+
+            switch (event.button) {
+                .left => inter.f.left_pressed = true,
+                .middle => inter.f.middle_pressed = true,
+                .right => inter.f.right_pressed = true,
+                .back => {},
+                .forward => {},
+                .none => unreachable,
             }
+
+            // drag_start_pos = event.pos
+
+            event.consumed = true;
+        }
+
+        // mouse in/out release in box -> unset as 'active' -> release (and maybe click) event
+        if (atom.flags.mouse_clickable and
+            event.state == .released and
+            state.active_atom_key.eql(atom.key) and
+            event.button != .none)
+        {
+            state.active_atom_key = .nil;
+
+            const click = in_bounds;
+            if (click)
+                state.hot_atom_key = .nil;
+
+            switch (event.button) {
+                .left => inter.f = inter.f.combine(.{ .left_released = true, .left_clicked = click }),
+                .middle => inter.f = inter.f.combine(.{ .middle_released = true, .middle_clicked = click }),
+                .right => inter.f = inter.f.combine(.{ .right_released = true, .right_clicked = click }),
+                .back => {},
+                .forward => {},
+                .none => unreachable,
+            }
+
+            event.consumed = true;
         }
     }
 
-    return .{
-        .atom = atom,
-        .scroll = Vec2(f32).Zero,
-        .modifiers = .{},
-        .f = .{
-            .hovering = hovering,
-            .mouse_over = mouse_over,
-        },
+    if (atom.rect.contains(state.mouse)) {
+        inter.f.mouse_over = true;
+    }
+
+    // mouse over atom, without any other hot key -> set hot, mark hovering
+    if (atom.flags.mouse_clickable and
+        inter.f.mouse_over and
+        (state.hot_atom_key.eql(.nil) or state.hot_atom_key.eql(atom.key)) and
+        (state.active_atom_key.eql(.nil) or state.active_atom_key.eql(atom.key)))
+    {
+        state.hot_atom_key = atom.key;
+        inter.f.hovering = true;
+    }
+
+    return inter;
+}
+
+// ===============
+// Builder code
+
+pub fn startBuild(window: *sdl.Window) void {
+    state.scope_locals.clearAndFree(state.alloc_temp); // @FIXME: not sure if this is needed
+    _ = state.arena.reset(.retain_capacity);
+
+    const root = buildAtomFromStringF("###root-window-id:{x}", .{window.getID()});
+
+    const window_size = window.size();
+    root.size.sz = .{
+        .w = Size.px(@floatFromInt(window_size.w)),
+        .h = Size.px(@floatFromInt(window_size.h)),
     };
+    root.rect.pt = .{
+        .p0 = vec2(f32, 0, 0),
+        .p1 = vec2(f32, @floatFromInt(window_size.w), @floatFromInt(window_size.h)),
+    };
+    root.layout_axis = .x;
+
+    state.pushParent(root);
+    state.ui_root = root;
+}
+
+pub fn endBuild() void {
+    var to_remove = std.ArrayList(Key)
+        .initCapacity(state.alloc_temp, State.MaxAtoms / 2) catch @panic("oom");
+
+    for (state.atom_map.values()) |atom| {
+        if (atom.build_index_touched_last < state.current_build_index) {
+            to_remove.append(atom.key) catch @panic("oom");
+        }
+    }
+
+    for (to_remove.items) |key| {
+        const atom = state.atom_map.fetchSwapRemove(key).?.value;
+        state.atom_pool.destroy(atom);
+    }
+
+    const root = state.popParent().?;
+    assert(state.parent_stack.items.len == 0); // ensure stack is empty after build
+    assert(state.ui_root.key.eql(root.key));
+
+    layout.layout(root) catch @panic("oom");
+
+    _ = state.event_pool.reset(.retain_capacity);
+    _ = state.event_node_pool.reset(.retain_capacity);
+    state.event_list = .{};
+
+    if (state.active_atom_key.eql(.nil)) {
+        state.hot_atom_key = .nil;
+    }
+
+    state.current_build_index +%= 1; // wrapping add
 }
 
 pub fn tryAtomFromKey(key: Key) ?*Atom {
     var result: ?*Atom = null;
-    if (!key.eql(Key.Zero)) {
+    if (!key.eql(.nil)) {
         if (state.atom_map.get(key)) |atom| {
             result = atom;
         }
@@ -763,7 +936,7 @@ pub fn tryAtomFromKey(key: Key) ?*Atom {
 pub fn buildAtomFromKey(key: Key) *Atom {
     state.build_atom_count +%= 1; // wrapping add
 
-    const atom = if (Key.eql(key, Key.Zero)) blk: {
+    const atom = if (Key.eql(key, .nil)) blk: {
         const atom = state.alloc_temp.create(Atom) catch @panic("oom");
         atom.* = .{
             .key = key,
@@ -835,55 +1008,6 @@ pub fn buildAtomFromStringF(comptime fmt: []const u8, args: anytype) *Atom {
     return atom;
 }
 
-// pub fn startFrame() void {}
-
-// pub fn endFrame() void {}
-
-pub fn startBuild(window: *sdl.Window) void {
-    state.scope_locals.clearAndFree(state.alloc_temp); // @FIXME: not sure if this is needed
-    _ = state.arena.reset(.retain_capacity);
-
-    const root = buildAtomFromStringF("###root-window-id:{x}", .{window.getID()});
-
-    const window_size = window.size();
-    root.size.sz = .{
-        .w = Size.px(@floatFromInt(window_size.w)),
-        .h = Size.px(@floatFromInt(window_size.h)),
-    };
-    root.rect.pt = .{
-        .p0 = vec2(f32, 0, 0),
-        .p1 = vec2(f32, @floatFromInt(window_size.w), @floatFromInt(window_size.h)),
-    };
-    root.layout_axis = .x;
-
-    state.pushParent(root);
-    state.ui_root = root;
-}
-
-pub fn endBuild() void {
-    var to_remove = std.ArrayList(Key)
-        .initCapacity(state.alloc_temp, GlobalState.MaxAtoms / 2) catch @panic("oom");
-
-    for (state.atom_map.values()) |atom| {
-        if (atom.build_index_touched_last < state.current_build_index) {
-            to_remove.append(atom.key) catch @panic("oom");
-        }
-    }
-
-    for (to_remove.items) |key| {
-        const atom = state.atom_map.fetchSwapRemove(key).?.value;
-        state.atom_pool.destroy(atom);
-    }
-
-    const root = state.popParent().?;
-    assert(state.parent_stack.items.len == 0); // ensure stack is empty after build
-    assert(state.ui_root.key.eql(root.key));
-
-    layout.layout(root) catch @panic("oom");
-
-    state.current_build_index +%= 1; // wrapping add
-}
-
 pub fn ui(flags: AtomFlags, string: []const u8) *Atom {
     const atom = buildAtomFromString(string);
     atom.flags = flags;
@@ -910,6 +1034,13 @@ pub fn labelf(comptime fmt: []const u8, args: anytype) *Atom {
     atom.end();
     atom.equipDisplayString();
     return atom;
+}
+
+pub fn growSpacer() *Atom {
+    const a = ui(.{}, "");
+    a.end();
+    a.size.sz = .{ .w = .grow, .h = .grow };
+    return a;
 }
 
 // pub fn makeButton(string: []const u8) *Atom {

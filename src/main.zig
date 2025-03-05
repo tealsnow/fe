@@ -12,6 +12,8 @@ pub fn main() !void {
     try sdl.init(sdl.InitFlags.All);
     defer sdl.quit();
 
+    _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
+
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
@@ -67,7 +69,8 @@ pub fn run() !void {
     try cu.init(alloc, renderer, font);
     defer cu.deinit();
 
-    const event_timeout_ms = 10;
+    // @TODO: base these values on display refresh rate
+    const event_timeout_ms = 16 / 2;
     const ns_per_update = 1_000_000_000 / 60; // 16 ms in ns
     var update_lag: u64 = ns_per_update;
 
@@ -92,6 +95,12 @@ pub fn run() !void {
             switch (event.type) {
                 .quit => running = false,
                 .key => |key| key_blk: {
+                    cu.state.pushEvent(.{
+                        .kind = .key_press,
+                        .key = key.keysym,
+                        .state = @enumFromInt(@intFromEnum(key.state)),
+                    });
+
                     if (key.state != .pressed) break :key_blk;
 
                     switch (key.keysym.scancode) {
@@ -102,50 +111,73 @@ pub fn run() !void {
                     }
                 },
                 .motion => |motion| {
-                    cu.state.input.mouse_position.xy = .{
-                        .x = @floatFromInt(motion.x),
-                        .y = @floatFromInt(motion.y),
-                    };
+                    cu.state.pushEvent(.{
+                        .kind = .mouse_move,
+                        .pos = cu.vec2(f32, @floatFromInt(motion.x), @floatFromInt(motion.y)),
+                    });
                 },
                 .button => |button| {
-                    const index = @intFromEnum(button.button) - 1;
-                    cu.state.input.mouse_buttons[index] = button.state;
+                    cu.state.pushEvent(.{
+                        .kind = .mouse_press,
+                        .button = button.button,
+                        .button_clicks = button.clicks,
+                        .state = @enumFromInt(@intFromEnum(button.state)),
+                        .pos = cu.vec2(f32, @floatFromInt(button.x), @floatFromInt(button.y)),
+                    });
+                },
+
+                .wheel => |wheel| {
+                    cu.state.pushEvent(.{
+                        .kind = .scroll,
+                        .scroll = cu.vec2(f32, wheel.preciseX, wheel.preciseY),
+                    });
+                },
+
+                .text => |text| {
+                    const slice = std.mem.sliceTo(text.text[0..], 0);
+                    cu.state.pushEvent(.{
+                        .kind = .text_input,
+                        .text = slice,
+                    });
                 },
 
                 else => {},
             }
         }
 
-        // while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
-        {
+        while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
+            // {
             cu.startBuild(window);
             defer cu.endBuild();
             cu.state.ui_root.layout_axis = .y;
 
             { // topbar
-                const topbar = cu.ui(.{}, "topbar");
+                const topbar = cu.ui(.clickable, "topbar");
                 defer topbar.end();
                 topbar.layout_axis = .x;
                 topbar.size.sz = .{ .w = .full, .h = .px(24) };
 
-                {
-                    const spacer = cu.ui(.{}, "");
-                    defer spacer.end();
-                    spacer.size.sz = .{ .w = .grow, .h = .grow };
-                }
+                _ = cu.growSpacer();
 
                 for (0..3) |i| {
-                    const button = cu.uif(.{}, "top bar button {d}", .{i});
+                    const button = cu.uif(.clickable, "top bar button {d}", .{i});
                     defer button.end();
                     button.size.sz = .{ .w = .px(24), .h = .px(24) };
 
-                    const inter = button.interation();
+                    const int = button.interation();
                     button.color =
-                        cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
-                }
+                        cu.colorHexRgb(if (int.f.hovering) 0xFF0000 else 0xFFFFFF);
 
-                const inter = topbar.interation();
-                topbar.color = cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
+                    if (int.f.isClicked()) {
+                        std.debug.print("top bar button {d} clicked\n", .{i});
+                        switch (i) {
+                            0 => {},
+                            1 => {},
+                            2 => running = false,
+                            else => unreachable,
+                        }
+                    }
+                }
             }
 
             { // main pane
@@ -158,7 +190,7 @@ pub fn run() !void {
                     const pane = cu.ui(.{}, "left pane");
                     defer pane.end();
                     pane.layout_axis = .y;
-                    pane.size.sz = .{ .w = .percent(0.3), .h = .full };
+                    pane.size.sz = .{ .w = .percent(0.4), .h = .full };
 
                     {
                         const header = cu.ui(.{}, "left header");
@@ -179,6 +211,11 @@ pub fn run() !void {
                         _ = cu.labelf("render count: {d}", .{render_count});
                         _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
                         _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
+                        _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
+                        const active = cu.state.atom_map.get(cu.state.active_atom_key);
+                        _ = cu.labelf("active atom: {?}", .{active});
+                        const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
+                        _ = cu.labelf("hot atom: {?}", .{hot});
                     }
                 }
 
@@ -201,19 +238,6 @@ pub fn run() !void {
                         defer content.end();
                         content.layout_axis = .y;
                         content.size.sz = .{ .w = .grow, .h = .grow };
-
-                        inline for (cu.state.input.mouse_buttons, 0..) |button, i| {
-                            const mbtn = cu.uif(
-                                .{},
-                                "{s}: {s}",
-                                .{
-                                    std.meta.fields(sdl.MouseButton)[i + 1].name,
-                                    @tagName(button),
-                                },
-                            );
-                            defer mbtn.end();
-                            mbtn.equipDisplayString();
-                        }
                     }
                 }
 
@@ -283,7 +307,7 @@ fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
         .w = atom.rect.xy.x1 - atom.rect.xy.x0,
         .h = atom.rect.xy.y1 - atom.rect.xy.y0,
     };
-    if (!atom.key.eql(cu.Key.Zero))
+    if (!atom.key.eql(.nil))
         try renderer.drawRectF(&rect);
 
     if (atom.flags.draw_text) {
