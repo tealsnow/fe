@@ -117,7 +117,7 @@ pub fn run() !void {
                 .motion => |motion| {
                     cu.state.pushEvent(.{
                         .kind = .mouse_move,
-                        .pos = cu.vec2(f32, @floatFromInt(motion.x), @floatFromInt(motion.y)),
+                        .pos = .vec(@floatFromInt(motion.x), @floatFromInt(motion.y)),
                     });
                 },
                 .button => |button| {
@@ -126,14 +126,14 @@ pub fn run() !void {
                         .button = button.button,
                         .button_clicks = button.clicks,
                         .state = @enumFromInt(@intFromEnum(button.state)),
-                        .pos = cu.vec2(f32, @floatFromInt(button.x), @floatFromInt(button.y)),
+                        .pos = .vec(@floatFromInt(button.x), @floatFromInt(button.y)),
                     });
                 },
 
                 .wheel => |wheel| {
                     cu.state.pushEvent(.{
                         .kind = .scroll,
-                        .scroll = cu.vec2(f32, wheel.preciseX, wheel.preciseY),
+                        .scroll = .vec(wheel.preciseX, wheel.preciseY),
                     });
                 },
 
@@ -155,7 +155,8 @@ pub fn run() !void {
             const window_id = window.getID();
             const window_size = blk: {
                 const s = window.size();
-                break :blk cu.axis2(f32, @floatFromInt(s.w), @floatFromInt(s.h));
+                // break :blk cu.axis2(f32, @floatFromInt(s.w), @floatFromInt(s.h));
+                break :blk cu.axis2(@as(f32, @floatFromInt(s.w)), @floatFromInt(s.h));
             };
             cu.startBuild(window_id, window_size);
             defer cu.endBuild();
@@ -165,14 +166,14 @@ pub fn run() !void {
                 const topbar = cu.ui(.clickable, "topbar");
                 defer topbar.end();
                 topbar.layout_axis = .x;
-                topbar.size.sz = .{ .w = .full, .h = .px(24) };
+                topbar.pref_size = .{ .w = .full, .h = .px(24) };
 
                 _ = cu.growSpacer();
 
                 for (0..3) |i| {
                     const button = cu.uif(.clickable, "top bar button {d}", .{i});
                     defer button.end();
-                    button.size.sz = .{ .w = .px(24), .h = .px(24) };
+                    button.pref_size = .{ .w = .px(24), .h = .px(24) };
 
                     const int = button.interation();
                     button.color =
@@ -194,19 +195,19 @@ pub fn run() !void {
                 const main_pane = cu.ui(.{}, "main pain");
                 defer main_pane.end();
                 main_pane.layout_axis = .x;
-                main_pane.size.sz = .{ .w = .grow, .h = .grow };
+                main_pane.pref_size = .{ .w = .grow, .h = .grow };
 
                 { // left pane
                     const pane = cu.ui(.{}, "left pane");
                     defer pane.end();
                     pane.layout_axis = .y;
-                    pane.size.sz = .{ .w = .percent(0.4), .h = .full };
+                    pane.pref_size = .{ .w = .percent(0.4), .h = .full };
 
                     {
                         const header = cu.ui(.{}, "left header");
                         defer header.end();
                         header.equipDisplayString();
-                        header.size.sz.w = .grow;
+                        header.pref_size.w = .grow;
                         header.display_string = "Left Header gylp";
                     }
 
@@ -214,7 +215,7 @@ pub fn run() !void {
                         const content = cu.ui(.{}, "left content");
                         defer content.end();
                         content.layout_axis = .y;
-                        content.size.sz = .{ .w = .grow, .h = .grow };
+                        content.pref_size = .{ .w = .grow, .h = .grow };
 
                         _ = cu.labelf("fps: {d}", .{fps});
                         _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
@@ -233,13 +234,13 @@ pub fn run() !void {
                     const pane = cu.ui(.{}, "right pane");
                     defer pane.end();
                     pane.layout_axis = .y;
-                    pane.size.sz = .{ .w = .grow, .h = .full };
+                    pane.pref_size = .{ .w = .grow, .h = .full };
 
                     {
                         const header = cu.ui(.{}, "right header");
                         defer header.end();
                         header.equipDisplayString();
-                        header.size.sz.w = .grow;
+                        header.pref_size.w = .grow;
                         // header.text_align = .center;
                     }
 
@@ -247,7 +248,7 @@ pub fn run() !void {
                         const content = cu.ui(.{}, "right content");
                         defer content.end();
                         content.layout_axis = .y;
-                        content.size.sz = .{ .w = .grow, .h = .grow };
+                        content.pref_size = .{ .w = .grow, .h = .grow };
                     }
                 }
 
@@ -255,19 +256,19 @@ pub fn run() !void {
                     const bar = cu.ui(.{}, "right bar");
                     defer bar.end();
                     bar.layout_axis = .y;
-                    bar.size.sz = .{ .w = .px(16), .h = .grow };
+                    bar.pref_size = .{ .w = .px(16), .h = .grow };
 
                     {
                         const inner = cu.ui(.{}, "right bar inner");
                         defer inner.end();
                         inner.layout_axis = .y;
-                        inner.size.sz = .{ .w = .px(16), .h = .fit };
+                        inner.pref_size = .{ .w = .px(16), .h = .fit };
 
                         for (0..5) |i| {
                             {
                                 const icon = cu.uif(.{}, "right bar icon {d}", .{i});
                                 defer icon.end();
-                                icon.size.sz = .{ .w = .px(16), .h = .px(16) };
+                                icon.pref_size = .{ .w = .px(16), .h = .px(16) };
 
                                 const inter = icon.interation();
                                 icon.color =
@@ -277,7 +278,7 @@ pub fn run() !void {
                             {
                                 const pad = cu.ui(.{}, "");
                                 defer pad.end();
-                                pad.size.sz = .{ .w = .px(16), .h = .px(4) };
+                                pad.pref_size = .{ .w = .px(16), .h = .px(4) };
                             }
                         }
                     }
@@ -312,10 +313,10 @@ fn render(renderer: *sdl.Renderer) !void {
 fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
     try renderer.setDrawColorT(sdlColorFromCuColor(atom.color));
     const rect = sdl.FRect{
-        .x = atom.rect.xy.x0,
-        .y = atom.rect.xy.y0,
-        .w = atom.rect.xy.x1 - atom.rect.xy.x0,
-        .h = atom.rect.xy.y1 - atom.rect.xy.y0,
+        .x = atom.rect.p0.x,
+        .y = atom.rect.p0.y,
+        .w = atom.rect.p1.x - atom.rect.p0.x,
+        .h = atom.rect.p1.y - atom.rect.p0.y,
     };
     if (!atom.key.eql(.nil))
         try renderer.drawRectF(&rect);
@@ -334,8 +335,8 @@ fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
         const dst_rect = sdl.FRect{
             .x = rect.x,
             .y = rect.y,
-            .w = @floatFromInt(text_data.size.sz.w),
-            .h = @floatFromInt(text_data.size.sz.h),
+            .w = @floatFromInt(text_data.size.w),
+            .h = @floatFromInt(text_data.size.h),
         };
 
         try renderer.renderCopyF(texture, null, &dst_rect);

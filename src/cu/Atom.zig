@@ -22,8 +22,8 @@ key: Key,
 string: []const u8 = "",
 display_string: []const u8 = "",
 flags: Flags = .{},
-size: cu.Axis2(PrefSize) = .zero,
-layout_axis: cu.AxisKind = .none, // ensure this is set if children are added, if not an assertion will fail
+pref_size: cu.Axis2(PrefSize) = .zero,
+layout_axis: cu.Axis2(void).Kind = .none, // ensure this is set if children are added, if not an assertion will fail
 // hover_cursor
 // group_key
 // custom_draw_func
@@ -52,7 +52,7 @@ view_bounds: cu.Axis2(f32) = .zero,
 /// Sets `size.{w, h}` to `text_content`
 /// and sets the `draw_text` flag
 pub inline fn equipDisplayString(self: *Atom) void {
-    self.size.sz = .{ .w = .text, .h = .text };
+    self.pref_size = .{ .w = .text, .h = .text };
     self.flags.draw_text = true;
 }
 
@@ -244,7 +244,7 @@ pub const TextData = struct {
 
         return .{
             .zstring = zstring,
-            .size = cu.axis2(c_int, w, h),
+            .size = .axis(w, h),
         };
     }
 };

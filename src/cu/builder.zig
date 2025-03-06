@@ -13,9 +13,9 @@ pub fn startBuild(window_id: u32, window_size: cu.Axis2(f32)) void {
 
     const root = buildAtomFromStringF("###root-window-id:{x}", .{window_id});
 
-    root.size.sz = .{
-        .w = .px(window_size.sz.w),
-        .h = .px(window_size.sz.h),
+    root.pref_size = .{
+        .w = .px(window_size.w),
+        .h = .px(window_size.h),
     };
     root.layout_axis = .x;
 
@@ -171,7 +171,7 @@ pub fn labelf(comptime fmt: []const u8, args: anytype) *Atom {
 pub fn growSpacer() *Atom {
     const a = ui(.{}, "");
     a.end();
-    a.size.sz = .{ .w = .grow, .h = .grow };
+    a.pref_size = .{ .w = .grow, .h = .grow };
     return a;
 }
 
