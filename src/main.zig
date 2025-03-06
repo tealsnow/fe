@@ -145,20 +145,20 @@ pub fn run() !void {
                     });
                 },
 
+                .window => |wind| switch (wind.event) {
+                    .resized => {
+                        cu.state.window_size = .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
+                    },
+
+                    else => {},
+                },
+
                 else => {},
             }
         }
 
         while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
-            // {
-
-            const window_id = window.getID();
-            const window_size = blk: {
-                const s = window.size();
-                // break :blk cu.axis2(f32, @floatFromInt(s.w), @floatFromInt(s.h));
-                break :blk cu.axis2(@as(f32, @floatFromInt(s.w)), @floatFromInt(s.h));
-            };
-            cu.startBuild(window_id, window_size);
+            cu.startBuild(window.getID());
             defer cu.endBuild();
             cu.state.ui_root.layout_axis = .y;
 

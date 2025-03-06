@@ -7,15 +7,15 @@ const cu = @import("cu.zig");
 
 const Atom = cu.Atom;
 
-pub fn startBuild(window_id: u32, window_size: cu.Axis2(f32)) void {
+pub fn startBuild(window_id: u32) void {
     cu.state.scope_locals.clearAndFree(cu.state.alloc_temp); // @FIXME: not sure if this is needed
     _ = cu.state.arena.reset(.retain_capacity);
 
     const root = buildAtomFromStringF("###root-window-id:{x}", .{window_id});
 
     root.pref_size = .{
-        .w = .px(window_size.w),
-        .h = .px(window_size.h),
+        .w = .px(cu.state.window_size.w),
+        .h = .px(cu.state.window_size.h),
     };
     root.layout_axis = .x;
 

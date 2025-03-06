@@ -34,6 +34,7 @@ event_pool: EventPool,
 event_node_pool: EventNodePool,
 event_list: EventList = .{},
 
+window_size: cu.Axis2(f32) = .zero,
 mouse: cu.Vec2(f32) = .inf,
 
 pub const MaxAtoms = 4000; // max 4000 atoms total, not measured in memory
