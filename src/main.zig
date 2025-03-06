@@ -8,11 +8,15 @@ const cu = @import("cu/cu.zig");
 
 const one_frame = false;
 
+// @TODO: tooltips/downdowns - general popups
+// @TODO: overflow and cliping
+// @TODO: scrolling
+// @TODO: floating
+// @TODO: better rendering
+
 pub fn main() !void {
     try sdl.init(sdl.InitFlags.All);
     defer sdl.quit();
-
-    _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
 
     try sdl.ttf.init();
     defer sdl.ttf.quit();
@@ -66,8 +70,8 @@ pub fn run() !void {
     const font = try sdl.ttf.Font.open(font_path, 16);
     defer font.deinit();
 
-    try cu.init(alloc, renderer, font);
-    defer cu.deinit();
+    try cu.state.init(alloc, font);
+    defer cu.state.deinit();
 
     // @TODO: base these values on display refresh rate
     const event_timeout_ms = 16 / 2;
@@ -147,7 +151,13 @@ pub fn run() !void {
 
         while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
             // {
-            cu.startBuild(window);
+
+            const window_id = window.getID();
+            const window_size = blk: {
+                const s = window.size();
+                break :blk cu.axis2(f32, @floatFromInt(s.w), @floatFromInt(s.h));
+            };
+            cu.startBuild(window_id, window_size);
             defer cu.endBuild();
             cu.state.ui_root.layout_axis = .y;
 
@@ -166,7 +176,7 @@ pub fn run() !void {
 
                     const int = button.interation();
                     button.color =
-                        cu.colorHexRgb(if (int.f.hovering) 0xFF0000 else 0xFFFFFF);
+                        cu.Color.hexRgb(if (int.f.hovering) 0xFF0000 else 0xFFFFFF);
 
                     if (int.f.isClicked()) {
                         std.debug.print("top bar button {d} clicked\n", .{i});
@@ -197,7 +207,7 @@ pub fn run() !void {
                         defer header.end();
                         header.equipDisplayString();
                         header.size.sz.w = .grow;
-                        header.displayString = "Left Header gylp";
+                        header.display_string = "Left Header gylp";
                     }
 
                     {
@@ -261,7 +271,7 @@ pub fn run() !void {
 
                                 const inter = icon.interation();
                                 icon.color =
-                                    cu.colorHexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
+                                    cu.Color.hexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
                             }
 
                             {
@@ -300,7 +310,7 @@ fn render(renderer: *sdl.Renderer) !void {
 }
 
 fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
-    try renderer.setDrawColorT(atom.color);
+    try renderer.setDrawColorT(sdlColorFromCuColor(atom.color));
     const rect = sdl.FRect{
         .x = atom.rect.xy.x0,
         .y = atom.rect.xy.y0,
@@ -337,4 +347,8 @@ fn renderAtom(atom: *cu.Atom, renderer: *sdl.Renderer) !void {
             try renderAtom(child, renderer);
         }
     }
+}
+
+fn sdlColorFromCuColor(color: cu.Color) sdl.Color {
+    return @bitCast(color);
 }

@@ -4,8 +4,7 @@ const assert = std.debug.assert;
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 const AxisKind = cu.AxisKind;
-const TextData = cu.TextData;
-const SizeKind = cu.SizeKind;
+const TextData = Atom.TextData;
 
 const TermColor = @import("../TermColor.zig");
 
@@ -39,7 +38,7 @@ fn standalone(atom: *Atom, axis: AxisKind) void {
             atom.fixed_size.arr[axis_i] = size.value;
         },
         .text_content => {
-            const data = TextData.init(atom.displayString) catch @panic("oom");
+            const data = TextData.init(atom.display_string) catch @panic("oom");
             atom.text_data = data;
             atom.fixed_size.arr[axis_i] = @floatFromInt(data.size.arr[axis_i]);
         },
@@ -266,124 +265,124 @@ fn position(atom: *Atom, axis: AxisKind) void {
     }
 }
 
-pub const DebugPrintTreeOptions = struct {
-    children: bool = true,
-    size: bool = true,
-    computed_size: bool = true,
-    rel_position: bool = false,
-    rect: bool = false,
+// pub const DebugPrintTreeOptions = struct {
+//     children: bool = true,
+//     size: bool = true,
+//     computed_size: bool = true,
+//     rel_position: bool = false,
+//     rect: bool = false,
 
-    targeted_size_kind: ?[]const SizeKind = null,
-};
+//     targeted_size_kind: ?[]const Atom.Size.Kind = null,
+// };
 
-pub fn debugPrintTree(atom: *Atom, depth: usize, options: DebugPrintTreeOptions) void {
-    const red_bg = TermColor{
-        .color = .red,
-        .layer = .background,
-        .bright = true,
-    };
-    const red = TermColor{ .color = .red };
-    const bold = TermColor{ .style = .{ .bold = true } };
-    const reset = TermColor.Reset;
+// pub fn debugPrintTree(atom: *Atom, depth: usize, options: DebugPrintTreeOptions) void {
+//     const red_bg = TermColor{
+//         .color = .red,
+//         .layer = .background,
+//         .bright = true,
+//     };
+//     const red = TermColor{ .color = .red };
+//     const bold = TermColor{ .style = .{ .bold = true } };
+//     const reset = TermColor.Reset;
 
-    const targeted: bool = if (options.targeted_size_kind) |targets|
-        for (targets) |target|
-            if (atom.size.sz.w.kind == target or
-                atom.size.sz.h.kind == target)
-                break true
-            else {}
-        else
-            false
-    else
-        false;
+//     const targeted: bool = if (options.targeted_size_kind) |targets|
+//         for (targets) |target|
+//             if (atom.size.sz.w.kind == target or
+//                 atom.size.sz.h.kind == target)
+//                 break true
+//             else {}
+//         else
+//             false
+//     else
+//         false;
 
-    for (0..depth) |_| std.debug.print("    ", .{});
-    if (targeted)
-        std.debug.print("- {}{s}{}\n", .{ red_bg, atom.string, reset })
-    else
-        std.debug.print("- {s}\n", .{atom.string});
+//     for (0..depth) |_| std.debug.print("    ", .{});
+//     if (targeted)
+//         std.debug.print("- {}{s}{}\n", .{ red_bg, atom.string, reset })
+//     else
+//         std.debug.print("- {s}\n", .{atom.string});
 
-    const has_children = atom.children != null;
-    const layout_axis = atom.layout_axis;
+//     const has_children = atom.children != null;
+//     const layout_axis = atom.layout_axis;
 
-    for (0..depth) |_| std.debug.print("    ", .{});
-    std.debug.print("   has children: {}\n", .{has_children});
-    for (0..depth) |_| std.debug.print("    ", .{});
-    std.debug.print("   layout axis: {}\n", .{layout_axis});
+//     for (0..depth) |_| std.debug.print("    ", .{});
+//     std.debug.print("   has children: {}\n", .{has_children});
+//     for (0..depth) |_| std.debug.print("    ", .{});
+//     std.debug.print("   layout axis: {}\n", .{layout_axis});
 
-    if (options.size) {
-        const size = atom.size;
+//     if (options.size) {
+//         const size = atom.size;
 
-        const kinds: []const []const u8 = &.{ "w", "h" };
+//         const kinds: []const []const u8 = &.{ "w", "h" };
 
-        for (0..depth) |_| std.debug.print("    ", .{});
-        std.debug.print("   size: {{\n", .{});
-        for (size.arr, 0..) |s, idx| {
-            for (0..depth) |_| std.debug.print("    ", .{});
+//         for (0..depth) |_| std.debug.print("    ", .{});
+//         std.debug.print("   size: {{\n", .{});
+//         for (size.arr, 0..) |s, idx| {
+//             for (0..depth) |_| std.debug.print("    ", .{});
 
-            const target = if (options.targeted_size_kind) |targets|
-                for (targets) |target|
-                    if (s.kind == target)
-                        break true
-                    else {}
-                else
-                    false
-            else
-                false;
+//             const target = if (options.targeted_size_kind) |targets|
+//                 for (targets) |target|
+//                     if (s.kind == target)
+//                         break true
+//                     else {}
+//                 else
+//                     false
+//             else
+//                 false;
 
-            if (target)
-                std.debug.print(
-                    "     {s}: {{ {}.kind = .{s}{}, .value = {d}, .strictness = {d} }}\n",
-                    .{ kinds[idx], red, @tagName(s.kind), reset, s.value, s.strictness },
-                )
-            else
-                std.debug.print(
-                    "     {s}: {{ .kind = .{s}, .value = {d}, .strictness = {d} }}\n",
-                    .{ kinds[idx], @tagName(s.kind), s.value, s.strictness },
-                );
-        }
-        for (0..depth) |_| std.debug.print("    ", .{});
-        std.debug.print("   }}\n", .{});
-    }
+//             if (target)
+//                 std.debug.print(
+//                     "     {s}: {{ {}.kind = .{s}{}, .value = {d}, .strictness = {d} }}\n",
+//                     .{ kinds[idx], red, @tagName(s.kind), reset, s.value, s.strictness },
+//                 )
+//             else
+//                 std.debug.print(
+//                     "     {s}: {{ .kind = .{s}, .value = {d}, .strictness = {d} }}\n",
+//                     .{ kinds[idx], @tagName(s.kind), s.value, s.strictness },
+//                 );
+//         }
+//         for (0..depth) |_| std.debug.print("    ", .{});
+//         std.debug.print("   }}\n", .{});
+//     }
 
-    if (options.computed_size) {
-        const computed_size = atom.fixed_size;
-        for (0..depth) |_| std.debug.print("    ", .{});
-        if (targeted)
-            std.debug.print(
-                "   {}computed size: {d} x {d}{}\n",
-                .{ bold, computed_size.sz.w, computed_size.sz.h, reset },
-            )
-        else
-            std.debug.print(
-                "   computed size: {d} x {d}\n",
-                .{ computed_size.sz.w, computed_size.sz.h },
-            );
-    }
+//     if (options.computed_size) {
+//         const computed_size = atom.fixed_size;
+//         for (0..depth) |_| std.debug.print("    ", .{});
+//         if (targeted)
+//             std.debug.print(
+//                 "   {}computed size: {d} x {d}{}\n",
+//                 .{ bold, computed_size.sz.w, computed_size.sz.h, reset },
+//             )
+//         else
+//             std.debug.print(
+//                 "   computed size: {d} x {d}\n",
+//                 .{ computed_size.sz.w, computed_size.sz.h },
+//             );
+//     }
 
-    if (options.rel_position) {
-        const rel_position = atom.rel_position;
-        for (0..depth) |_| std.debug.print("    ", .{});
-        std.debug.print(
-            "   relative position: {d} x {d}\n",
-            .{ rel_position.vec.x, rel_position.vec.y },
-        );
-    }
+//     if (options.rel_position) {
+//         const rel_position = atom.rel_position;
+//         for (0..depth) |_| std.debug.print("    ", .{});
+//         std.debug.print(
+//             "   relative position: {d} x {d}\n",
+//             .{ rel_position.vec.x, rel_position.vec.y },
+//         );
+//     }
 
-    if (options.rect) {
-        const rect = atom.rect;
-        for (0..depth) |_| std.debug.print("    ", .{});
-        std.debug.print(
-            "   rect: {d} x {d} @ {d} x {d}\n",
-            .{ rect.pt.p0.xy.x, rect.pt.p0.xy.y, rect.pt.p1.xy.x, rect.pt.p1.xy.y },
-        );
-    }
+//     if (options.rect) {
+//         const rect = atom.rect;
+//         for (0..depth) |_| std.debug.print("    ", .{});
+//         std.debug.print(
+//             "   rect: {d} x {d} @ {d} x {d}\n",
+//             .{ rect.pt.p0.xy.x, rect.pt.p0.xy.y, rect.pt.p1.xy.x, rect.pt.p1.xy.y },
+//         );
+//     }
 
-    if (options.children and has_children) {
-        const children = atom.children.?;
-        var maybe_child: ?*Atom = children.first;
-        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            debugPrintTree(child, depth + 1, options);
-        }
-    }
-}
+//     if (options.children and has_children) {
+//         const children = atom.children.?;
+//         var maybe_child: ?*Atom = children.first;
+//         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+//             debugPrintTree(child, depth + 1, options);
+//         }
+//     }
+// }
