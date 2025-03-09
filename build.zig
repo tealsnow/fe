@@ -7,8 +7,8 @@ pub fn build(b: *std.Build) void {
     const use_llvm = b.option(
         bool,
         "use_llvm",
-        "switch to use llvm or not (default: false)",
-    ) orelse false;
+        "switch to use llvm or not (defaults to false on debug builds true for release builds)",
+    ) orelse if (optimize == .Debug) false else true;
 
     const exe = b.addExecutable(.{
         .name = "fe",

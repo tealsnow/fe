@@ -5,15 +5,17 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
 
-const sdl = @import("../sdl/sdl.zig");
-
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
+const Color = cu.Color;
 
 current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
 
-font: *sdl.ttf.Font,
+font_manager: cu.FontManager = .empty,
+default_font: cu.FontId = undefined,
+
+callbacks: Callbacks,
 
 arena: std.heap.ArenaAllocator,
 alloc_temp: Allocator,
@@ -21,7 +23,9 @@ alloc_persistent: Allocator, // currently only used for atom_map
 
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
-parent_stack: ParentStack = .empty,
+atom_parent_stack: GenericStack(*Atom, "atom_parent_stack", .temporary) = .empty,
+
+palette_stack: GenericStack(*Atom.Palette, "palette_stack", .temporary) = .empty,
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -37,10 +41,8 @@ event_list: EventList = .{},
 window_size: cu.Axis2(f32) = .zero,
 mouse: cu.Vec2(f32) = .inf,
 
-pub const MaxAtoms = 4000; // max 4000 atoms total, not measured in memory
-
+pub const MaxAtoms = 4000; // max 4000 atoms total
 pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = false });
-pub const ParentStack = std.ArrayListUnmanaged(*Atom);
 pub const AtomMap = std.ArrayHashMapUnmanaged(
     Atom.Key,
     *Atom,
@@ -55,10 +57,10 @@ pub const EventPool = std.heap.MemoryPoolExtra(cu.Event, .{ .growable = true });
 pub fn init(
     self: *State,
     allocator: Allocator,
-    font: *sdl.ttf.Font,
+    callbacks: Callbacks,
 ) !void {
     self.* = .{
-        .font = font,
+        .callbacks = callbacks,
         .arena = std.heap.ArenaAllocator.init(allocator),
         .alloc_temp = undefined,
         .alloc_persistent = allocator,
@@ -72,6 +74,8 @@ pub fn init(
 }
 
 pub fn deinit(self: *State) void {
+    self.font_manager.deinit();
+
     // state.parent_stack.deinit(state.alloc_temp);
     self.atom_map.deinit(self.alloc_persistent);
 
@@ -87,22 +91,65 @@ pub inline fn allocAtom(self: *State) *Atom {
     return self.atom_pool.create() catch @panic("oom");
 }
 
-pub inline fn pushParent(self: *State, atom: *Atom) void {
-    self.parent_stack.append(self.alloc_temp, atom) catch @panic("oom");
-}
-
-pub inline fn popParent(self: *State) ?*Atom {
-    return self.parent_stack.pop();
-}
-
-pub inline fn currentParent(self: *State) ?*Atom {
-    return self.parent_stack.getLastOrNull();
-}
-
 pub fn pushEvent(self: *State, event: cu.Event) void {
     const evt = self.event_pool.create() catch @panic("oom");
     evt.* = event;
     const node = self.event_node_pool.create() catch @panic("oom");
     node.* = .{ .data = evt };
     self.event_list.append(node);
+}
+
+pub const Callbacks = struct {
+    context: *anyopaque,
+    vtable: VTable,
+
+    pub const VTable = struct {
+        measureText: *const fn (context: *anyopaque, text: [:0]const u8, font: cu.FontHandle) cu.Axis2(f32),
+    };
+
+    pub fn measureText(self: *Callbacks, text: [:0]const u8, font: cu.FontHandle) cu.Axis2(f32) {
+        return self.vtable.measureText(self.context, text, font);
+    }
+};
+
+const AllocKind = enum {
+    temporary,
+    persistent,
+};
+
+fn GenericStack(
+    comptime T: type,
+    comptime field_name: []const u8,
+    comptime alloc_kind: AllocKind,
+) type {
+    return struct {
+        const Self = @This();
+        pub const empty = Self{};
+
+        stack: std.ArrayListUnmanaged(T) = .empty,
+
+        fn getAlloc(self: *Self) Allocator {
+            const state: *State = @fieldParentPtr(field_name, self);
+            return switch (alloc_kind) {
+                .temporary => state.alloc_temp,
+                .persistent => state.alloc_persistent,
+            };
+        }
+
+        pub fn push(self: *Self, item: T) void {
+            self.stack.append(self.getAlloc(), item) catch @panic("oom");
+        }
+
+        pub fn pop(self: *Self) ?T {
+            return self.stack.pop();
+        }
+
+        pub fn top(self: *Self) ?T {
+            return self.stack.getLastOrNull();
+        }
+
+        pub fn clearAndFree(self: *Self) void {
+            self.stack.clearAndFree(self.getAlloc());
+        }
+    };
 }

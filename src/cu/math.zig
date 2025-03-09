@@ -23,6 +23,55 @@ pub fn vec2(x: anytype, y: @TypeOf(x)) Vec2(@TypeOf(x)) {
     return .vec(x, y);
 }
 
+pub fn Vec3(comptime T: type) type {
+    return extern struct {
+        x: T,
+        y: T,
+        z: T,
+
+        const Self = @This();
+        pub const zero = std.mem.zeroes(Self);
+        pub const inf = vec(std.math.inf(T), std.math.inf(T), std.math.inf(T));
+
+        pub inline fn vec(x: T, y: T, z: T) Self {
+            return .{ .x = x, .y = y, .z = z };
+        }
+
+        pub inline fn arr(self: *Self) *[3]T {
+            return @ptrCast(self);
+        }
+    };
+}
+
+pub fn vec3(x: anytype, y: @TypeOf(x), z: @TypeOf(x)) Vec3(@TypeOf(x)) {
+    return .vec(x, y, z);
+}
+
+pub fn Vec4(comptime T: type) type {
+    return extern struct {
+        x: T,
+        y: T,
+        z: T,
+        w: T,
+
+        const Self = @This();
+        pub const zero = std.mem.zeroes(Self);
+        pub const inf = vec(std.math.inf(T), std.math.inf(T), std.math.inf(T), std.math.inf(T));
+
+        pub inline fn vec(x: T, y: T, z: T, w: T) Self {
+            return .{ .x = x, .y = y, .z = z, .w = w };
+        }
+
+        pub inline fn arr(self: *Self) *[4]T {
+            return @ptrCast(self);
+        }
+    };
+}
+
+pub fn vec4(x: anytype, y: @TypeOf(x), z: @TypeOf(x), w: @TypeOf(x)) Vec4(@TypeOf(x)) {
+    return .vec(x, y, z, w);
+}
+
 pub fn Axis2(comptime T: type) type {
     return extern struct {
         w: T,
@@ -45,6 +94,14 @@ pub fn Axis2(comptime T: type) type {
 
         pub fn axis(w: T, h: T) Self {
             return .{ .w = w, .h = h };
+        }
+
+        pub fn square(l: T) Self {
+            return .{ .w = l, .h = l };
+        }
+
+        pub fn asVec(self: Self) Vec2(T) {
+            return .{ .x = self.w, .y = self.h };
         }
 
         pub inline fn arr(self: *Self) *[2]T {

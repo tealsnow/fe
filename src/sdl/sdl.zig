@@ -224,8 +224,18 @@ pub const Renderer = opaque {
             return error.Sdl;
     }
 
+    pub fn drawLineF(self: *Renderer, x1: f32, y1: f32, x2: f32, y2: f32) Error!void {
+        if (c.SDL_RenderDrawLineF(@ptrCast(self), x1, y1, x2, y2) != 0)
+            return error.Sdl;
+    }
+
     pub fn drawLinesF(self: *Renderer, points: []const FPoint) Error!void {
         if (c.SDL_RenderDrawLinesF(@ptrCast(self), points.ptr, @intCast(points.len)) != 0)
+            return error.Sdl;
+    }
+
+    pub fn setClipRect(self: *Renderer, rect: ?*const Rect) Error!void {
+        if (c.SDL_RenderSetClipRect(@ptrCast(self), rect) != 0)
             return error.Sdl;
     }
 

@@ -38,9 +38,17 @@ fn standalone(atom: *Atom, axis: AxisKind) void {
             atom.fixed_size.arr()[axis_i] = size.value;
         },
         .text_content => {
-            const data = TextData.init(atom.display_string) catch @panic("oom");
-            atom.text_data = data;
-            atom.fixed_size.arr()[axis_i] = @floatFromInt(data.size.asArr()[axis_i]);
+            const data = if (atom.text_data) |*data| blk: {
+                data.update(atom.display_string) catch @panic("oom");
+                break :blk data.*;
+            } else blk: {
+                const font_handle = cu.state.font_manager.getFont(atom.font);
+                const data = TextData.init(atom.display_string, font_handle) catch @panic("oom");
+                atom.text_data = data;
+                break :blk data;
+            };
+
+            atom.fixed_size.arr()[axis_i] = data.size.asArr()[axis_i];
         },
         else => {},
     }

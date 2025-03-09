@@ -4,6 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const cu = @import("cu.zig");
+const Color = cu.Color;
 
 // per-build links
 children: ?struct {
@@ -31,11 +32,10 @@ layout_axis: cu.Axis2(void).Kind = .none, // ensure this is set if children are 
 
 // @FIXME: these could be scope locals, its worth looking into performance implications first though
 text_align: TextAlignment = .left,
-// pallete (background, text, text_weak, border, overlay, cursor, selection)
-// font (+size)
+palette: *Palette = undefined,
+font: cu.FontId = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
-color: cu.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
 
 // per-build artifacts
 fixed_size: cu.Axis2(f32) = .zero,
@@ -57,7 +57,7 @@ pub inline fn equipDisplayString(self: *Atom) void {
 }
 
 pub inline fn end(self: *Atom) void {
-    const atom = cu.state.popParent().?;
+    const atom = cu.state.atom_parent_stack.pop().?;
     assert(Key.eql(self.key, atom.key)); // hit if mismatched ui/end called, likely forgot a defer
 }
 
@@ -145,21 +145,21 @@ pub const Flags = packed struct(u32) {
     // interation
     mouse_clickable: bool = false,
     keyboard_clickable: bool = false,
-    drop_site: bool = false,
-    view_scroll: bool = false,
-    focusable: bool = false,
-    disabled: bool = false,
+    // drop_site: bool = false,
+    // view_scroll: bool = false,
+    // focusable: bool = false,
+    // disabled: bool = false,
 
     // layout
-    floating_x: bool = false,
-    floating_y: bool = false,
+    // floating_x: bool = false,
+    // floating_y: bool = false,
     // fixed_width: bool = false,
     // fixed_height: bool = false,
-    allow_overflow_x: bool = false,
-    allow_overflow_y: bool = false,
+    // allow_overflow_x: bool = false,
+    // allow_overflow_y: bool = false,
 
     // appearance
-    draw_drop_shadow: bool = false,
+    // draw_drop_shadow: bool = false,
     draw_background: bool = false,
     draw_border: bool = false,
     draw_side_top: bool = false,
@@ -169,14 +169,14 @@ pub const Flags = packed struct(u32) {
     draw_text: bool = false,
     draw_text_weak: bool = false,
     clip: bool = false,
-    text_truncate_ellipsis: bool = false,
+    // text_truncate_ellipsis: bool = false,
 
     // hot_animation: bool = false,
     // have_animation: bool = false,
 
     // render_custom: bool = false,
 
-    _padding: enum(u11) { zero } = .zero,
+    _padding: enum(u21) { zero } = .zero,
 
     pub const clickable = Self{
         .mouse_clickable = true,
@@ -191,13 +191,6 @@ pub const Flags = packed struct(u32) {
     pub const allow_overflow = Self{
         .allow_overflow_x = true,
         .allow_overflow_y = true,
-    };
-
-    pub const draw_sides = Self{
-        .draw_side_top = true,
-        .draw_side_bottom = true,
-        .draw_side_left = true,
-        .draw_side_right = true,
     };
 
     inline fn asInt(self: Self) u32 {
@@ -233,19 +226,20 @@ pub const TextAlignment = enum {
 
 pub const TextData = struct {
     zstring: [:0]const u8, // @Icky
-    size: cu.Axis2(c_int),
+    size: cu.Axis2(f32),
 
-    pub fn init(text: []const u8) !TextData {
+    pub fn init(text: []const u8, font: cu.FontHandle) !TextData {
         const zstring = try cu.state.alloc_temp.dupeZ(u8, text);
-
-        var w: c_int = 0;
-        var h: c_int = 0;
-        try cu.state.font.sizeText(zstring, &w, &h);
+        const size = cu.state.callbacks.measureText(zstring, font);
 
         return .{
             .zstring = zstring,
-            .size = .axis(w, h),
+            .size = size,
         };
+    }
+
+    pub fn update(self: *TextData, text: []const u8) !void {
+        self.zstring = try cu.state.alloc_temp.dupeZ(u8, text);
     }
 };
 
@@ -323,4 +317,14 @@ pub const PrefSize = extern struct {
             .strictness = 0,
         };
     }
+};
+
+pub const Palette = struct {
+    background: Color,
+    text: Color,
+    text_weak: Color,
+    border: Color,
+    // overlay: Color,
+    // cursor: Color,
+    // selection: Color,
 };

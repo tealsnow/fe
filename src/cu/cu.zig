@@ -14,15 +14,16 @@ pub const Atom = @import("Atom.zig");
 pub const Color = @import("color.zig").Color;
 pub const layout = @import("layout.zig").layout;
 
-pub const math = @import("math.zig");
+const math = @import("math.zig");
 pub usingnamespace math;
-pub const builder = @import("builder.zig");
+const builder = @import("builder.zig");
 pub usingnamespace builder;
-pub const input = @import("input.zig");
+const input = @import("input.zig");
 pub usingnamespace input;
-pub const scope_locals = @import("scope_locals.zig");
+const scope_locals = @import("scope_locals.zig");
 pub usingnamespace scope_locals;
+const font = @import("font.zig");
+pub usingnamespace font;
 
 pub const State = @import("State.zig");
-
 pub var state: State = undefined;
