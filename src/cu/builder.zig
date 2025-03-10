@@ -5,14 +5,11 @@ const cu = @import("cu.zig");
 const Atom = cu.Atom;
 
 pub fn startBuild(window_id: u32) void {
-    cu.state.palette_stack.clearAndFree();
-
+    cu.state.palette_stack.clearAndReset();
     cu.state.scope_locals.clearAndFree(cu.state.alloc_temp); // @FIXME: not sure if this is needed
-
     _ = cu.state.arena.reset(.retain_capacity);
 
-    const base_palette = cu.state.alloc_temp.create(Atom.Palette) catch @panic("oom");
-    base_palette.* = .{
+    const base_palette = Atom.Palette{
         .background = .hexRgb(0x1d2021), // gruvbox bg0
         .text = .hexRgb(0xebdbb2), // gruvbox fg1
         .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
@@ -48,13 +45,10 @@ pub fn endBuild() void {
         cu.state.atom_pool.destroy(atom);
     }
 
-    _ = cu.state.event_pool.reset(.retain_capacity);
-    _ = cu.state.event_node_pool.reset(.retain_capacity);
-    cu.state.event_list = .{};
-
     const root = cu.state.atom_parent_stack.pop().?;
     assert(cu.state.atom_parent_stack.stack.items.len == 0); // ensure stack is empty after build
     assert(cu.state.ui_root.key.eql(root.key));
+    cu.state.atom_parent_stack.clearAndFree();
 
     cu.layout(root) catch @panic("oom");
 
@@ -63,6 +57,10 @@ pub fn endBuild() void {
     }
 
     cu.state.current_build_index += 1;
+
+    _ = cu.state.event_pool.reset(.retain_capacity);
+    _ = cu.state.event_node_pool.reset(.retain_capacity);
+    cu.state.event_list = .{};
 }
 
 pub fn tryAtomFromKey(key: Atom.Key) ?*Atom {
@@ -208,25 +206,44 @@ pub fn growSpacer() *Atom {
 //     return btn.interation();
 // }
 
-pub inline fn withTextColor(color: cu.Color) EndWithPaletteFn {
-    const current = cu.state.palette_stack.top().?;
-    const ptr = cu.state.alloc_temp.create(Atom.Palette) catch @panic("oom");
-    ptr.* = current.*;
-    ptr.text = color;
-    cu.state.palette_stack.push(ptr);
+pub inline fn pushPalette(palette: Atom.Palette) void {
+    cu.state.palette_stack.push(palette);
+}
+
+pub inline fn withPalette(palette: Atom.Palette) EndWithPaletteFn {
+    pushPalette(palette);
     return endWithPalette;
 }
 
-pub inline fn withBackgroundColor(color: cu.Color) EndWithPaletteFn {
-    const current = cu.state.palette_stack.top().?;
-    const ptr = cu.state.alloc_temp.create(Atom.Palette) catch @panic("oom");
-    ptr.* = current.*;
-    ptr.background = color;
-    cu.state.palette_stack.push(ptr);
-    return endWithPalette;
+pub inline fn popPalette() void {
+    _ = cu.state.palette_stack.pop().?;
 }
 
 const EndWithPaletteFn = fn (void) callconv(.@"inline") void;
 inline fn endWithPalette(_: void) void {
-    _ = cu.state.palette_stack.pop().?;
+    popPalette();
+}
+
+pub inline fn pushTextColor(color: cu.Color) void {
+    const current = cu.state.palette_stack.top().?;
+    var palette = current.*;
+    palette.text = color;
+    pushPalette(palette);
+}
+
+pub inline fn withTextColor(color: cu.Color) EndWithPaletteFn {
+    pushTextColor(color);
+    return endWithPalette;
+}
+
+pub inline fn pushBackgroundColor(color: cu.Color) void {
+    const current = cu.state.palette_stack.top().?;
+    var palette = current.*;
+    palette.background = color;
+    pushPalette(palette);
+}
+
+pub inline fn withBackgroundColor(color: cu.Color) EndWithPaletteFn {
+    pushBackgroundColor(color);
+    return endWithPalette;
 }
