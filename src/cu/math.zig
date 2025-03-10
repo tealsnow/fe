@@ -13,13 +13,25 @@ pub fn Vec2(comptime T: type) type {
             return .{ .x = x, .y = y };
         }
 
+        pub inline fn asAxis(self: Self) Axis2(T) {
+            return .axis(self.x, self.y);
+        }
+
         pub inline fn arr(self: *Self) *[2]T {
             return @ptrCast(self);
+        }
+
+        pub inline fn add(self: Self, other: Self) Self {
+            return .{ .x = self.x + other.x, .y = self.y + other.y };
+        }
+
+        pub inline fn sub(self: Self, other: Self) Self {
+            return .{ .x = self.x - other.x, .y = self.y - other.y };
         }
     };
 }
 
-pub fn vec2(x: anytype, y: @TypeOf(x)) Vec2(@TypeOf(x)) {
+pub inline fn vec2(x: anytype, y: @TypeOf(x)) Vec2(@TypeOf(x)) {
     return .vec(x, y);
 }
 
@@ -68,7 +80,7 @@ pub fn Vec4(comptime T: type) type {
     };
 }
 
-pub fn vec4(x: anytype, y: @TypeOf(x), z: @TypeOf(x), w: @TypeOf(x)) Vec4(@TypeOf(x)) {
+pub inline fn vec4(x: anytype, y: @TypeOf(x), z: @TypeOf(x), w: @TypeOf(x)) Vec4(@TypeOf(x)) {
     return .vec(x, y, z, w);
 }
 
@@ -92,15 +104,15 @@ pub fn Axis2(comptime T: type) type {
             pub const array = [2]Kind{ .x, .y };
         };
 
-        pub fn axis(w: T, h: T) Self {
+        pub inline fn axis(w: T, h: T) Self {
             return .{ .w = w, .h = h };
         }
 
-        pub fn square(l: T) Self {
+        pub inline fn square(l: T) Self {
             return .{ .w = l, .h = l };
         }
 
-        pub fn asVec(self: Self) Vec2(T) {
+        pub inline fn asVec(self: Self) Vec2(T) {
             return .{ .x = self.w, .y = self.h };
         }
 
@@ -114,7 +126,7 @@ pub fn Axis2(comptime T: type) type {
     };
 }
 
-pub fn axis2(w: anytype, h: @TypeOf(w)) Axis2(@TypeOf(w)) {
+pub inline fn axis2(w: anytype, h: @TypeOf(w)) Axis2(@TypeOf(w)) {
     return .axis(w, h);
 }
 
@@ -127,7 +139,7 @@ pub fn Range2(comptime T: type) type {
         pub const zero = std.mem.zeroes(Self);
         pub const inf = range(.inf, .inf);
 
-        pub fn range(p0: Vec2(T), p1: Vec2(T)) Self {
+        pub inline fn range(p0: Vec2(T), p1: Vec2(T)) Self {
             return Self{ .p0 = p0, .p1 = p1 };
         }
 
@@ -135,19 +147,35 @@ pub fn Range2(comptime T: type) type {
             return @ptrCast(self);
         }
 
-        pub fn contains(self: Self, point: Vec2(T)) bool {
+        pub inline fn contains(self: Self, point: Vec2(T)) bool {
             return point.x > self.p0.x and
                 point.x < self.p1.x and
                 point.y > self.p0.y and
                 point.y < self.p1.y;
         }
+
+        pub fn topLeft(self: Self) Vec2(T) {
+            return self.p0;
+        }
+
+        pub fn topRight(self: Self) Vec2(T) {
+            return .vec(self.p1.x, self.p0.y);
+        }
+
+        pub fn bottomLeft(self: Self) Vec2(T) {
+            return .vec(self.p0.x, self.p1.y);
+        }
+
+        pub fn bottomRight(self: Self) Vec2(T) {
+            return self.p1;
+        }
     };
 }
 
-pub fn range2(comptime T: type, p0: Vec2(T), p1: Vec2(T)) Range2(T) {
+pub inline fn range2(comptime T: type, p0: Vec2(T), p1: Vec2(T)) Range2(T) {
     return .range(p0, p1);
 }
 
-pub fn range2pts(x0: anytype, y0: @TypeOf(x0), x1: @TypeOf(x0), y1: @TypeOf(x0)) Range2(Vec2(@TypeOf(x0))) {
+pub inline fn range2pts(x0: anytype, y0: @TypeOf(x0), x1: @TypeOf(x0), y1: @TypeOf(x0)) Range2(Vec2(@TypeOf(x0))) {
     return .range(Vec2(x0, y0), Vec2(x1, y1));
 }

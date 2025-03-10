@@ -34,7 +34,7 @@ pub const Font = opaque {
         return @ptrCast(font);
     }
 
-    pub fn deinit(self: *Font) void {
+    pub fn close(self: *Font) void {
         c.TTF_CloseFont(@ptrCast(self));
     }
 
@@ -94,5 +94,15 @@ pub const Font = opaque {
         var h: c_int = undefined;
         try self.sizeText(text, &w, &h);
         return .{ w, h };
+    }
+
+    pub fn setSize(self: *Font, ptsize: c_int) !void {
+        if (c.TTF_SetFontSize(@ptrCast(self), ptsize) != 0)
+            return error.ttf_font_setSize;
+    }
+
+    pub fn setSizeDpi(self: *Font, ptsize: c_int, hdpi: c_int, vdpi: c_int) !void {
+        if (c.TTF_SetFontSizeDPI(@ptrCast(self), ptsize, hdpi, vdpi) != 0)
+            return error.ttf_font_setSizeDpi;
     }
 };

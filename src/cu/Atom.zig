@@ -141,6 +141,7 @@ pub const Key = enum(u32) {
 
 pub const Flags = packed struct(u32) {
     const Self = @This();
+    pub const none = Self{};
 
     // interation
     mouse_clickable: bool = false,
@@ -151,12 +152,12 @@ pub const Flags = packed struct(u32) {
     // disabled: bool = false,
 
     // layout
-    // floating_x: bool = false,
-    // floating_y: bool = false,
+    floating_x: bool = false,
+    floating_y: bool = false,
     // fixed_width: bool = false,
     // fixed_height: bool = false,
-    // allow_overflow_x: bool = false,
-    // allow_overflow_y: bool = false,
+    allow_overflow_x: bool = false,
+    allow_overflow_y: bool = false,
 
     // appearance
     // draw_drop_shadow: bool = false,
@@ -168,7 +169,7 @@ pub const Flags = packed struct(u32) {
     draw_side_right: bool = false,
     draw_text: bool = false,
     draw_text_weak: bool = false,
-    clip: bool = false,
+    clip_rect: bool = false,
     // text_truncate_ellipsis: bool = false,
 
     // hot_animation: bool = false,
@@ -176,45 +177,117 @@ pub const Flags = packed struct(u32) {
 
     // render_custom: bool = false,
 
-    _padding: enum(u21) { zero } = .zero,
+    _padding: enum(u17) { zero } = .zero,
 
-    pub const clickable = Self{
-        .mouse_clickable = true,
-        .keyboard_clickable = true,
-    };
-
-    pub const floating = Self{
-        .floating_x = true,
-        .floating_y = true,
-    };
-
-    pub const allow_overflow = Self{
-        .allow_overflow_x = true,
-        .allow_overflow_y = true,
-    };
-
-    inline fn asInt(self: Self) u32 {
-        return @bitCast(self);
+    pub fn mouseClickable(self: Self) Self {
+        var this = self;
+        this.mouse_clickable = true;
+        return this;
     }
 
-    inline fn fromInt(value: u32) Self {
-        return @bitCast(value);
+    pub fn keyboardClickable(self: Self) Self {
+        var this = self;
+        this.keyboard_clickable = true;
+        return this;
     }
 
-    inline fn bitOr(self: Self, other: Self) Self {
-        return fromInt(self.asInt() | other.asInt());
+    pub fn clickable(self: Self) Self {
+        var this = self;
+        this.mouse_clickable = true;
+        this.keyboard_clickable = true;
+        return this;
     }
 
-    inline fn bitAnd(self: Self, other: Self) Self {
-        return fromInt(self.asInt() & other.asInt());
+    pub fn floatingX(self: Self) Self {
+        var this = self;
+        this.floating_x = true;
+        return this;
     }
 
-    pub inline fn combine(self: Self, other: Self) Self {
-        return bitOr(self, other);
+    pub fn floatingY(self: Self) Self {
+        var this = self;
+        this.floating_y = true;
+        return this;
     }
 
-    pub inline fn containsAny(self: Self, other: Self) bool {
-        return bitAnd(self, other).asInt() > 0;
+    pub fn floating(self: Self) Self {
+        var this = self;
+        this.floating_x = true;
+        this.floating_y = true;
+        return this;
+    }
+
+    pub fn allowOverflowX(self: Self) Self {
+        var this = self;
+        this.allow_overflow_x = true;
+        return this;
+    }
+
+    pub fn allowOverflowY(self: Self) Self {
+        var this = self;
+        this.allow_overflow_y = true;
+        return this;
+    }
+
+    pub fn allowOverflow(self: Self) Self {
+        var this = self;
+        this.allow_overflow_x = true;
+        this.allow_overflow_y = true;
+        return this;
+    }
+
+    pub fn drawBackground(self: Self) Self {
+        var this = self;
+        this.draw_background = true;
+        return this;
+    }
+
+    pub fn drawBorder(self: Self) Self {
+        var this = self;
+        this.draw_border = true;
+        return this;
+    }
+
+    pub fn drawSideTop(self: Self) Self {
+        var this = self;
+        this.draw_side_top = true;
+        return this;
+    }
+
+    pub fn drawSideBottom(self: Self) Self {
+        var this = self;
+        this.draw_side_bottom = true;
+        return this;
+    }
+
+    pub fn drawSideLeft(self: Self) Self {
+        var this = self;
+        this.draw_side_left = true;
+        return this;
+    }
+
+    pub fn drawSideRight(self: Self) Self {
+        var this = self;
+        this.draw_side_right = true;
+        return this;
+    }
+
+    pub fn drawText(self: Self) Self {
+        var this = self;
+        this.draw_text = true;
+        return this;
+    }
+
+    pub fn drawTextWeak(self: Self) Self {
+        var this = self;
+        this.draw_text_weak = true;
+        return this;
+    }
+
+    pub fn clipRect(self: Self) Self {
+        var this = self;
+        this.clip_rect = true;
+        return this;
     }
 };
 

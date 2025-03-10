@@ -239,6 +239,11 @@ pub const Renderer = opaque {
             return error.Sdl;
     }
 
+    pub fn setViewport(self: *Renderer, rect: ?*const Rect) Error!void {
+        if (c.SDL_RenderSetViewport(@ptrCast(self), rect) != 0)
+            return error.Sdl;
+    }
+
     pub fn clear(self: *Renderer) Error!void {
         if (c.SDL_RenderClear(@ptrCast(self)) != 0)
             return error.Sdl;

@@ -217,6 +217,15 @@ pub inline fn withTextColor(color: cu.Color) EndWithPaletteFn {
     return endWithPalette;
 }
 
+pub inline fn withBackgroundColor(color: cu.Color) EndWithPaletteFn {
+    const current = cu.state.palette_stack.top().?;
+    const ptr = cu.state.alloc_temp.create(Atom.Palette) catch @panic("oom");
+    ptr.* = current.*;
+    ptr.background = color;
+    cu.state.palette_stack.push(ptr);
+    return endWithPalette;
+}
+
 const EndWithPaletteFn = fn (void) callconv(.@"inline") void;
 inline fn endWithPalette(_: void) void {
     _ = cu.state.palette_stack.pop().?;

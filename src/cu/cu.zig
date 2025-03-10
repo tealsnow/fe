@@ -11,6 +11,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
 
 pub const Atom = @import("Atom.zig");
+pub const AtomFlags = Atom.Flags;
 pub const Color = @import("color.zig").Color;
 pub const layout = @import("layout.zig").layout;
 

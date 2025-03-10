@@ -111,13 +111,27 @@ fn downwardsDependnt(atom: *Atom, axis: AxisKind) void {
             var accum: f32 = 0;
             var maybe_child: ?*Atom = children.first;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                accum += child.fixed_size.arr()[axis_i];
+                if (!floatingForAxis(child.flags, axis)) {
+                    if (axis == atom.layout_axis) {
+                        accum += child.fixed_size.arr()[axis_i];
+                    } else {
+                        accum = @max(accum, child.fixed_size.arr()[axis_i]);
+                    }
+                }
             }
 
             atom.fixed_size.arr()[axis_i] = accum;
         },
         else => {},
     }
+}
+
+inline fn floatingForAxis(flags: Atom.Flags, axis: AxisKind) bool {
+    return switch (axis) {
+        .x => flags.floating_x,
+        .y => flags.floating_y,
+        else => unreachable,
+    };
 }
 
 fn solveViolations(atom: *Atom, axis: AxisKind) void {
@@ -133,22 +147,30 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
 
     const axis_i = @intFromEnum(axis);
 
+    const allow_overflow = switch (axis) {
+        .x => atom.flags.allow_overflow_x,
+        .y => atom.flags.allow_overflow_y,
+        else => unreachable,
+    };
+
     // non-layout axis
-    if (atom.layout_axis != axis) {
+    if (atom.layout_axis != axis and !allow_overflow) {
         const allowed_size = atom.fixed_size.arr()[axis_i];
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            const child_size = child.fixed_size.arr()[axis_i];
-            const violation = child_size - allowed_size;
-            const max_fixup = child_size;
-            // const fixup = std.math.clamp(0, violation, max_fixup);
-            const fixup = @max(violation, @min(0, max_fixup));
-            if (fixup > 0)
-                child.fixed_size.arr()[axis_i] -= fixup;
+            if (!floatingForAxis(child.flags, axis)) {
+                const child_size = child.fixed_size.arr()[axis_i];
+                const violation = child_size - allowed_size;
+                const max_fixup = child_size;
+                // const fixup = std.math.clamp(0, violation, max_fixup);
+                const fixup = @max(violation, @min(0, max_fixup));
+                if (fixup > 0)
+                    child.fixed_size.arr()[axis_i] -= fixup;
+            }
         }
     }
     // layout axis
-    else {
+    else if (!allow_overflow) {
         const total_allowed_size = atom.fixed_size.arr()[axis_i];
         var total_size: f32 = 0;
         var total_weighted_size: f32 = 0;
@@ -158,8 +180,10 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
         {
             var maybe_child: ?*Atom = children.first;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                total_size += child.fixed_size.arr()[axis_i];
-                total_weighted_size += child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
+                if (!floatingForAxis(child.flags, axis)) {
+                    total_size += child.fixed_size.arr()[axis_i];
+                    total_weighted_size += child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
+                }
             }
         }
 
@@ -173,11 +197,12 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    var fixup_size_this_child = child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
-                    fixup_size_this_child = @max(0, fixup_size_this_child);
-                    child_fixups[child_idx] = fixup_size_this_child;
-                    // child_fixup_sum += fixup_size_this_child;
-
+                    if (!floatingForAxis(child.flags, axis)) {
+                        var fixup_size_this_child = child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
+                        fixup_size_this_child = @max(0, fixup_size_this_child);
+                        child_fixups[child_idx] = fixup_size_this_child;
+                        // child_fixup_sum += fixup_size_this_child;
+                    }
                     child_idx += 1;
                 }
             }
@@ -187,26 +212,29 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    var fixup_pct = (violation / total_weighted_size);
-                    fixup_pct = @max(fixup_pct, 0);
-                    child.fixed_size.arr()[axis_i] -= child_fixups[child_idx] * fixup_pct;
-
+                    if (!floatingForAxis(child.flags, axis)) {
+                        var fixup_pct = (violation / total_weighted_size);
+                        fixup_pct = @max(fixup_pct, 0);
+                        child.fixed_size.arr()[axis_i] -= child_fixups[child_idx] * fixup_pct;
+                    }
                     child_idx += 1;
                 }
             }
         }
     }
 
-    // @FIXME: only if overflow is allowed
-    // // fix upwards depentent sizes
-    // {
-    //     var maybe_child: ?*Atom = children.first;
-    //     while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-    //         if (child.size.arr[axis_i].kind == .percent_of_parent) {
-    //             child.fixed_size.arr[axis_i] = root.fixed_size.arr[axis_i] * child.size.arr[axis_i].value;
-    //         }
-    //     }
-    // }
+    // fix upwards depentent sizes
+    if (allow_overflow) {
+        var maybe_child: ?*Atom = children.first;
+        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+            switch (child.pref_size.arr()[axis_i].kind) {
+                .percent_of_parent => {
+                    child.fixed_size.arr()[axis_i] = atom.fixed_size.arr()[axis_i] * child.pref_size.arr()[axis_i].value;
+                },
+                else => {},
+            }
+        }
+    }
 
     // recurse
     {
@@ -235,12 +263,14 @@ fn position(atom: *Atom, axis: AxisKind) void {
             // // grab original position
             // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
 
-            child.rel_position.arr()[axis_i] = layout_position;
-            if (atom.layout_axis == axis) {
-                layout_position += child.fixed_size.arr()[axis_i];
-                bounds += child.fixed_size.arr()[axis_i];
-            } else {
-                bounds = @max(bounds, child.fixed_size.arr()[axis_i]);
+            if (!floatingForAxis(child.flags, axis)) {
+                child.rel_position.arr()[axis_i] = layout_position;
+                if (atom.layout_axis == axis) {
+                    layout_position += child.fixed_size.arr()[axis_i];
+                    bounds += child.fixed_size.arr()[axis_i];
+                } else {
+                    bounds = @max(bounds, child.fixed_size.arr()[axis_i]);
+                }
             }
 
             child.rect.p0.arr()[axis_i] = atom.rect.p0.arr()[axis_i] + child.rel_position.arr()[axis_i];
@@ -260,9 +290,7 @@ fn position(atom: *Atom, axis: AxisKind) void {
     }
 
     // store view bounds
-    {
-        atom.view_bounds.arr()[axis_i] = bounds;
-    }
+    atom.view_bounds.arr()[axis_i] = bounds;
 
     // recurse
     {
