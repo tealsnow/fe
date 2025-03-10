@@ -1,6 +1,8 @@
 .{
-    .name = "fe",
+    .name = .fe,
     .version = "0.0.0",
+    .fingerprint = 0x4fa64b09c8d4ed6e, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",
