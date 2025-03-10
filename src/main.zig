@@ -5,14 +5,13 @@ const assert = std.debug.assert;
 const sdl = @import("sdl/sdl.zig");
 const fontconfig = @import("fontconfig.zig");
 
-const cu = @import("cu/cu.zig");
-
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
 
-const one_frame = false;
+const cu = @import("cu/cu.zig");
 
 // @TODO:
-//   @[ ]: migrate to a panicing allocator
+//   @[ ]: padding / spacing ?
+//   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
 //   @[ ]: focus behaviour
@@ -33,12 +32,6 @@ const one_frame = false;
 //   @[x]: floating
 
 pub fn main() !void {
-    try sdl.init(sdl.InitFlags.All);
-    defer sdl.quit();
-
-    try sdl.ttf.init();
-    defer sdl.ttf.quit();
-
     run() catch |err| {
         const ttf_err = sdl.ttf.getError() orelse "[none]";
         const sdl_err = sdl.getError() orelse "[none]";
@@ -50,8 +43,10 @@ pub fn main() !void {
 }
 
 pub fn run() !void {
+    // =-= allocator setup =-=
+
     const debug_mode = builtin.mode == .Debug;
-    var root_alloc = if (debug_mode) blk: {
+    var debug_alloc = if (debug_mode) blk: {
         var debug_alloc = std.heap.DebugAllocator(.{
             // .never_unmap = true,
             // .retain_metadata = true,
@@ -60,18 +55,28 @@ pub fn run() !void {
         }).init;
         debug_alloc.backing_allocator = std.heap.c_allocator;
         break :blk debug_alloc;
-    } else void{};
+    } else {};
     defer if (debug_mode) {
-        const result = root_alloc.deinit();
+        const result = debug_alloc.deinit();
         if (result == .leak) {
             std.debug.print("Memory leak detected\n", .{});
         }
     };
 
     const alloc = if (builtin.mode == .Debug)
-        root_alloc.allocator()
+        debug_alloc.allocator()
+    else if (builtin.mode == .ReleaseFast)
+        std.heap.smp_allocator // allocator optimized for release-fast
     else
-        std.heap.smp_allocator; // allocator optimized for release-fast
+        std.heap.c_allocator;
+
+    // =-= sdl window and renderer setup =-=
+
+    try sdl.init(sdl.InitFlags.All);
+    defer sdl.quit();
+
+    try sdl.ttf.init();
+    defer sdl.ttf.quit();
 
     const window = try sdl.Window.init(.{
         .title = "fe",
@@ -91,11 +96,16 @@ pub fn run() !void {
     });
     defer renderer.deinit();
 
-    try fontconfig.init();
-    defer fontconfig.deinit();
+    // =-= font setup =-=
 
-    var default_font, var monospace_font = blk: {
-        const default_path = try fontconfig.getFontForFamilyName(alloc, "sans");
+    var default_font_handle, var monospace_font_handle = blk: {
+        try fontconfig.init();
+        defer fontconfig.deinit();
+
+        const default_path = try fontconfig.getFontForFamilyName(
+            alloc,
+            "sans",
+        );
         defer alloc.free(default_path);
         std.log.info("default font path: '{s}'", .{default_path});
 
@@ -116,39 +126,49 @@ pub fn run() !void {
         break :blk .{ default, monospace };
     };
     defer {
-        default_font.deinit();
-        monospace_font.deinit();
-        alloc.destroy(default_font);
-        alloc.destroy(monospace_font);
+        default_font_handle.deinit();
+        monospace_font_handle.deinit();
+        alloc.destroy(default_font_handle);
+        alloc.destroy(monospace_font_handle);
     }
+
+    // =-= cu setup =-=
 
     try cu.state.init(alloc, CuSdlRenderer.Callbacks.callbacks);
     defer cu.state.deinit();
 
-    cu.state.default_font = cu.state.font_manager.registerFont(@alignCast(@ptrCast(default_font)));
-    const monospace_font_id = cu.state.font_manager.registerFont(@alignCast(@ptrCast(monospace_font)));
+    const default_font =
+        cu.state.font_manager.registerFont(@alignCast(@ptrCast(default_font_handle)));
+    const monospace_font =
+        cu.state.font_manager.registerFont(@alignCast(@ptrCast(monospace_font_handle)));
 
-    // @TODO: base these values on display refresh rate
-    const event_timeout_ms = 16 / 2;
-    const ns_per_update = 1_000_000_000 / 60; // 16 ms in ns
-    var update_lag: u64 = ns_per_update;
+    cu.state.default_palette = cu.Atom.Palette{
+        .background = .hexRgb(0x1d2021), // gruvbox bg0
+        .text = .hexRgb(0xebdbb2), // gruvbox fg1
+        .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
+        .border = .hexRgb(0x3c3836), // gruvbox bg1
+    };
+    cu.state.default_font = default_font;
 
-    var fps_count: u32 = 0; // accumulator of frame count
-    var fps: u32 = 0; // set once per second to fps_count
+    // =-= main loop setup =-=
 
-    var prev_fps_calc = try std.time.Instant.now(); // counts to one second, before reset
+    // @TODO: base this value on display refresh rate
+    const event_timeout_ms = 15;
     var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
-
-    var render_count: usize = 0;
+    var fps_buffer = FpsCircleBuffer{};
 
     var cu_sdl_renderer = CuSdlRenderer{ .sdl_rend = renderer };
 
+    // =-= main loop =-=
+
     var running = true;
     while (running) {
+        // frame stuff
         const current_time = try std.time.Instant.now();
-        const elapsed = current_time.since(previous_time);
+        const elapsed_ns = current_time.since(previous_time);
         previous_time = current_time;
-        update_lag += elapsed;
+        const fps = 1e9 / @as(f32, @floatFromInt(elapsed_ns));
+        fps_buffer.push(fps);
 
         // process input
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
@@ -204,7 +224,8 @@ pub fn run() !void {
 
                 .window => |wind| switch (wind.event) {
                     .resized => {
-                        cu.state.window_size = .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
+                        cu.state.window_size =
+                            .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
                     },
 
                     else => {},
@@ -214,8 +235,8 @@ pub fn run() !void {
             }
         }
 
-        while (update_lag >= ns_per_update) : (update_lag -= ns_per_update) {
-            // {
+        // build ui
+        {
             cu.startBuild(window.getID());
             defer cu.endBuild();
             cu.state.ui_root.layout_axis = .y;
@@ -231,18 +252,19 @@ pub fn run() !void {
 
                 for (0..3) |i| {
                     const button = cu.uif(
-                        cu.AtomFlags.none
+                        cu.AtomFlags.init
                             .clickable()
                             .drawBorder(),
                         "top bar button {d}",
                         .{i},
                     );
                     defer button.end();
-                    button.pref_size = .{ .w = .px(24), .h = .px(24) };
+                    button.pref_size = .square(.px(24));
 
                     const int = button.interation();
-                    // button.color =
-                    //     cu.Color.hexRgb(if (int.f.hovering) 0xFF0000 else 0xFFFFFF);
+                    if (int.f.hovering) {
+                        button.palette.border = cu.Color.hexRgb(0xFF0000);
+                    }
 
                     if (int.f.isClicked()) {
                         std.debug.print("top bar button {d} clicked\n", .{i});
@@ -278,21 +300,27 @@ pub fn run() !void {
                     }
 
                     {
-                        const content = cu.ui(cu.AtomFlags.none.clipRect().allowOverflow(), "left content");
+                        const content = cu.ui(
+                            cu.AtomFlags.init.clipRect().allowOverflow(),
+                            "left content",
+                        );
                         defer content.end();
                         content.layout_axis = .y;
                         content.pref_size = .{ .w = .grow, .h = .grow };
 
-                        const old_def = cu.state.default_font;
-                        defer cu.state.default_font = old_def;
-                        cu.state.default_font = monospace_font_id;
+                        cu.pushFont(monospace_font);
+                        defer cu.popFont();
 
-                        cu.withTextColor(.hexRgb(0xff0000))({
-                            _ = cu.labelf("fps: {d}", .{fps});
-                            _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
-                            _ = cu.labelf("render count: {d}", .{render_count});
-                            _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
-                        });
+                        {
+                            cu.pushTextColor(.hexRgb(0xff0000));
+                            defer cu.popPalette();
+
+                            _ = cu.labelf("fps: {d:.2}###fps counter", .{fps});
+                            _ = cu.labelf("ave fps: {d:.2}###ave fps counter", .{fps_buffer.average()});
+                            _ = cu.labelf("delta time (ms): {d:.2}###delta time", .{elapsed_ns / 1_000_000});
+                            _ = cu.labelf("build count: {d}###build count", .{cu.state.current_build_index});
+                            _ = cu.labelf("atom build count: {d}###atom build count", .{cu.state.build_atom_count});
+                        }
 
                         _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
                         _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
@@ -312,7 +340,7 @@ pub fn run() !void {
                     pane.pref_size = .{ .w = .grow, .h = .full };
 
                     {
-                        const header = cu.ui(cu.AtomFlags.none.drawSideBottom(), "right header");
+                        const header = cu.ui(cu.AtomFlags.init.drawSideBottom(), "right header");
                         defer header.end();
                         header.equipDisplayString();
                         header.pref_size.w = .grow;
@@ -320,17 +348,21 @@ pub fn run() !void {
                         header.layout_axis = .x;
 
                         if (header.interation().f.mouse_over) {
-                            cu.withBackgroundColor(.hexRgb(0x001800))({
-                                const float = cu.ui(cu.AtomFlags.none.floating().drawBackground(), "floating");
-                                defer float.end();
-                                float.layout_axis = .y;
-                                float.pref_size = .square(.fit);
+                            cu.pushBackgroundColor(.hexRgb(0x001800));
+                            defer cu.popPalette();
 
-                                float.rel_position = cu.state.mouse.sub(header.rect.p0).asAxis();
+                            const float = cu.ui(
+                                cu.AtomFlags.init.floating().drawBackground(),
+                                "floating",
+                            );
+                            defer float.end();
+                            float.layout_axis = .y;
+                            float.pref_size = .square(.fit);
 
-                                _ = cu.label("tool tip!");
-                                _ = cu.label("extra tips!");
-                            });
+                            float.rel_position = cu.state.mouse.sub(header.rect.p0).asAxis();
+
+                            _ = cu.label("tool tip!");
+                            _ = cu.label("extra tips!");
                         }
                     }
 
@@ -358,14 +390,13 @@ pub fn run() !void {
 
                         for (0..5) |i| {
                             {
-                                const icon = cu.uif(.{ .draw_border = true }, "right bar icon {d}", .{i});
+                                const icon = cu.uif(
+                                    cu.AtomFlags.init.drawBorder(),
+                                    "right bar icon {d}",
+                                    .{i},
+                                );
                                 defer icon.end();
-                                // icon.pref_size = .{ .w = .px(16), .h = .px(16) };
                                 icon.pref_size = .square(icon_size);
-
-                                // const inter = icon.interation();
-                                // icon.color =
-                                //     cu.Color.hexRgb(if (inter.f.hovering) 0xFF0000 else 0xFFFFFF);
                             }
 
                             {
@@ -380,16 +411,29 @@ pub fn run() !void {
         }
 
         try cu_sdl_renderer.render();
-
-        fps_count += 1;
-        render_count += 1;
-
-        if (current_time.since(prev_fps_calc) >= 1e9) {
-            fps = fps_count;
-            fps_count = 0;
-            prev_fps_calc = current_time;
-        }
-
-        if (one_frame and cu.state.current_build_index == 1) running = false;
     }
+
+    std.process.cleanExit();
 }
+
+pub const FpsCircleBuffer = struct {
+    const Self = @This();
+    const size = 100;
+
+    buffer: [size]f32 = undefined,
+    pos: usize = 0,
+    count: usize = 0,
+
+    pub fn push(self: *Self, value: f32) void {
+        self.buffer[self.pos] = value;
+        self.pos = (self.pos + 1) % size;
+        self.count = @min(self.count + 1, size);
+    }
+
+    pub fn average(self: Self) f32 {
+        var sum: f32 = 0;
+        for (self.buffer[0..self.count]) |value|
+            sum += value;
+        return sum / @as(f32, @floatFromInt(self.count));
+    }
+};

@@ -6,16 +6,13 @@ const Atom = cu.Atom;
 
 pub fn startBuild(window_id: u32) void {
     cu.state.palette_stack.clearAndReset();
+    cu.state.font_stack.clearAndFree();
+
     cu.state.scope_locals.clearAndFree(cu.state.alloc_temp); // @FIXME: not sure if this is needed
     _ = cu.state.arena.reset(.retain_capacity);
 
-    const base_palette = Atom.Palette{
-        .background = .hexRgb(0x1d2021), // gruvbox bg0
-        .text = .hexRgb(0xebdbb2), // gruvbox fg1
-        .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
-        .border = .hexRgb(0x3c3836), // gruvbox bg1
-    };
-    cu.state.palette_stack.push(base_palette);
+    cu.state.palette_stack.push(cu.state.default_palette);
+    cu.state.font_stack.push(cu.state.default_font);
 
     const root = buildAtomFromStringF("###root-window-id:{x}", .{window_id});
 
@@ -104,15 +101,15 @@ pub fn buildAtomFromKey(key: Atom.Key) *Atom {
         atom.build_index_touched_last = cu.state.current_build_index;
     }
 
-    // per build info
-    atom.font = cu.state.default_font;
-    atom.palette = cu.state.palette_stack.top().?;
-
     // zero out per build info
     atom.children = null;
     atom.siblings.next = null;
     atom.siblings.prev = null;
     atom.parent = null;
+
+    // per build info
+    atom.font = cu.state.font_stack.top().?;
+    atom.palette = cu.state.palette_stack.dupeTop().?;
 
     // add to parent
     if (cu.state.atom_parent_stack.top()) |parent| {
@@ -206,22 +203,20 @@ pub fn growSpacer() *Atom {
 //     return btn.interation();
 // }
 
+pub inline fn pushFont(fontid: cu.FontId) void {
+    cu.state.font_stack.push(fontid);
+}
+
+pub inline fn popFont() void {
+    _ = cu.state.font_stack.pop().?;
+}
+
 pub inline fn pushPalette(palette: Atom.Palette) void {
     cu.state.palette_stack.push(palette);
 }
 
-pub inline fn withPalette(palette: Atom.Palette) EndWithPaletteFn {
-    pushPalette(palette);
-    return endWithPalette;
-}
-
 pub inline fn popPalette() void {
     _ = cu.state.palette_stack.pop().?;
-}
-
-const EndWithPaletteFn = fn (void) callconv(.@"inline") void;
-inline fn endWithPalette(_: void) void {
-    popPalette();
 }
 
 pub inline fn pushTextColor(color: cu.Color) void {
@@ -231,19 +226,9 @@ pub inline fn pushTextColor(color: cu.Color) void {
     pushPalette(palette);
 }
 
-pub inline fn withTextColor(color: cu.Color) EndWithPaletteFn {
-    pushTextColor(color);
-    return endWithPalette;
-}
-
 pub inline fn pushBackgroundColor(color: cu.Color) void {
     const current = cu.state.palette_stack.top().?;
     var palette = current.*;
     palette.background = color;
     pushPalette(palette);
-}
-
-pub inline fn withBackgroundColor(color: cu.Color) EndWithPaletteFn {
-    pushBackgroundColor(color);
-    return endWithPalette;
 }

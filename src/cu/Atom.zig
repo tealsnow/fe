@@ -141,7 +141,7 @@ pub const Key = enum(u32) {
 
 pub const Flags = packed struct(u32) {
     const Self = @This();
-    pub const none = Self{};
+    pub const init = Self{};
 
     // interation
     mouse_clickable: bool = false,

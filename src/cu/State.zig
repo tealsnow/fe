@@ -13,19 +13,20 @@ current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
 
 font_manager: cu.FontManager = .empty,
-default_font: cu.FontId = undefined,
-
 callbacks: Callbacks,
 
 arena: std.heap.ArenaAllocator,
 alloc_temp: Allocator,
-alloc_persistent: Allocator, // currently only used for atom_map
+alloc_persistent: Allocator,
 
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
-atom_parent_stack: Stack(*Atom) = undefined, // alloc_temp
+atom_parent_stack: Stack(*Atom),
 
+default_palette: Atom.Palette = undefined,
 palette_stack: PoolStack(Atom.Palette),
+default_font: cu.FontId = undefined,
+font_stack: Stack(cu.FontId),
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -61,17 +62,19 @@ pub fn init(
 ) !void {
     self.* = .{
         .callbacks = callbacks,
+
         .arena = std.heap.ArenaAllocator.init(allocator),
         .alloc_temp = undefined,
         .alloc_persistent = allocator,
+
         .atom_pool = undefined,
+        .atom_parent_stack = undefined,
+
         .palette_stack = undefined,
+        .font_stack = undefined,
+
         .event_pool = undefined,
         .event_node_pool = undefined,
-        // .atom_pool = try State.AtomPool.initPreheated(allocator, State.MaxAtoms),
-        // .palette_stack = undefined,
-        // .event_pool = State.EventPool.init(allocator),
-        // .event_node_pool = State.EventNodePool.init(allocator),
     };
 
     // workaround to ensure that the allocator vtable references the arena stored in gs, not in the stack
@@ -82,6 +85,7 @@ pub fn init(
     self.atom_parent_stack = .init(self.alloc_temp);
 
     self.palette_stack = .init(self.alloc_temp, self.alloc_temp);
+    self.font_stack = .init(self.alloc_temp);
 
     self.event_pool = .init(self.alloc_persistent);
     self.event_node_pool = .init(self.alloc_persistent);
@@ -181,6 +185,13 @@ fn PoolStack(comptime T: type) type {
 
         pub fn top(self: *Self) ?*T {
             return self.stack.top();
+        }
+
+        pub fn dupeTop(self: *Self) ?*T {
+            const t = self.top() orelse return null;
+            const dup = self.pool.create() catch @panic("oom");
+            dup.* = t.*;
+            return dup;
         }
 
         pub fn clearAndReset(self: *Self) void {
