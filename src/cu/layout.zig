@@ -1,16 +1,17 @@
+const builtin = @import("builtin");
 const std = @import("std");
-const assert = std.debug.assert;
 
 const cu = @import("cu.zig");
+const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
 const AxisKind = cu.Axis2(void).Kind;
-const TextData = Atom.TextData;
 
 const TermColor = @import("../TermColor.zig");
 
 const debug_print_atom = false;
 
 pub fn layout(root: *Atom) !void {
+    sizeText(root);
     for (AxisKind.array) |axis| {
         standalone(root, axis);
         upwardsDependent(root, axis);
@@ -20,158 +21,151 @@ pub fn layout(root: *Atom) !void {
     }
 }
 
-inline fn dbgLogAtom(atom: *Atom, what: []const u8) void {
-    if (debug_print_atom)
-        std.log.debug("{} {s}", .{ atom, what });
-}
-
-fn standalone(atom: *Atom, axis: AxisKind) void {
+fn sizeText(root: *Atom) void {
     // any-order
 
-    dbgLogAtom(atom, "layout standalone - pre order");
+    const font_handle = cu.state.font_manager.getFont(root.font);
+    root.text_size = cu.state.callbacks.measureText(root.display_string, font_handle);
 
-    const axis_i = @intFromEnum(axis);
-    const size = atom.pref_size.arr()[axis_i];
+    if (root.children) |children| {
+        var maybe_child: ?*Atom = children.first;
+        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+            sizeText(child);
+        }
+    }
+}
+
+fn standalone(root: *Atom, axis_kind: AxisKind) void {
+    // any-order
+
+    const axis = @intFromEnum(axis_kind);
+    const size = root.pref_size.arr()[axis];
     switch (size.kind) {
         .none => {},
         .pixels => {
-            atom.fixed_size.arr()[axis_i] = size.value;
+            root.fixed_size.arr()[axis] = size.value;
         },
         .text_content => {
-            const data = if (atom.text_data) |*data| blk: {
-                data.update(atom.display_string) catch @panic("oom");
-                break :blk data.*;
-            } else blk: {
-                const font_handle = cu.state.font_manager.getFont(atom.font);
-                const data = TextData.init(atom.display_string, font_handle) catch @panic("oom");
-                atom.text_data = data;
-                break :blk data;
-            };
-
-            atom.fixed_size.arr()[axis_i] = data.size.asArr()[axis_i];
+            const padding = size.value;
+            const text_size = root.text_size.arr()[axis];
+            root.fixed_size.arr()[axis] = padding + text_size;
         },
         else => {},
     }
 
-    if (atom.children) |children| {
+    if (root.children) |children| {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            standalone(child, axis);
+            standalone(child, axis_kind);
         }
     }
 }
 
-fn upwardsDependent(atom: *Atom, axis: AxisKind) void {
+fn upwardsDependent(root: *Atom, axis_kind: AxisKind) void {
     // pre-order
 
-    dbgLogAtom(atom, "layout upwards-dependant - pre-order");
-
-    const axis_i = @intFromEnum(axis);
-    const size = atom.pref_size.arr()[axis_i];
+    const axis = @intFromEnum(axis_kind);
+    const size = root.pref_size.arr()[axis];
 
     switch (size.kind) {
         .percent_of_parent => {
-            assert(atom.parent != null);
-            assert(size.value >= 0 and size.value <= 1);
+            debugAssert(root.parent != null, "Attempt to get size on percent of parent without a parent: {}", .{root});
+            debugAssert(size.value >= 0 and size.value <= 1, "percent must be between 0 and 1: {}", .{root});
 
-            const parent = atom.parent.?;
-            atom.fixed_size.arr()[axis_i] = parent.fixed_size.arr()[axis_i] * size.value;
+            const parent = root.parent.?;
+            root.fixed_size.arr()[axis] = parent.fixed_size.arr()[axis] * size.value;
         },
         else => {},
     }
 
-    if (atom.children) |children| {
+    if (root.children) |children| {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            upwardsDependent(child, axis);
+            upwardsDependent(child, axis_kind);
         }
     }
 }
 
-fn downwardsDependnt(atom: *Atom, axis: AxisKind) void {
+fn downwardsDependnt(root: *Atom, axis_kind: AxisKind) void {
     // post-order
 
-    dbgLogAtom(atom, "layout downwards-dependent - post-order");
-
-    if (atom.children) |children| {
+    if (root.children) |children| {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            downwardsDependnt(child, axis);
+            downwardsDependnt(child, axis_kind);
         }
     }
 
-    const axis_i = @intFromEnum(axis);
-    const size = atom.pref_size.arr()[axis_i];
+    const axis = @intFromEnum(axis_kind);
+    const size = root.pref_size.arr()[axis];
 
     switch (size.kind) {
         .children_sum => {
-            assert(atom.children != null);
-            const children = atom.children.?;
-
-            var accum: f32 = 0;
-            var maybe_child: ?*Atom = children.first;
-            while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                if (!floatingForAxis(child.flags, axis)) {
-                    if (axis == atom.layout_axis) {
-                        accum += child.fixed_size.arr()[axis_i];
-                    } else {
-                        accum = @max(accum, child.fixed_size.arr()[axis_i]);
+            if (root.children) |children| {
+                var accum: f32 = 0;
+                var maybe_child: ?*Atom = children.first;
+                while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+                    if (!floatingForAxis(child.flags, axis_kind)) {
+                        if (axis_kind == root.layout_axis) {
+                            accum += child.fixed_size.arr()[axis];
+                        } else {
+                            accum = @max(accum, child.fixed_size.arr()[axis]);
+                        }
                     }
                 }
-            }
 
-            atom.fixed_size.arr()[axis_i] = accum;
+                root.fixed_size.arr()[axis] = accum;
+            } else {
+                root.fixed_size.arr()[axis] = 0;
+            }
         },
         else => {},
     }
 }
 
-inline fn floatingForAxis(flags: Atom.Flags, axis: AxisKind) bool {
-    return switch (axis) {
+inline fn floatingForAxis(flags: Atom.Flags, axis_kind: AxisKind) bool {
+    return switch (axis_kind) {
         .x => flags.floating_x,
         .y => flags.floating_y,
         else => unreachable,
     };
 }
 
-fn solveViolations(atom: *Atom, axis: AxisKind) void {
+fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
     // https://github.com/EpicGamesExt/raddebugger/blob/a1e7ec5a0e9c8674f5b0271ce528f6b651d43564/src/ui/ui_core.c#L1705C1-L1705C44
 
     // pre-order
 
-    dbgLogAtom(atom, "layout solve-violations - pre-order");
+    if (root.children == null) return;
+    const children = root.children.?;
+    debugAssert(root.layout_axis != .none, "Cannot have no layout axis with children: {}", .{root});
 
-    if (atom.children == null) return;
-    const children = atom.children.?;
-    assert(atom.layout_axis != .none);
+    const axis = @intFromEnum(axis_kind);
 
-    const axis_i = @intFromEnum(axis);
-
-    const allow_overflow = switch (axis) {
-        .x => atom.flags.allow_overflow_x,
-        .y => atom.flags.allow_overflow_y,
+    const allow_overflow = switch (axis_kind) {
+        .x => root.flags.allow_overflow_x,
+        .y => root.flags.allow_overflow_y,
         else => unreachable,
     };
 
     // non-layout axis
-    if (atom.layout_axis != axis and !allow_overflow) {
-        const allowed_size = atom.fixed_size.arr()[axis_i];
+    if (root.layout_axis != axis_kind and !allow_overflow) {
+        const allowed_size = root.fixed_size.arr()[axis];
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            if (!floatingForAxis(child.flags, axis)) {
-                const child_size = child.fixed_size.arr()[axis_i];
+            if (!floatingForAxis(child.flags, axis_kind)) {
+                const child_size = child.fixed_size.arr()[axis];
                 const violation = child_size - allowed_size;
                 const max_fixup = child_size;
-                // const fixup = std.math.clamp(0, violation, max_fixup);
-                const fixup = @max(violation, @min(0, max_fixup));
+                const fixup = std.math.clamp(violation, 0, max_fixup);
                 if (fixup > 0)
-                    child.fixed_size.arr()[axis_i] -= fixup;
+                    child.fixed_size.arr()[axis] -= fixup;
             }
         }
     }
     // layout axis
     else if (!allow_overflow) {
-        const total_allowed_size = atom.fixed_size.arr()[axis_i];
+        const total_allowed_size = root.fixed_size.arr()[axis];
         var total_size: f32 = 0;
         var total_weighted_size: f32 = 0;
 
@@ -180,9 +174,9 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
         {
             var maybe_child: ?*Atom = children.first;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                if (!floatingForAxis(child.flags, axis)) {
-                    total_size += child.fixed_size.arr()[axis_i];
-                    total_weighted_size += child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
+                if (!floatingForAxis(child.flags, axis_kind)) {
+                    total_size += child.fixed_size.arr()[axis];
+                    total_weighted_size += child.fixed_size.arr()[axis] * (1 - child.pref_size.arr()[axis].strictness);
                 }
             }
         }
@@ -197,8 +191,8 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    if (!floatingForAxis(child.flags, axis)) {
-                        var fixup_size_this_child = child.fixed_size.arr()[axis_i] * (1 - child.pref_size.arr()[axis_i].strictness);
+                    if (!floatingForAxis(child.flags, axis_kind)) {
+                        var fixup_size_this_child = child.fixed_size.arr()[axis] * (1 - child.pref_size.arr()[axis].strictness);
                         fixup_size_this_child = @max(0, fixup_size_this_child);
                         child_fixups[child_idx] = fixup_size_this_child;
                         // child_fixup_sum += fixup_size_this_child;
@@ -212,10 +206,10 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    if (!floatingForAxis(child.flags, axis)) {
+                    if (!floatingForAxis(child.flags, axis_kind)) {
                         var fixup_pct = (violation / total_weighted_size);
                         fixup_pct = @max(fixup_pct, 0);
-                        child.fixed_size.arr()[axis_i] -= child_fixups[child_idx] * fixup_pct;
+                        child.fixed_size.arr()[axis] -= child_fixups[child_idx] * fixup_pct;
                     }
                     child_idx += 1;
                 }
@@ -227,9 +221,9 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
     if (allow_overflow) {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            switch (child.pref_size.arr()[axis_i].kind) {
+            switch (child.pref_size.arr()[axis].kind) {
                 .percent_of_parent => {
-                    child.fixed_size.arr()[axis_i] = atom.fixed_size.arr()[axis_i] * child.pref_size.arr()[axis_i].value;
+                    child.fixed_size.arr()[axis] = root.fixed_size.arr()[axis] * child.pref_size.arr()[axis].value;
                 },
                 else => {},
             }
@@ -240,20 +234,52 @@ fn solveViolations(atom: *Atom, axis: AxisKind) void {
     {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            solveViolations(child, axis);
+            solveViolations(child, axis_kind);
         }
     }
 }
 
-fn position(atom: *Atom, axis: AxisKind) void {
+fn position(root: *Atom, axis_kind: AxisKind) void {
     // pre-order
 
-    dbgLogAtom(atom, "layout position - pre-order");
+    const axis = @intFromEnum(axis_kind);
 
-    if (atom.children == null) return;
-    const children = atom.children.?;
+    // position text
+    {
+        const text_size = root.text_size.arr()[axis];
+        switch (root.text_align.arr()[axis]) {
+            .start => {
+                // text_rect[top/left] = rect[top/left]
+                // text_rect[bottom/right] = text_rect[top/left] + text_size
 
-    const axis_i = @intFromEnum(axis);
+                root.text_rect.p0.arr()[axis] = root.rect.p0.arr()[axis];
+                root.text_rect.p1.arr()[axis] = root.text_rect.p0.arr()[axis] + text_size;
+            },
+            .center => {
+                // text_rect[top/left] = rect[top/left] + (rect_size - text_size)/2
+                // text_rect[bottom/right] = text_rect[top/left] + text_size
+
+                const rect_size = root.rect.p1.arr()[axis] - root.rect.p0.arr()[axis];
+                root.text_rect.p0.arr()[axis] = root.rect.p0.arr()[axis] + (rect_size - text_size) / 2;
+                root.text_rect.p1.arr()[axis] = root.text_rect.p0.arr()[axis] + text_size;
+            },
+            .end => {
+                // text_rect[top/left] = rect[bottom/right] - text_size
+                // text_rect[bottom/right] = rect[bottom/right]
+
+                root.text_rect.p1.arr()[axis] = root.rect.p1.arr()[axis];
+                root.text_rect.p0.arr()[axis] = root.text_rect.p1.arr()[axis] - text_size;
+            },
+        }
+
+        root.text_rect.p0.x = @floor(root.text_rect.p0.x);
+        root.text_rect.p0.y = @floor(root.text_rect.p0.y);
+        root.text_rect.p1.x = @floor(root.text_rect.p1.x);
+        root.text_rect.p1.y = @floor(root.text_rect.p1.y);
+    }
+
+    if (root.children == null) return;
+    const children = root.children.?;
 
     var bounds: f32 = 0;
     {
@@ -263,18 +289,18 @@ fn position(atom: *Atom, axis: AxisKind) void {
             // // grab original position
             // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
 
-            if (!floatingForAxis(child.flags, axis)) {
-                child.rel_position.arr()[axis_i] = layout_position;
-                if (atom.layout_axis == axis) {
-                    layout_position += child.fixed_size.arr()[axis_i];
-                    bounds += child.fixed_size.arr()[axis_i];
+            if (!floatingForAxis(child.flags, axis_kind)) {
+                child.rel_position.arr()[axis] = layout_position;
+                if (root.layout_axis == axis_kind) {
+                    layout_position += child.fixed_size.arr()[axis];
+                    bounds += child.fixed_size.arr()[axis];
                 } else {
-                    bounds = @max(bounds, child.fixed_size.arr()[axis_i]);
+                    bounds = @max(bounds, child.fixed_size.arr()[axis]);
                 }
             }
 
-            child.rect.p0.arr()[axis_i] = atom.rect.p0.arr()[axis_i] + child.rel_position.arr()[axis_i];
-            child.rect.p1.arr()[axis_i] = child.rect.p0.arr()[axis_i] + child.fixed_size.arr()[axis_i];
+            child.rect.p0.arr()[axis] = root.rect.p0.arr()[axis] + child.rel_position.arr()[axis];
+            child.rect.p1.arr()[axis] = child.rect.p0.arr()[axis] + child.fixed_size.arr()[axis];
 
             child.rect.p0.x = @floor(child.rect.p0.x);
             child.rect.p0.y = @floor(child.rect.p0.y);
@@ -290,13 +316,13 @@ fn position(atom: *Atom, axis: AxisKind) void {
     }
 
     // store view bounds
-    atom.view_bounds.arr()[axis_i] = bounds;
+    root.view_bounds.arr()[axis] = bounds;
 
     // recurse
     {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            position(child, axis);
+            position(child, axis_kind);
         }
     }
 }

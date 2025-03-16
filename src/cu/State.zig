@@ -30,7 +30,14 @@ font_stack: Stack(cu.FontId),
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
-ui_root: *Atom = undefined, // undefined until `startBuild` is called
+// all undefined until `startBuild` is called
+// in the order they should be rendered
+ui_root: *Atom = undefined,
+ui_ctx_menu_root: *Atom = undefined,
+// ui_tooltip_root: *Atom = undefined,
+
+ctx_menu_open: bool = false,
+next_ctx_menu_open: bool = false,
 
 hot_atom_key: Atom.Key = .nil, // currenly over (event consuming) atom
 active_atom_key: Atom.Key = .nil, // currently interacting atom
@@ -122,11 +129,16 @@ pub const Callbacks = struct {
     vtable: VTable,
 
     pub const VTable = struct {
-        measureText: *const fn (context: *anyopaque, text: [:0]const u8, font: cu.FontHandle) cu.Axis2(f32),
+        measureText: *const fn (context: *anyopaque, text: []const u8, font: cu.FontHandle) cu.Axis2(f32),
+        fontSize: *const fn (context: *anyopaque, font: cu.FontHandle) f32,
     };
 
-    pub fn measureText(self: *Callbacks, text: [:0]const u8, font: cu.FontHandle) cu.Axis2(f32) {
+    pub fn measureText(self: *Callbacks, text: []const u8, font: cu.FontHandle) cu.Axis2(f32) {
         return self.vtable.measureText(self.context, text, font);
+    }
+
+    pub fn fontSize(self: *Callbacks, font: cu.FontHandle) f32 {
+        return self.vtable.fontSize(self.context, font);
     }
 };
 

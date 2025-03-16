@@ -169,7 +169,28 @@ pub const Interation = struct {
 pub fn interationFromAtom(atom: *Atom) Interation {
     var inter = Interation{ .atom = atom };
 
-    // @TODO: run through all parents and intersect our rect with clip rect if clipping is enabled for parent
+    var rect = atom.rect;
+
+    // calculate possibly cliped rect
+    var maybe_parent: ?*Atom = atom.parent;
+    while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+        if (parent.flags.clip_rect) {
+            rect = rect.intersect(parent.rect);
+        }
+    }
+
+    // determine if we're under the context menu or not
+    maybe_parent = atom;
+    const ctx_menu_is_ancestor = while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+        if (parent == cu.state.ui_ctx_menu_root)
+            break true;
+    } else false;
+
+    // calculate blacklist rectagele
+    const blacklist_rect = if (!ctx_menu_is_ancestor and cu.state.ctx_menu_open)
+        cu.state.ui_ctx_menu_root.rect
+    else
+        cu.Range2(f32).zero;
 
     var maybe_event = cu.state.event_list.first;
     while (maybe_event) |node| : (maybe_event = node.next) {
@@ -183,7 +204,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
             else => {},
         }
 
-        const in_bounds = atom.rect.contains(event.pos);
+        const in_bounds = !blacklist_rect.contains(event.pos) and rect.contains(event.pos);
 
         // mouse down in box -> set box as 'active' -> press event
         if (atom.flags.mouse_clickable and
@@ -233,7 +254,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
         }
     }
 
-    if (atom.rect.contains(cu.state.mouse)) {
+    if (rect.contains(cu.state.mouse) and !blacklist_rect.contains(cu.state.mouse)) {
         inter.f.mouse_over = true;
     }
 
@@ -245,6 +266,10 @@ pub fn interationFromAtom(atom: *Atom) Interation {
     {
         cu.state.hot_atom_key = atom.key;
         inter.f.hovering = true;
+    }
+
+    if (!ctx_menu_is_ancestor and inter.f.containsAny(.{ .left_pressed = true, .right_pressed = true, .middle_pressed = true })) {
+        cu.ctxMenuClose();
     }
 
     return inter;

@@ -13,6 +13,10 @@ pub fn Vec2(comptime T: type) type {
             return .{ .x = x, .y = y };
         }
 
+        pub inline fn square(s: T) Self {
+            return .vec(s, s);
+        }
+
         pub inline fn asAxis(self: Self) Axis2(T) {
             return .axis(self.x, self.y);
         }
@@ -143,6 +147,10 @@ pub fn Range2(comptime T: type) type {
             return Self{ .p0 = p0, .p1 = p1 };
         }
 
+        pub inline fn rangepts(x0: T, y0: T, x1: T, y1: T) Self {
+            return .range(.vec(x0, y0), .vec(x1, y1));
+        }
+
         pub inline fn arr(self: *Self) *[2]Vec2(T) {
             return @ptrCast(self);
         }
@@ -169,6 +177,15 @@ pub fn Range2(comptime T: type) type {
         pub fn bottomRight(self: Self) Vec2(T) {
             return self.p1;
         }
+
+        pub fn intersect(a: Self, b: Self) Self {
+            return .rangepts(
+                @max(a.p0.x, b.p0.x),
+                @max(a.p0.y, b.p0.y),
+                @min(a.p1.x, b.p1.x),
+                @min(a.p1.y, b.p1.y),
+            );
+        }
     };
 }
 
@@ -176,6 +193,11 @@ pub inline fn range2(comptime T: type, p0: Vec2(T), p1: Vec2(T)) Range2(T) {
     return .range(p0, p1);
 }
 
-pub inline fn range2pts(x0: anytype, y0: @TypeOf(x0), x1: @TypeOf(x0), y1: @TypeOf(x0)) Range2(Vec2(@TypeOf(x0))) {
-    return .range(Vec2(x0, y0), Vec2(x1, y1));
+pub inline fn range2pts(
+    x0: anytype,
+    y0: @TypeOf(x0),
+    x1: @TypeOf(x0),
+    y1: @TypeOf(x0),
+) Range2(@TypeOf(x0)) {
+    return .rangepts(x0, y0, x1, y1);
 }

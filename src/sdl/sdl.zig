@@ -92,8 +92,8 @@ pub const Window = opaque {
     };
 
     pub const Size = struct {
-        w: c_int,
-        h: c_int,
+        w: c_int = 0,
+        h: c_int = 0,
     };
 
     // @FIXME: might be a better idea to make this an actual bit set
@@ -128,9 +128,9 @@ pub const Window = opaque {
 
     pub fn init(params: struct {
         title: [*c]const u8,
-        position: Position,
-        size: Size,
-        flags: Flags,
+        position: Position = .{},
+        size: Size = .{},
+        flags: Flags = 0,
     }) Error!*Window {
         const pos = params.position.resolve();
         const window = c.SDL_CreateWindow(

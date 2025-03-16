@@ -9,7 +9,7 @@ bright: bool = false,
 
 const ESC = "\x1b[";
 
-pub const Reset = TermColor{ .color = .reset };
+pub const reset = TermColor{ .color = .reset };
 
 pub const StyleFlags = packed struct(u9) {
     bold: bool = false, // 1
@@ -77,7 +77,6 @@ pub fn termColorTest() void {
     const red = TermColor{ .color = .red };
     const bright_red = TermColor{ .color = .red, .bright = true };
     const bold_red = TermColor{ .color = .red, .style = .{ .bold = true } };
-    const reset = TermColor.Reset;
     const red_bg = TermColor{ .color = .red, .layer = .background };
     const bright_red_bg = TermColor{ .color = .red, .layer = .background, .bright = true };
     const red_bg_bold = TermColor{

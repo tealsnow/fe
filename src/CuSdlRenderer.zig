@@ -1,13 +1,13 @@
 const Renderer = @This();
 
 const std = @import("std");
+const fc = @import("fontconfig.zig");
 
 const sdl = @import("sdl/sdl.zig");
 const cu = @import("cu/cu.zig");
 
 sdl_rend: *sdl.Renderer,
 bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
-viewport_offset: cu.Vec2(f32) = .zero,
 
 pub fn render(self: *Renderer) !void {
     defer self.bg_color_stack.clearAndFree(cu.state.alloc_temp);
@@ -41,8 +41,6 @@ fn drawLine(self: *Renderer, p0: cu.Vec2(f32), p1: cu.Vec2(f32)) !void {
 }
 
 fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
-    // std.log.debug("rendering: {}", .{atom});
-
     if (std.math.isNan(atom.rect.p0.x) or
         std.math.isNan(atom.rect.p0.y) or
         std.math.isNan(atom.rect.p1.x) or
@@ -51,14 +49,7 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
         return;
     }
 
-    const rect = sdl.FRect{
-        .x = atom.rect.p0.x - self.viewport_offset.x,
-        .y = atom.rect.p0.y - self.viewport_offset.y,
-        .w = atom.rect.p1.x - self.viewport_offset.x - atom.rect.p0.x,
-        .h = atom.rect.p1.y - self.viewport_offset.y - atom.rect.p0.y,
-    };
-
-    // std.log.debug("-- rect: x: {}, y: {}, w: {}, h: {}", .{ rect.x, rect.y, rect.w, rect.h });
+    const rect = sdlRectFromCuRect(atom.rect);
 
     if (atom.flags.clip_rect) {
         const view_bounds = sdl.Rect{
@@ -67,18 +58,9 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
             .w = @intFromFloat(rect.w),
             .h = @intFromFloat(rect.h),
         };
-        try self.sdl_rend.setViewport(&view_bounds);
-        self.viewport_offset = self.viewport_offset.add(atom.rect.p0);
-        try self.sdl_rend.setClipRect(&.{
-            .x = 0,
-            .y = 0,
-            .w = view_bounds.w,
-            .h = view_bounds.h,
-        });
+        try self.sdl_rend.setClipRect(&view_bounds);
     }
     defer if (atom.flags.clip_rect) {
-        self.sdl_rend.setViewport(null) catch @panic("unset viewport");
-        self.viewport_offset = self.viewport_offset.sub(atom.rect.p0);
         self.sdl_rend.setClipRect(null) catch @panic("unset clip");
     };
 
@@ -92,37 +74,31 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
         _ = self.bg_color_stack.pop().?;
     };
 
-    try self.renderText(rect, atom);
+    if (atom.flags.draw_text or atom.flags.draw_text_weak)
+        try self.renderText(atom);
 
     if (atom.flags.draw_border) {
         try self.setDrawColor(atom.palette.border);
         try self.drawRect(rect);
     }
 
-    // try self.setDrawColor(@bitCast(@as(u32, 0xff0000ff)));
-    // try self.drawRect(rect);
-
     if (atom.flags.draw_side_top) {
         try self.setDrawColor(atom.palette.border);
-        // try self.sdl_rend.drawLineF(atom.rect.p0.x, atom.rect.p0.y, atom.rect.p1.x, atom.rect.p0.y);
         try self.drawLine(atom.rect.topLeft(), atom.rect.topRight());
     }
 
     if (atom.flags.draw_side_bottom) {
         try self.setDrawColor(atom.palette.border);
-        // try self.sdl_rend.drawLineF(atom.rect.p0.x, atom.rect.p1.y, atom.rect.p1.x, atom.rect.p1.y);
         try self.drawLine(atom.rect.bottomLeft(), atom.rect.bottomRight());
     }
 
     if (atom.flags.draw_side_left) {
         try self.setDrawColor(atom.palette.border);
-        // try self.sdl_rend.drawLineF(atom.rect.p0.x, atom.rect.p0.y, atom.rect.p0.x, atom.rect.p1.y);
         try self.drawLine(atom.rect.topLeft(), atom.rect.bottomLeft());
     }
 
     if (atom.flags.draw_side_right) {
         try self.setDrawColor(atom.palette.border);
-        // try self.sdl_rend.drawLineF(atom.rect.p1.x, atom.rect.p0.y, atom.rect.p1.x, atom.rect.p1.y);
         try self.drawLine(atom.rect.topRight(), atom.rect.bottomRight());
     }
 
@@ -134,10 +110,7 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
     }
 }
 
-fn renderText(self: *Renderer, rect: sdl.FRect, atom: *cu.Atom) !void {
-    if (!(atom.flags.draw_text or atom.flags.draw_text_weak))
-        return;
-
+fn renderText(self: *Renderer, atom: *cu.Atom) !void {
     const color =
         if (atom.flags.draw_text_weak)
             atom.palette.text_weak
@@ -146,12 +119,13 @@ fn renderText(self: *Renderer, rect: sdl.FRect, atom: *cu.Atom) !void {
         else
             unreachable;
 
-    const text_data = atom.text_data.?;
     const fonthandle = cu.state.font_manager.getFont(atom.font);
     const font: *FontHandle = @alignCast(@ptrCast(fonthandle));
 
+    const zstring = try cu.state.alloc_temp.dupeZ(u8, atom.display_string);
+
     const surface = try font.ttf_font.renderTextLCD(
-        text_data.zstring,
+        zstring,
         sdlColorFromCuColor(color),
         sdlColorFromCuColor(self.bg_color_stack.getLast()),
     );
@@ -160,30 +134,7 @@ fn renderText(self: *Renderer, rect: sdl.FRect, atom: *cu.Atom) !void {
     const texture = try self.sdl_rend.createTextureFromSurface(surface);
     defer texture.deinit();
 
-    var dst_rect = switch (atom.text_align) {
-        .left => sdl.FRect{
-            .x = rect.x,
-            .y = rect.y,
-            .w = text_data.size.w,
-            .h = text_data.size.h,
-        },
-        .center => sdl.FRect{
-            .x = @floor(rect.x + (rect.w - text_data.size.w) / 2),
-            .y = @floor(rect.y + (rect.h - text_data.size.h) / 2),
-            .w = text_data.size.w,
-            .h = text_data.size.h,
-        },
-        .right => sdl.FRect{
-            .x = @floor(rect.x + rect.w - text_data.size.w),
-            .y = @floor(rect.y + (rect.h - text_data.size.h) / 2),
-            .w = text_data.size.w,
-            .h = text_data.size.h,
-        },
-    };
-    dst_rect.y += TextHeightPadding / 2;
-    dst_rect.h -= TextHeightPadding;
-    dst_rect.x += TextWidthPadding / 2;
-    dst_rect.w -= TextWidthPadding;
+    const dst_rect = sdlRectFromCuRect(atom.text_rect);
 
     try self.sdl_rend.renderCopyF(texture, null, &dst_rect);
 }
@@ -192,8 +143,14 @@ fn sdlColorFromCuColor(color: cu.Color) sdl.Color {
     return @bitCast(color);
 }
 
-const TextWidthPadding = 2;
-const TextHeightPadding = 6;
+fn sdlRectFromCuRect(rect: cu.Range2(f32)) sdl.FRect {
+    return sdl.FRect{
+        .x = rect.p0.x,
+        .y = rect.p0.y,
+        .w = rect.p1.x - rect.p0.x,
+        .h = rect.p1.y - rect.p0.y,
+    };
+}
 
 pub const FontHandle = struct {
     ttf_font: *sdl.ttf.Font,
@@ -210,22 +167,65 @@ pub const FontHandle = struct {
         self.ttf_font.close();
     }
 
+    /// ensure fonconfig is initialized
+    pub fn createFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8, ptsize: c_int) !*FontHandle {
+        const path = try getFontPathFromFamilyName(allocator, family);
+        defer allocator.free(path);
+
+        const ptr = try allocator.create(FontHandle);
+        ptr.* = try init(path, ptsize);
+        return ptr;
+    }
+
+    pub fn destroy(self: *FontHandle, allocator: std.mem.Allocator) void {
+        self.ttf_font.close();
+        allocator.destroy(self);
+    }
+
     pub fn setSize(self: *FontHandle, ptsize: c_int) !void {
         self.ptsize = ptsize;
         try self.ttf_font.setSize(ptsize);
     }
+
+    /// Caller owns memory
+    /// Returns the font for a generic family name such as sans, monospace or arial
+    /// ensure fonconfig is initialized
+    pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8) ![:0]u8 {
+        const pattern = try fc.Pattern.create();
+        defer pattern.destroy();
+        try pattern.addString(.family, family);
+        try pattern.addBool(.outline, .true);
+
+        const config = try fc.Config.getCurrent();
+        try config.substitute(pattern, .pattern);
+        fc.defaultSubsitute(pattern);
+
+        const match = try fc.fontMatch(config, pattern);
+        defer match.destroy();
+
+        const path = try match.getString(.file, 0);
+        return try allocator.dupeZ(u8, path);
+    }
 };
 
 pub const Callbacks = struct {
-    fn measureText(context: *anyopaque, text: [:0]const u8, font_handle: cu.FontHandle) cu.Axis2(f32) {
+    fn measureText(context: *anyopaque, text: []const u8, font_handle: cu.FontHandle) cu.Axis2(f32) {
+        _ = context;
+        const zstring = cu.state.alloc_temp.dupeZ(u8, text) catch @panic("oom");
+        const font: *FontHandle = @alignCast(@ptrCast(font_handle));
+        const w, const h = font.ttf_font.sizeTextTuple(zstring) catch @panic("failed to measure text");
+        return .axis(@floatFromInt(w), @floatFromInt(h));
+    }
+
+    fn fontSize(context: *anyopaque, font_handle: cu.FontHandle) f32 {
         _ = context;
         const font: *FontHandle = @alignCast(@ptrCast(font_handle));
-        const w, const h = font.ttf_font.sizeTextTuple(text) catch @panic("failed to measure text");
-        return .axis(@floatFromInt(w + TextWidthPadding), @floatFromInt(h + TextHeightPadding));
+        return @floatFromInt(font.ptsize);
     }
 
     pub const vtable = cu.State.Callbacks.VTable{
         .measureText = &measureText,
+        .fontSize = &fontSize,
     };
 
     pub const callbacks = cu.State.Callbacks{

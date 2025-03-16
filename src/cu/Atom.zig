@@ -1,7 +1,6 @@
 const Atom = @This();
 
 const std = @import("std");
-const assert = std.debug.assert;
 
 const cu = @import("cu.zig");
 const Color = cu.Color;
@@ -31,7 +30,7 @@ layout_axis: cu.Axis2(void).Kind = .none, // ensure this is set if children are 
 // custom_draw_data
 
 // @FIXME: these could be scope locals, its worth looking into performance implications first though
-text_align: TextAlignment = .left,
+text_align: cu.Axis2(TextAlignment) = .square(.center),
 palette: *Palette = undefined,
 font: cu.FontId = undefined,
 // corner_radii: [4]f32
@@ -41,25 +40,14 @@ font: cu.FontId = undefined,
 fixed_size: cu.Axis2(f32) = .zero,
 rel_position: cu.Axis2(f32) = .zero,
 rect: cu.Range2(f32) = .zero,
-text_data: ?TextData = null,
+text_size: cu.Axis2(f32) = .zero,
+text_rect: cu.Range2(f32) = .zero,
 
 // persistant data
 build_index_touched_first: u64,
 build_index_touched_last: u64,
 // build_index_first_disabled: u64,
 view_bounds: cu.Axis2(f32) = .zero,
-
-/// Sets `size.{w, h}` to `text_content`
-/// and sets the `draw_text` flag
-pub inline fn equipDisplayString(self: *Atom) void {
-    self.pref_size = .{ .w = .text, .h = .text };
-    self.flags.draw_text = true;
-}
-
-pub inline fn end(self: *Atom) void {
-    const atom = cu.state.atom_parent_stack.pop().?;
-    assert(Key.eql(self.key, atom.key)); // hit if mismatched ui/end called, likely forgot a defer
-}
 
 pub inline fn interation(self: *Atom) cu.Interation {
     return cu.interationFromAtom(self);
@@ -291,34 +279,15 @@ pub const Flags = packed struct(u32) {
     }
 };
 
-pub const TextAlignment = enum {
-    left,
+pub const TextAlignment = enum(u8) {
+    start,
     center,
-    right,
-};
-
-pub const TextData = struct {
-    zstring: [:0]const u8, // @Icky
-    size: cu.Axis2(f32),
-
-    pub fn init(text: []const u8, font: cu.FontHandle) !TextData {
-        const zstring = try cu.state.alloc_temp.dupeZ(u8, text);
-        const size = cu.state.callbacks.measureText(zstring, font);
-
-        return .{
-            .zstring = zstring,
-            .size = size,
-        };
-    }
-
-    pub fn update(self: *TextData, text: []const u8) !void {
-        self.zstring = try cu.state.alloc_temp.dupeZ(u8, text);
-    }
+    end,
 };
 
 pub const PrefSize = extern struct {
     kind: Kind = .none,
-    /// pixels: px, percent_of_parent: %
+    /// pixels: px, percent_of_parent: %, text_content: padding(px)
     value: f32 = 0,
     /// what percent of final size do we refuse to give up
     strictness: f32 = 0,
@@ -332,23 +301,30 @@ pub const PrefSize = extern struct {
     };
 
     /// kind: percent_of_parent,
-    /// value: 1,
+    /// value(percent): 1,
     /// strictness: 0,
     pub const grow = percent_relaxed(1);
 
     /// kind: percent_of_parent,
-    /// value: 1,
+    /// value(percent): 1,
     /// strictness: 1,
-    pub const full = percent(1);
+    pub const fill = percent(1);
 
-    /// kind: children_sum
+    /// kind: children_sum,
+    /// strictness: 0,
     pub const fit = PrefSize{ .kind = .children_sum };
 
-    /// kind: text_content
-    pub const text = PrefSize{ .kind = .text_content };
+    /// kind: text_content,
+    /// value(padding(px)): 4,
+    /// strictness: 1,
+    pub const text = PrefSize{
+        .kind = .text_content,
+        .value = 2,
+        .strictness = 1,
+    };
 
     /// kind: pixels,
-    /// value: pxs,
+    /// value(pixels): pxs,
     /// strictness: 1,
     pub fn px(pxs: f32) PrefSize {
         return .{
@@ -359,7 +335,7 @@ pub const PrefSize = extern struct {
     }
 
     /// kind: pixels,
-    /// value: px,
+    /// value(pixels): pxs,
     /// strictness: 0,
     pub fn px_relaxed(pxs: f32) PrefSize {
         return .{
@@ -370,7 +346,7 @@ pub const PrefSize = extern struct {
     }
 
     /// kind: percent_of_parent,
-    /// value: pct,
+    /// value(percent): pct,
     /// strictness: 1,
     pub fn percent(pct: f32) PrefSize {
         return .{
@@ -381,7 +357,7 @@ pub const PrefSize = extern struct {
     }
 
     /// kind: percent_of_parent,
-    /// value: pct,
+    /// value(percent): pct,
     /// strictness: 0,
     pub fn percent_relaxed(pct: f32) PrefSize {
         return .{
@@ -389,6 +365,27 @@ pub const PrefSize = extern struct {
             .value = pct,
             .strictness = 0,
         };
+    }
+
+    /// kind: text_content,
+    /// value(padding(px)): padding,
+    /// strictness: 1,
+    pub fn text_pad(padding: f32) PrefSize {
+        return .{
+            .kind = .text_content,
+            .value = padding,
+            .strictness = 1,
+        };
+    }
+
+    /// kind: px,
+    /// value(px): value * top font size,
+    /// strictness: 1,
+    pub fn em(value: f32) PrefSize {
+        const top_font = cu.state.font_stack.top().?;
+        const font_handle = cu.state.font_manager.getFont(top_font);
+        const font_size = cu.state.callbacks.fontSize(font_handle);
+        return .px(value * font_size);
     }
 };
 

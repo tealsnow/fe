@@ -3,14 +3,18 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const sdl = @import("sdl/sdl.zig");
-const fontconfig = @import("fontconfig.zig");
+const fc = @import("fontconfig.zig");
 
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
+const TermColor = @import("TermColor.zig");
 
 const cu = @import("cu/cu.zig");
 
+pub const std_options = std.Options{
+    .logFn = logFn,
+};
+
 // @TODO:
-//   @[ ]: padding / spacing ?
 //   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
@@ -29,7 +33,9 @@ const cu = @import("cu/cu.zig");
 //     @[x]: clipping
 //     @[ ]: drop shadow
 //     @[ ]: truncate text with ellipses
+//     @[ ]: rounding
 //   @[x]: floating
+//   @[x]: text padding
 
 pub fn main() !void {
     run() catch |err| {
@@ -80,8 +86,6 @@ pub fn run() !void {
 
     const window = try sdl.Window.init(.{
         .title = "fe",
-        .position = .{},
-        .size = .{ .w = 800, .h = 600 },
         .flags = sdl.Window.Flag.allow_highdpi | sdl.Window.Flag.resizable,
     });
     defer window.deinit();
@@ -99,37 +103,22 @@ pub fn run() !void {
     // =-= font setup =-=
 
     var default_font_handle, var monospace_font_handle = blk: {
-        try fontconfig.init();
-        defer fontconfig.deinit();
+        // ensure fonconfig is initialized
+        try fc.init();
+        defer fc.deinit();
 
-        const default_path = try fontconfig.getFontForFamilyName(
-            alloc,
-            "sans",
-        );
-        defer alloc.free(default_path);
-        std.log.info("default font path: '{s}'", .{default_path});
+        const font_size = 13;
 
-        const monospace_path = try fontconfig.getFontForFamilyName(alloc, "monospace");
-        defer alloc.free(monospace_path);
-        std.log.info("monospace font path: '{s}'", .{monospace_path});
-
-        const font_size = 14;
-
-        const default = try alloc.create(CuSdlRenderer.FontHandle);
-        default.* = try .init(default_path, font_size);
-        std.log.info("default font name: '{s}'", .{try default.ttf_font.faceFamilyName()});
-
-        const monospace = try alloc.create(CuSdlRenderer.FontHandle);
-        monospace.* = try .init(monospace_path, font_size);
-        std.log.info("monospace font name: '{s}'", .{try monospace.ttf_font.faceFamilyName()});
+        const default =
+            try CuSdlRenderer.FontHandle.createFromFamilyName(alloc, "sans", font_size);
+        const monospace =
+            try CuSdlRenderer.FontHandle.createFromFamilyName(alloc, "monospace", font_size);
 
         break :blk .{ default, monospace };
     };
     defer {
-        default_font_handle.deinit();
-        monospace_font_handle.deinit();
-        alloc.destroy(default_font_handle);
-        alloc.destroy(monospace_font_handle);
+        default_font_handle.destroy(alloc);
+        monospace_font_handle.destroy(alloc);
     }
 
     // =-= cu setup =-=
@@ -150,9 +139,14 @@ pub fn run() !void {
     };
     cu.state.default_font = default_font;
 
+    // =-= state =-=
+
+    // var dropdown_open = false;
+
     // =-= main loop setup =-=
 
     // @TODO: base this value on display refresh rate
+    const app_start_time = try std.time.Instant.now();
     const event_timeout_ms = 15;
     var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
     var fps_buffer = FpsCircleBuffer{};
@@ -165,10 +159,14 @@ pub fn run() !void {
     while (running) {
         // frame stuff
         const current_time = try std.time.Instant.now();
-        const elapsed_ns = current_time.since(previous_time);
+        const delta_time_ns = current_time.since(previous_time);
         previous_time = current_time;
-        const fps = 1e9 / @as(f32, @floatFromInt(elapsed_ns));
+
+        const delta_time_ms = delta_time_ns / 1_000_000;
+        const fps = 1e9 / @as(f32, @floatFromInt(delta_time_ns));
         fps_buffer.push(fps);
+
+        const uptime_s = current_time.since(app_start_time) / std.time.ns_per_s;
 
         // process input
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
@@ -187,6 +185,14 @@ pub fn run() !void {
                     switch (key.keysym.scancode) {
                         .escape => {
                             running = false;
+                        },
+                        .minus => {
+                            try default_font_handle.setSize(default_font_handle.ptsize - 1);
+                            try monospace_font_handle.setSize(monospace_font_handle.ptsize - 1);
+                        },
+                        .equals => {
+                            try default_font_handle.setSize(default_font_handle.ptsize + 1);
+                            try monospace_font_handle.setSize(monospace_font_handle.ptsize + 1);
                         },
                         else => {},
                     }
@@ -236,180 +242,188 @@ pub fn run() !void {
         }
 
         // build ui
-        {
-            cu.startBuild(window.getID());
-            defer cu.endBuild();
-            cu.state.ui_root.layout_axis = .y;
-            cu.state.ui_root.flags.draw_background = true;
+        cu.startBuild(window.getID());
+        cu.state.ui_root.layout_axis = .y;
+        cu.state.ui_root.flags.draw_background = true;
 
-            { // topbar
-                const topbar = cu.ui(.{ .draw_side_bottom = true }, "topbar");
-                defer topbar.end();
-                topbar.layout_axis = .x;
-                topbar.pref_size = .{ .w = .full, .h = .px(24) };
+        { // topbar
+            const topbar = cu.open("topbar");
+            defer cu.close(topbar);
+            topbar.flags = topbar.flags.drawSideBottom();
+            topbar.layout_axis = .x;
+            topbar.pref_size = .{ .w = .fill, .h = .px(24) };
 
-                _ = cu.growSpacer();
+            const menu_items = [_][]const u8{
+                "Fe",
+                "File",
+                "Edit",
+                "Help",
+            };
 
-                for (0..3) |i| {
-                    const button = cu.uif(
-                        cu.AtomFlags.init
-                            .clickable()
-                            .drawBorder(),
-                        "top bar button {d}",
-                        .{i},
-                    );
-                    defer button.end();
-                    button.pref_size = .square(.px(24));
+            for (menu_items) |item_str| {
+                const item = cu.build(item_str);
+                item.flags = item.flags.clickable().drawText();
+                item.pref_size = .square(.text_pad(8));
 
-                    const int = button.interation();
-                    if (int.f.hovering) {
-                        button.palette.border = cu.Color.hexRgb(0xFF0000);
-                    }
+                const inter = item.interation();
+                if (inter.f.hovering) {
+                    item.flags.draw_border = true;
+                }
 
-                    if (int.f.isClicked()) {
-                        std.debug.print("top bar button {d} clicked\n", .{i});
-                        switch (i) {
-                            0 => {},
-                            1 => {},
-                            2 => running = false,
-                            else => unreachable,
-                        }
-                    }
+                if (inter.f.isClicked()) {
+                    std.debug.print("clicked {s}\n", .{item_str});
+                    // dropdown_open = true;
                 }
             }
 
-            { // main pane
-                const main_pane = cu.ui(.{}, "main pain");
-                defer main_pane.end();
-                main_pane.layout_axis = .x;
-                main_pane.pref_size = .{ .w = .grow, .h = .grow };
+            _ = cu.spacer(.square(.grow));
 
-                { // left pane
-                    const pane = cu.ui(.{ .draw_side_right = true }, "left pane");
-                    defer pane.end();
-                    pane.layout_axis = .y;
-                    pane.pref_size = .{ .w = .percent(0.4), .h = .full };
+            for (0..3) |i| {
+                const button = cu.openf("top bar button {d}", .{i});
+                defer cu.close(button);
+                button.flags = button.flags.clickable().drawBorder();
+                button.pref_size = .square(.px(24));
 
-                    {
-                        const header = cu.ui(.{ .draw_side_bottom = true }, "left header");
-                        defer header.end();
-                        header.equipDisplayString();
-                        header.pref_size.w = .grow;
-                        header.display_string = "Left Header gylp";
-                        header.text_align = .right;
-                    }
-
-                    {
-                        const content = cu.ui(
-                            cu.AtomFlags.init.clipRect().allowOverflow(),
-                            "left content",
-                        );
-                        defer content.end();
-                        content.layout_axis = .y;
-                        content.pref_size = .{ .w = .grow, .h = .grow };
-
-                        cu.pushFont(monospace_font);
-                        defer cu.popFont();
-
-                        {
-                            cu.pushTextColor(.hexRgb(0xff0000));
-                            defer cu.popPalette();
-
-                            _ = cu.labelf("fps: {d:.2}###fps counter", .{fps});
-                            _ = cu.labelf("ave fps: {d:.2}###ave fps counter", .{fps_buffer.average()});
-                            _ = cu.labelf("delta time (ms): {d:.2}###delta time", .{elapsed_ns / 1_000_000});
-                            _ = cu.labelf("build count: {d}###build count", .{cu.state.current_build_index});
-                            _ = cu.labelf("atom build count: {d}###atom build count", .{cu.state.build_atom_count});
-                        }
-
-                        _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
-                        _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
-
-                        const active = cu.state.atom_map.get(cu.state.active_atom_key);
-                        _ = cu.labelf("active atom: {?}", .{active});
-                        const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
-                        const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
-                        hot_lbl.flags.draw_text_weak = true;
-                    }
+                const int = button.interation();
+                if (int.f.hovering) {
+                    button.palette.border = cu.Color.hexRgb(0xFF0000);
                 }
 
-                { // right pane
-                    const pane = cu.ui(.{}, "right pane");
-                    defer pane.end();
-                    pane.layout_axis = .y;
-                    pane.pref_size = .{ .w = .grow, .h = .full };
-
-                    {
-                        const header = cu.ui(cu.AtomFlags.init.drawSideBottom(), "right header");
-                        defer header.end();
-                        header.equipDisplayString();
-                        header.pref_size.w = .grow;
-                        header.text_align = .center;
-                        header.layout_axis = .x;
-
-                        if (header.interation().f.mouse_over) {
-                            cu.pushBackgroundColor(.hexRgb(0x001800));
-                            defer cu.popPalette();
-
-                            const float = cu.ui(
-                                cu.AtomFlags.init.floating().drawBackground(),
-                                "floating",
-                            );
-                            defer float.end();
-                            float.layout_axis = .y;
-                            float.pref_size = .square(.fit);
-
-                            float.rel_position = cu.state.mouse.sub(header.rect.p0).asAxis();
-
-                            _ = cu.label("tool tip!");
-                            _ = cu.label("extra tips!");
-                        }
-                    }
-
-                    {
-                        const content = cu.ui(.{}, "right content");
-                        defer content.end();
-                        content.layout_axis = .y;
-                        content.pref_size = .{ .w = .grow, .h = .grow };
-                    }
-                }
-
-                { // right bar
-                    const bar = cu.ui(.{ .draw_side_left = true }, "right bar");
-                    defer bar.end();
-                    bar.layout_axis = .y;
-
-                    const icon_size = cu.Atom.PrefSize.px(24);
-                    bar.pref_size = .{ .w = icon_size, .h = .grow };
-
-                    {
-                        const inner = cu.ui(.{}, "right bar inner");
-                        defer inner.end();
-                        inner.layout_axis = .y;
-                        inner.pref_size = .{ .w = icon_size, .h = .fit };
-
-                        for (0..5) |i| {
-                            {
-                                const icon = cu.uif(
-                                    cu.AtomFlags.init.drawBorder(),
-                                    "right bar icon {d}",
-                                    .{i},
-                                );
-                                defer icon.end();
-                                icon.pref_size = .square(icon_size);
-                            }
-
-                            {
-                                const pad = cu.ui(.{}, "");
-                                defer pad.end();
-                                pad.pref_size = .{ .w = icon_size, .h = .px(4) };
-                            }
-                        }
+                if (int.f.isClicked()) {
+                    std.debug.print("top bar button {d} clicked\n", .{i});
+                    switch (i) {
+                        0 => {},
+                        1 => {},
+                        2 => running = false,
+                        else => unreachable,
                     }
                 }
             }
         }
 
+        { // main pane
+            const main_pane = cu.open("main pain");
+            defer cu.close(main_pane);
+            main_pane.layout_axis = .x;
+            main_pane.pref_size = .{ .w = .grow, .h = .grow };
+
+            { // left pane
+                const pane = cu.open("left pane");
+                defer cu.close(pane);
+                pane.flags = pane.flags.drawSideRight();
+                pane.layout_axis = .y;
+                pane.pref_size = .{ .w = .percent(0.4), .h = .fill };
+
+                { // header
+                    const header = cu.build("left header");
+                    header.flags = header.flags.drawSideBottom().drawText();
+                    header.display_string = "Left Header gylp";
+                    header.pref_size = .{ .w = .grow, .h = .text };
+                    header.text_align = .{ .w = .end, .h = .center };
+                }
+
+                { // content
+                    const content = cu.open("left content");
+                    defer cu.close(content);
+                    content.flags = content.flags.clipRect().allowOverflow();
+                    content.layout_axis = .y;
+                    content.pref_size = .square(.grow);
+
+                    cu.pushFont(monospace_font);
+                    defer cu.popFont();
+
+                    {
+                        cu.pushTextColor(.hexRgb(0xff0000));
+                        defer cu.popPalette();
+
+                        _ = cu.labelf("fps: {d:.2}", .{fps});
+                        _ = cu.labelf("ave fps: {d:.2}", .{fps_buffer.average()});
+                        _ = cu.labelf("frame time: {d:.2}ms", .{delta_time_ms});
+                        _ = cu.labelf("uptime: {d:.2}s", .{uptime_s});
+                        _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
+                        _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
+                    }
+
+                    _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
+                    _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
+
+                    const active = cu.state.atom_map.get(cu.state.active_atom_key);
+                    _ = cu.labelf("active atom: {?}", .{active});
+                    const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
+                    const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
+                    hot_lbl.flags.draw_text_weak = true;
+                }
+            }
+
+            { // right pane
+                const pane = cu.open("right pane");
+                defer cu.close(pane);
+                pane.layout_axis = .y;
+                pane.pref_size = .{ .w = .grow, .h = .fill };
+
+                { // header
+                    const header = cu.open("right header");
+                    defer cu.close(header);
+                    header.flags = header.flags.drawSideBottom().drawText();
+                    header.display_string = "Right Header";
+                    header.pref_size = .{ .w = .grow, .h = .text };
+                    header.text_align = .square(.center);
+                    header.layout_axis = .x;
+
+                    if (header.interation().f.mouse_over) {
+                        cu.pushBackgroundColor(.hexRgb(0x001800));
+                        defer cu.popPalette();
+
+                        const float = cu.open("floating");
+                        defer cu.close(float);
+                        float.flags = float.flags.floating().drawBackground();
+                        float.layout_axis = .y;
+                        float.pref_size = .square(.fit);
+
+                        float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).asAxis();
+
+                        _ = cu.label("tool tip!");
+                        _ = cu.label("extra tips!");
+                    }
+                }
+
+                { // content
+                    const content = cu.open("right content");
+                    defer cu.close(content);
+                    content.layout_axis = .y;
+                    content.pref_size = .square(.grow);
+                }
+            }
+
+            { // right bar
+                const bar = cu.open("right bar");
+                defer cu.close(bar);
+                bar.flags = bar.flags.drawSideLeft();
+                bar.layout_axis = .y;
+
+                const icon_size = cu.Atom.PrefSize.px(24);
+                bar.pref_size = .{ .w = icon_size, .h = .grow };
+
+                { // inner
+                    const inner = cu.open("right bar inner");
+                    defer cu.close(inner);
+                    inner.layout_axis = .y;
+                    inner.pref_size = .{ .w = icon_size, .h = .fit };
+
+                    for (0..5) |i| {
+                        {
+                            const icon = cu.buildf("right bar icon {d}", .{i});
+                            icon.flags.draw_border = true;
+                            icon.pref_size = .square(icon_size);
+                        }
+
+                        _ = cu.spacer(.{ .w = icon_size, .h = .px(4) });
+                    }
+                }
+            }
+        }
+
+        cu.endBuild();
         try cu_sdl_renderer.render();
     }
 
@@ -437,3 +451,47 @@ pub const FpsCircleBuffer = struct {
         return sum / @as(f32, @floatFromInt(self.count));
     }
 };
+
+fn logFn(
+    comptime message_level: std.log.Level,
+    comptime scope: @TypeOf(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const faint = TermColor{ .style = .{ .faint = true } };
+    const reset = TermColor.reset;
+
+    const now = std.time.milliTimestamp();
+    const level_txt, const level_color = switch (message_level) {
+        .err => .{ "ERROR", TermColor{ .color = .red, .layer = .background } },
+        .warn => .{ "WARNING", TermColor{ .color = .yellow, .layer = .background } },
+        .info => .{ "INFO", TermColor{ .color = .blue, .layer = .background } },
+        .debug => .{ "DEBUG", TermColor{ .color = .magenta, .layer = .background } },
+    };
+
+    const scope_str = if (scope == .default) "" else " " ++ @tagName(scope);
+
+    const stderr = std.io.getStdErr().writer();
+    var bw = std.io.bufferedWriter(stderr);
+    const writer = bw.writer();
+
+    std.debug.lockStdErr();
+    defer std.debug.unlockStdErr();
+    nosuspend {
+        writer.print(
+            "{[faint]}[{[now]d}{[reset]}{[scope]s}{[faint]}]{[reset]} {[level_color]} {[level]s} {[reset]} ",
+            .{
+                .faint = faint,
+                .reset = reset,
+                .now = now,
+                .scope = scope_str,
+                .level = level_txt,
+                .level_color = level_color,
+            },
+        ) catch return;
+
+        writer.print(format ++ "\n", args) catch return;
+
+        bw.flush() catch return;
+    }
+}

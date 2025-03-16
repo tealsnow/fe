@@ -5,6 +5,7 @@
 //! with some parts taken from the implementation of the ui layer of raddebugger
 //! (https://github.com/EpicGamesExt/raddebugger) (Copyright (c) 2024 Epic Games Tools)
 
+const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
@@ -28,3 +29,13 @@ pub usingnamespace font;
 
 pub const State = @import("State.zig");
 pub var state: State = undefined;
+
+pub fn debugAssert(ok: bool, comptime fmt: []const u8, args: anytype) void {
+    if (builtin.mode == .Debug) {
+        if (!ok) {
+            std.log.err("assertion failure", .{});
+            std.log.err(fmt, args);
+            @panic("assertion failure");
+        }
+    }
+}
