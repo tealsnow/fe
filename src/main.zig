@@ -1,19 +1,3 @@
-const builtin = @import("builtin");
-const std = @import("std");
-const assert = std.debug.assert;
-
-const sdl = @import("sdl/sdl.zig");
-const fc = @import("fontconfig.zig");
-
-const CuSdlRenderer = @import("CuSdlRenderer.zig");
-const TermColor = @import("TermColor.zig");
-
-const cu = @import("cu/cu.zig");
-
-pub const std_options = std.Options{
-    .logFn = logFn,
-};
-
 // @TODO:
 //   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
 //   @[ ]: tooltips/dropdowns - general popups
@@ -36,6 +20,22 @@ pub const std_options = std.Options{
 //     @[ ]: rounding
 //   @[x]: floating
 //   @[x]: text padding
+
+const builtin = @import("builtin");
+const std = @import("std");
+const assert = std.debug.assert;
+
+const sdl = @import("sdl/sdl.zig");
+const fc = @import("fontconfig.zig");
+
+const CuSdlRenderer = @import("CuSdlRenderer.zig");
+const TermColor = @import("TermColor.zig");
+
+const cu = @import("cu/cu.zig");
+
+pub const std_options = std.Options{
+    .logFn = logFn,
+};
 
 pub fn main() !void {
     run() catch |err| {
@@ -305,7 +305,7 @@ pub fn run() !void {
             const main_pane = cu.open("main pain");
             defer cu.close(main_pane);
             main_pane.layout_axis = .x;
-            main_pane.pref_size = .{ .w = .grow, .h = .grow };
+            main_pane.pref_size = .square(.grow);
 
             { // left pane
                 const pane = cu.open("left pane");

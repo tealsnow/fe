@@ -217,10 +217,14 @@ pub fn ctxMenuClose() void {
 pub fn beginCtxMenu(key: Atom.Key) bool {
     _ = key; // autofix
     // const is_open = key.eql(ctx_menu_key) and cu.state.ctx_menu_open;
+    // is_in_ctx_menu = is_open;
     //
 }
 
 pub fn endCtxMenu() void {
+    // if (is_in_ctx_menu) {
+    //     is_in_ctx_menu = false;
+    // }
     //
 }
 
