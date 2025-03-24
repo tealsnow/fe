@@ -1,0 +1,7 @@
+.{
+    .id = "test-plugin",
+    .name = "Wasm Test Plugin",
+    .version = "0.0.0",
+    .description = "Test wasm plugin",
+    .authors = .{"Ketan Reynolds <ketan.cs.reynolds@gmail.com>"},
+}

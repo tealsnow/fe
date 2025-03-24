@@ -3,8 +3,8 @@ const Renderer = @This();
 const std = @import("std");
 const fc = @import("fontconfig.zig");
 
-const sdl = @import("sdl/sdl.zig");
-const cu = @import("cu/cu.zig");
+const sdl = @import("sdl");
+const cu = @import("cu");
 
 sdl_rend: *sdl.Renderer,
 bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
@@ -21,7 +21,7 @@ pub fn render(self: *Renderer) !void {
 
     try self.renderAtom(cu.state.ui_root);
 
-    self.sdl_rend.present();
+    try self.sdl_rend.present();
 }
 
 fn setDrawColor(self: *Renderer, color: cu.Color) !void {
@@ -29,15 +29,15 @@ fn setDrawColor(self: *Renderer, color: cu.Color) !void {
 }
 
 fn fillRect(self: *Renderer, rect: sdl.FRect) !void {
-    try self.sdl_rend.fillRectF(&rect);
+    try self.sdl_rend.fillRect(&rect);
 }
 
 fn drawRect(self: *Renderer, rect: sdl.FRect) !void {
-    try self.sdl_rend.drawRectF(&rect);
+    try self.sdl_rend.renderRect(&rect);
 }
 
 fn drawLine(self: *Renderer, p0: cu.Vec2(f32), p1: cu.Vec2(f32)) !void {
-    try self.sdl_rend.drawLineF(p0.x, p0.y, p1.x, p1.y);
+    try self.sdl_rend.renderLine(p0.x, p0.y, p1.x, p1.y);
 }
 
 fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
@@ -120,12 +120,10 @@ fn renderText(self: *Renderer, atom: *cu.Atom) !void {
             unreachable;
 
     const fonthandle = cu.state.font_manager.getFont(atom.font);
-    const font: *FontHandle = @alignCast(@ptrCast(fonthandle));
+    const font: *sdl.ttf.Font = @alignCast(@ptrCast(fonthandle));
 
-    const zstring = try cu.state.alloc_temp.dupeZ(u8, atom.display_string);
-
-    const surface = try font.ttf_font.renderTextLCD(
-        zstring,
+    const surface = try font.renderTextLCD(
+        atom.display_string,
         sdlColorFromCuColor(color),
         sdlColorFromCuColor(self.bg_color_stack.getLast()),
     );
@@ -136,7 +134,7 @@ fn renderText(self: *Renderer, atom: *cu.Atom) !void {
 
     const dst_rect = sdlRectFromCuRect(atom.text_rect);
 
-    try self.sdl_rend.renderCopyF(texture, null, &dst_rect);
+    try self.sdl_rend.renderTexture(texture, null, &dst_rect);
 }
 
 fn sdlColorFromCuColor(color: cu.Color) sdl.Color {
@@ -152,75 +150,45 @@ fn sdlRectFromCuRect(rect: cu.Range2(f32)) sdl.FRect {
     };
 }
 
-pub const FontHandle = struct {
-    ttf_font: *sdl.ttf.Font,
-    ptsize: c_int,
+/// ensure fonconfig is initialized
+pub fn createFontFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8, ptsize: f32) !*sdl.ttf.Font {
+    const path = try getFontPathFromFamilyName(allocator, family);
+    defer allocator.free(path);
+    return try sdl.ttf.Font.open(path, ptsize);
+}
 
-    pub fn init(file: [*c]u8, ptsize: c_int) !FontHandle {
-        return .{
-            .ttf_font = try sdl.ttf.Font.open(file, ptsize),
-            .ptsize = ptsize,
-        };
-    }
+/// Caller owns memory
+/// Returns the font for a generic family name such as sans, monospace or arial
+/// ensure fonconfig is initialized
+pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8) ![:0]u8 {
+    const pattern = try fc.Pattern.create();
+    defer pattern.destroy();
+    try pattern.addString(.family, family);
+    try pattern.addBool(.outline, .true);
 
-    pub fn deinit(self: *const FontHandle) void {
-        self.ttf_font.close();
-    }
+    const config = try fc.Config.getCurrent();
+    try config.substitute(pattern, .pattern);
+    fc.defaultSubsitute(pattern);
 
-    /// ensure fonconfig is initialized
-    pub fn createFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8, ptsize: c_int) !*FontHandle {
-        const path = try getFontPathFromFamilyName(allocator, family);
-        defer allocator.free(path);
+    const match = try fc.fontMatch(config, pattern);
+    defer match.destroy();
 
-        const ptr = try allocator.create(FontHandle);
-        ptr.* = try init(path, ptsize);
-        return ptr;
-    }
-
-    pub fn destroy(self: *FontHandle, allocator: std.mem.Allocator) void {
-        self.ttf_font.close();
-        allocator.destroy(self);
-    }
-
-    pub fn setSize(self: *FontHandle, ptsize: c_int) !void {
-        self.ptsize = ptsize;
-        try self.ttf_font.setSize(ptsize);
-    }
-
-    /// Caller owns memory
-    /// Returns the font for a generic family name such as sans, monospace or arial
-    /// ensure fonconfig is initialized
-    pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8) ![:0]u8 {
-        const pattern = try fc.Pattern.create();
-        defer pattern.destroy();
-        try pattern.addString(.family, family);
-        try pattern.addBool(.outline, .true);
-
-        const config = try fc.Config.getCurrent();
-        try config.substitute(pattern, .pattern);
-        fc.defaultSubsitute(pattern);
-
-        const match = try fc.fontMatch(config, pattern);
-        defer match.destroy();
-
-        const path = try match.getString(.file, 0);
-        return try allocator.dupeZ(u8, path);
-    }
-};
+    const path = try match.getString(.file, 0);
+    return try allocator.dupeZ(u8, path);
+}
 
 pub const Callbacks = struct {
     fn measureText(context: *anyopaque, text: []const u8, font_handle: cu.FontHandle) cu.Axis2(f32) {
         _ = context;
-        const zstring = cu.state.alloc_temp.dupeZ(u8, text) catch @panic("oom");
-        const font: *FontHandle = @alignCast(@ptrCast(font_handle));
-        const w, const h = font.ttf_font.sizeTextTuple(zstring) catch @panic("failed to measure text");
+        const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
+        const w, const h = font.getStringSize(text) catch @panic("failed to measure text");
         return .axis(@floatFromInt(w), @floatFromInt(h));
     }
 
     fn fontSize(context: *anyopaque, font_handle: cu.FontHandle) f32 {
         _ = context;
-        const font: *FontHandle = @alignCast(@ptrCast(font_handle));
-        return @floatFromInt(font.ptsize);
+        const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
+        return font.getSize() catch @panic("failed to get font size");
     }
 
     pub const vtable = cu.State.Callbacks.VTable{

@@ -25,24 +25,27 @@ const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
 
-const sdl = @import("sdl/sdl.zig");
+const cu = @import("cu");
+
+const sdl = @import("sdl");
 const fc = @import("fontconfig.zig");
 
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
-const TermColor = @import("TermColor.zig");
-
-const cu = @import("cu/cu.zig");
+const plugins = @import("plugins.zig");
+const logFn = @import("logFn.zig");
 
 pub const std_options = std.Options{
-    .logFn = logFn,
+    .logFn = logFn.logFn,
 };
 
 pub fn main() !void {
     run() catch |err| {
-        const ttf_err = sdl.ttf.getError() orelse "[none]";
-        const sdl_err = sdl.getError() orelse "[none]";
-        std.log.err("[SDL_TTF]: {s}", .{ttf_err});
-        std.log.err("[SDL]: {s}", .{sdl_err});
+        const sdl_err = sdl.getError();
+        if (sdl_err.len > 0) {
+            std.log.err("[SDL]: {s}", .{sdl_err});
+        }
+
+        plugins.printLastWasmError();
 
         return err;
     };
@@ -52,7 +55,7 @@ pub fn run() !void {
     // =-= allocator setup =-=
 
     const debug_mode = builtin.mode == .Debug;
-    var debug_alloc = if (debug_mode) blk: {
+    var debug_allocator = if (debug_mode) blk: {
         var debug_alloc = std.heap.DebugAllocator(.{
             // .never_unmap = true,
             // .retain_metadata = true,
@@ -63,42 +66,49 @@ pub fn run() !void {
         break :blk debug_alloc;
     } else {};
     defer if (debug_mode) {
-        const result = debug_alloc.deinit();
+        const result = debug_allocator.deinit();
         if (result == .leak) {
             std.debug.print("Memory leak detected\n", .{});
         }
     };
 
-    const alloc = if (builtin.mode == .Debug)
-        debug_alloc.allocator()
+    const allocator = if (builtin.mode == .Debug)
+        debug_allocator.allocator()
     else if (builtin.mode == .ReleaseFast)
         std.heap.smp_allocator // allocator optimized for release-fast
     else
         std.heap.c_allocator;
 
+    // =-= plugin setup =-=
+
+    const host = try plugins.PluginHost.init(allocator);
+    defer host.deinit(allocator);
+
+    const plugin = &host.plugins[0];
+    try plugins.doTest(plugin);
+
     // =-= sdl window and renderer setup =-=
 
-    try sdl.init(sdl.InitFlags.All);
+    try sdl.init(sdl.InitFlag.all);
     defer sdl.quit();
 
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
+    const window_size = sdl.Window.Size{ .w = 800, .h = 600 };
     const window = try sdl.Window.init(.{
         .title = "fe",
-        .flags = sdl.Window.Flag.allow_highdpi | sdl.Window.Flag.resizable,
+        .size = window_size,
+        .flags = sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
     });
     defer window.deinit();
 
-    const renderer = try sdl.Renderer.init(.{
-        .window = window,
-        .flags = .{
-            .software = false,
-            .accelerated = true,
-            .present_vsync = false,
-        },
-    });
+    const renderer = try sdl.Renderer.init(window, null);
     defer renderer.deinit();
+
+    try renderer.setDrawColor(0, 0, 0, 255);
+    try renderer.clear();
+    try renderer.present();
 
     // =-= font setup =-=
 
@@ -110,20 +120,20 @@ pub fn run() !void {
         const font_size = 13;
 
         const default =
-            try CuSdlRenderer.FontHandle.createFromFamilyName(alloc, "sans", font_size);
+            try CuSdlRenderer.createFontFromFamilyName(allocator, "sans", font_size);
         const monospace =
-            try CuSdlRenderer.FontHandle.createFromFamilyName(alloc, "monospace", font_size);
+            try CuSdlRenderer.createFontFromFamilyName(allocator, "monospace", font_size);
 
         break :blk .{ default, monospace };
     };
     defer {
-        default_font_handle.destroy(alloc);
-        monospace_font_handle.destroy(alloc);
+        default_font_handle.close();
+        monospace_font_handle.close();
     }
 
     // =-= cu setup =-=
 
-    try cu.state.init(alloc, CuSdlRenderer.Callbacks.callbacks);
+    try cu.state.init(allocator, CuSdlRenderer.Callbacks.callbacks);
     defer cu.state.deinit();
 
     const default_font =
@@ -147,11 +157,25 @@ pub fn run() !void {
 
     // @TODO: base this value on display refresh rate
     const app_start_time = try std.time.Instant.now();
-    const event_timeout_ms = 15;
+    const event_timeout_ms = 10;
     var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
     var fps_buffer = FpsCircleBuffer{};
 
     var cu_sdl_renderer = CuSdlRenderer{ .sdl_rend = renderer };
+
+    { // @BUG: for some reason the window shows up as black until resized
+        var event = sdl.Event{
+            .window = .{
+                .type = .window_resized,
+                .reserved = 0,
+                .timestamp = 0,
+                .window_id = window.getID(),
+                .data1 = window_size.w,
+                .data2 = window_size.h,
+            },
+        };
+        try sdl.Event.push(&event);
+    }
 
     // =-= main loop =-=
 
@@ -170,57 +194,77 @@ pub fn run() !void {
 
         // process input
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
-            // if (sdl.Event.poll()) |event| {
             switch (event.type) {
                 .quit => running = false,
-                .key => |key| key_blk: {
+
+                .key_down, .key_up => key: {
+                    const key = event.key;
                     cu.state.pushEvent(.{
                         .kind = .key_press,
-                        .key = key.keysym,
-                        .state = @enumFromInt(@intFromEnum(key.state)),
+                        .key = .{
+                            .scancode = key.scancode,
+                            .keycode = key.key,
+                            .mod = key.mod,
+                        },
+                        .state = if (key.down) .pressed else .released,
                     });
 
-                    if (key.state != .pressed) break :key_blk;
+                    if (!key.down) break :key;
 
-                    switch (key.keysym.scancode) {
+                    switch (key.scancode) {
                         .escape => {
                             running = false;
                         },
                         .minus => {
-                            try default_font_handle.setSize(default_font_handle.ptsize - 1);
-                            try monospace_font_handle.setSize(monospace_font_handle.ptsize - 1);
+                            try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) - 1);
+                            try monospace_font_handle.setSize((monospace_font_handle.getSize() catch @panic("")) - 1);
                         },
                         .equals => {
-                            try default_font_handle.setSize(default_font_handle.ptsize + 1);
-                            try monospace_font_handle.setSize(monospace_font_handle.ptsize + 1);
+                            try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) + 1);
+                            try monospace_font_handle.setSize((monospace_font_handle.getSize() catch @panic("")) + 1);
                         },
                         else => {},
                     }
                 },
-                .motion => |motion| {
+
+                .mouse_motion => {
+                    const motion = event.motion;
                     cu.state.pushEvent(.{
                         .kind = .mouse_move,
-                        .pos = .vec(@floatFromInt(motion.x), @floatFromInt(motion.y)),
+                        .pos = .vec(motion.x, motion.y),
                     });
                 },
-                .button => |button| {
+
+                .mouse_button_down, .mouse_button_up => {
+                    const button = event.button;
+                    const button_kind: cu.MouseButton = switch (button.button) {
+                        .left => .left,
+                        .middle => .middle,
+                        .right => .right,
+                        .x1 => .forward,
+                        .x2 => .back,
+                        else => @enumFromInt(@intFromEnum(button.button)),
+                    };
                     cu.state.pushEvent(.{
                         .kind = .mouse_press,
-                        .button = button.button,
+                        .button = button_kind,
                         .button_clicks = button.clicks,
-                        .state = @enumFromInt(@intFromEnum(button.state)),
-                        .pos = .vec(@floatFromInt(button.x), @floatFromInt(button.y)),
+                        .state = if (button.down) .pressed else .released,
+                        .pos = .vec(button.x, button.y),
                     });
                 },
 
-                .wheel => |wheel| {
+                .mouse_wheel => {
+                    const wheel = event.wheel;
                     cu.state.pushEvent(.{
                         .kind = .scroll,
-                        .scroll = .vec(wheel.preciseX, wheel.preciseY),
+                        .scroll = .vec(wheel.x, wheel.y),
+                        .pos = .vec(wheel.mouse_x, wheel.mouse_y),
                     });
                 },
 
-                .text => |text| {
+                .text_input => {
+                    const text = event.text;
                     const slice = std.mem.sliceTo(text.text[0..], 0);
                     cu.state.pushEvent(.{
                         .kind = .text_input,
@@ -228,13 +272,14 @@ pub fn run() !void {
                     });
                 },
 
-                .window => |wind| switch (wind.event) {
-                    .resized => {
-                        cu.state.window_size =
-                            .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
-                    },
+                .window_resized => {
+                    const wind = event.window;
+                    cu.state.window_size =
+                        .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
+                },
 
-                    else => {},
+                .window_exposed => {
+                    try cu_sdl_renderer.render();
                 },
 
                 else => {},
@@ -242,7 +287,7 @@ pub fn run() !void {
         }
 
         // build ui
-        cu.startBuild(window.getID());
+        cu.startBuild(@intFromEnum(window.getID()));
         cu.state.ui_root.layout_axis = .y;
         cu.state.ui_root.flags.draw_background = true;
 
@@ -451,47 +496,3 @@ pub const FpsCircleBuffer = struct {
         return sum / @as(f32, @floatFromInt(self.count));
     }
 };
-
-fn logFn(
-    comptime message_level: std.log.Level,
-    comptime scope: @TypeOf(.enum_literal),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    const faint = TermColor{ .style = .{ .faint = true } };
-    const reset = TermColor.reset;
-
-    const now = std.time.milliTimestamp();
-    const level_txt, const level_color = switch (message_level) {
-        .err => .{ "ERROR", TermColor{ .color = .red, .layer = .background } },
-        .warn => .{ "WARNING", TermColor{ .color = .yellow, .layer = .background } },
-        .info => .{ "INFO", TermColor{ .color = .blue, .layer = .background } },
-        .debug => .{ "DEBUG", TermColor{ .color = .magenta, .layer = .background } },
-    };
-
-    const scope_str = if (scope == .default) "" else " " ++ @tagName(scope);
-
-    const stderr = std.io.getStdErr().writer();
-    var bw = std.io.bufferedWriter(stderr);
-    const writer = bw.writer();
-
-    std.debug.lockStdErr();
-    defer std.debug.unlockStdErr();
-    nosuspend {
-        writer.print(
-            "{[faint]}[{[now]d}{[reset]}{[scope]s}{[faint]}]{[reset]} {[level_color]} {[level]s} {[reset]} ",
-            .{
-                .faint = faint,
-                .reset = reset,
-                .now = now,
-                .scope = scope_str,
-                .level = level_txt,
-                .level_color = level_color,
-            },
-        ) catch return;
-
-        writer.print(format ++ "\n", args) catch return;
-
-        bw.flush() catch return;
-    }
-}

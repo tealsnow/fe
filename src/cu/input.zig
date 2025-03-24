@@ -1,15 +1,20 @@
-const sdl = @import("../sdl/sdl.zig");
+const std = @import("std");
+const sdl = @import("sdl");
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 
 pub const Event = struct {
     kind: Kind,
-    key: sdl.Keysym = .{
+    key: struct {
+        scancode: sdl.Scancode,
+        keycode: sdl.Keycode,
+        mod: sdl.Keymod,
+    } = .{
         .scancode = .unknown,
-        .sym = .unknown,
+        .keycode = .unknown,
         .mod = .{},
     },
-    button: sdl.MouseButton = .none,
+    button: MouseButton = .none,
     button_clicks: u8 = 0,
     state: PressState = .none,
     pos: cu.Vec2(f32) = .zero,
@@ -31,6 +36,16 @@ pub const Event = struct {
         pressed,
         none,
     };
+};
+
+pub const MouseButton = enum(u8) {
+    none = std.math.maxInt(u8),
+    left = 0,
+    middle,
+    right,
+    forward,
+    back,
+    _,
 };
 
 pub const InteractionFlags = packed struct(u32) {
@@ -162,7 +177,7 @@ pub const InteractionFlags = packed struct(u32) {
 pub const Interation = struct {
     atom: *Atom,
     scroll: cu.Vec2(f32) = .zero,
-    modifiers: sdl.Keysym.ModFlags = .{},
+    modifiers: sdl.Keymod = .{},
     f: InteractionFlags = .{},
 };
 
@@ -221,7 +236,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
                 .right => inter.f.right_pressed = true,
                 .back => {},
                 .forward => {},
-                .none => unreachable,
+                else => {},
             }
 
             // drag_start_pos = event.pos
@@ -247,7 +262,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
                 .right => inter.f = inter.f.combine(.{ .right_released = true, .right_clicked = click }),
                 .back => {},
                 .forward => {},
-                .none => unreachable,
+                else => {},
             }
 
             event.consumed = true;

@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const cu = @import("cu");
+const cu = @import("cu.zig");
 
 pub const ScopeLocalNode = struct {
     ptr: *const anyopaque,
