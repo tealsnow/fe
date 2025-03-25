@@ -30,8 +30,11 @@ font_stack: Stack(cu.FontId),
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
-// all undefined until `startBuild` is called
-// in the order they should be rendered
+// All `ui_*` atoms are undefined unless `ui_built` is true.
+// `ui_built` is true once `endFrame` is called once and stays true.
+// The `ui_*` atoms are set most of the time, using `ui_built` is useful for
+// when logic is needed that may or may not run until the first frame is built.
+ui_built: bool = false,
 ui_root: *Atom = undefined,
 ui_ctx_menu_root: *Atom = undefined,
 // ui_tooltip_root: *Atom = undefined,

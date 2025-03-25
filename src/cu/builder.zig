@@ -80,6 +80,8 @@ pub fn endBuild() void {
     _ = cu.state.event_pool.reset(.retain_capacity);
     _ = cu.state.event_node_pool.reset(.retain_capacity);
     cu.state.event_list = .{};
+
+    cu.state.ui_built = true;
 }
 
 pub fn tryAtomFromKey(key: Atom.Key) ?*Atom {

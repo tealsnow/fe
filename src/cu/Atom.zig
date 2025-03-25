@@ -146,6 +146,7 @@ pub const Flags = packed struct(u32) {
     // fixed_height: bool = false,
     allow_overflow_x: bool = false,
     allow_overflow_y: bool = false,
+    window_draggable: bool = false,
 
     // appearance
     // draw_drop_shadow: bool = false,
@@ -165,7 +166,7 @@ pub const Flags = packed struct(u32) {
 
     // render_custom: bool = false,
 
-    _padding: enum(u17) { zero } = .zero,
+    _padding: enum(u16) { zero } = .zero,
 
     pub fn mouseClickable(self: Self) Self {
         var this = self;
@@ -221,6 +222,12 @@ pub const Flags = packed struct(u32) {
         var this = self;
         this.allow_overflow_x = true;
         this.allow_overflow_y = true;
+        return this;
+    }
+
+    pub fn windowDraggable(self: Self) Self {
+        var this = self;
+        this.window_draggable = true;
         return this;
     }
 

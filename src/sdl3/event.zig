@@ -188,8 +188,31 @@ pub const Event = extern union {
             return null;
     }
 
-    pub fn push(event: *Event) Error!void {
-        if (!c.SDL_PushEvent(@ptrCast(event))) return error.sdl;
+    pub fn push(event: Event) Error!void {
+        if (!c.SDL_PushEvent(@constCast(@ptrCast(&event)))) return error.sdl;
+    }
+
+    pub fn mkCommon() Event {
+        return .{ .common = .{
+            .type = undefined,
+            .reserved = 0,
+            .timestamp = 0,
+        } };
+    }
+
+    pub fn mkQuit() Event {
+        var ev = mkCommon();
+        ev.type = .quit;
+        return ev;
+    }
+
+    pub fn mkWindow(ty: EventType, id: WindowID, data1: i32, data2: i32) Event {
+        var ev = mkCommon();
+        ev.type = ty;
+        ev.window.window_id = id;
+        ev.window.data1 = data1;
+        ev.window.data2 = data2;
+        return ev;
     }
 };
 

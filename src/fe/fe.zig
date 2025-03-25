@@ -100,13 +100,10 @@ pub fn run() !void {
         sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
     );
     defer window.deinit();
+    try window.setHitTest(&windowHitTestCallback, null);
 
     const renderer = try sdl.Renderer.init(window, null);
     defer renderer.deinit();
-
-    try renderer.setDrawColor(0, 0, 0, 255);
-    try renderer.clear();
-    try renderer.present();
 
     // =-= font setup =-=
 
@@ -161,19 +158,8 @@ pub fn run() !void {
 
     var cu_sdl_renderer = CuSdlRenderer{ .sdl_rend = renderer };
 
-    { // @BUG: for some reason the window shows up as black until resized
-        var event = sdl.Event{
-            .window = .{
-                .type = .window_resized,
-                .reserved = 0,
-                .timestamp = 0,
-                .window_id = window.getID(),
-                .data1 = window_size.w,
-                .data2 = window_size.h,
-            },
-        };
-        try sdl.Event.push(&event);
-    }
+    // @BUG: for some reason the window shows up as black until resized, unless we do this
+    try sdl.Event.push(.mkWindow(.window_resized, window.getID(), window_size.w, window_size.h));
 
     // =-= main loop =-=
 
@@ -211,7 +197,8 @@ pub fn run() !void {
 
                     switch (key.scancode) {
                         .escape => {
-                            running = false;
+                            // running = false;
+                            try sdl.Event.push(.mkQuit());
                         },
                         .minus => {
                             try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) - 1);
@@ -220,6 +207,13 @@ pub fn run() !void {
                         .equals => {
                             try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) + 1);
                             try monospace_font_handle.setSize((monospace_font_handle.getSize() catch @panic("")) + 1);
+                        },
+                        .f11 => {
+                            if (window.getFlags() & sdl.WindowFlag.fullscreen != 0) {
+                                try window.setFullscreen(false);
+                            } else {
+                                try window.setFullscreen(true);
+                            }
                         },
                         else => {},
                     }
@@ -288,6 +282,13 @@ pub fn run() !void {
         cu.startBuild(@intFromEnum(window.getID()));
         cu.state.ui_root.layout_axis = .y;
         cu.state.ui_root.flags.draw_background = true;
+        // Don't ask me why, but no matter how I slice it without the if, it doesn't work
+        // I know it should, I don't know why it doesn't
+        cu.state.ui_root.flags.draw_border =
+            if (window.getFlags() & (sdl.WindowFlag.fullscreen | sdl.WindowFlag.maximized) != 0)
+                false
+            else
+                true;
 
         { // topbar
             const topbar = cu.open("topbar");
@@ -319,7 +320,13 @@ pub fn run() !void {
                 }
             }
 
-            _ = cu.spacer(.square(.grow));
+            const spacer = cu.build("topbar spacer");
+            spacer.pref_size = .square(.grow);
+            spacer.flags = spacer.flags.windowDraggable();
+
+            if (spacer.interation().f.left_double_clicked) {
+                std.log.debug("spacer double click", .{});
+            }
 
             for (0..3) |i| {
                 const button = cu.openf("top bar button {d}", .{i});
@@ -333,11 +340,14 @@ pub fn run() !void {
                 }
 
                 if (int.f.isClicked()) {
-                    std.debug.print("top bar button {d} clicked\n", .{i});
                     switch (i) {
-                        0 => {},
-                        1 => {},
-                        2 => running = false,
+                        0 => try window.minimize(),
+                        1 => if (window.getFlags() & sdl.WindowFlag.maximized != 0) {
+                            try window.restore();
+                        } else {
+                            try window.maximize();
+                        },
+                        2 => try sdl.Event.push(.mkQuit()),
                         else => unreachable,
                     }
                 }
@@ -386,6 +396,8 @@ pub fn run() !void {
                         _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
                         _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
                     }
+
+                    _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
 
                     _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
                     _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
@@ -494,3 +506,64 @@ pub const FpsCircleBuffer = struct {
         return sum / @as(f32, @floatFromInt(self.count));
     }
 };
+
+fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*anyopaque) callconv(.c) sdl.HitTestResult {
+    _ = data;
+
+    const w, const h = window.getSize() catch @panic("could not get window size in hit test");
+
+    const padding = 6;
+
+    const in_left = point.x < padding;
+    const in_right = point.x > w - padding;
+    const in_top = point.y < padding;
+    const in_bottom = point.y > h - padding;
+
+    const draggable = drag: {
+        if (!cu.state.ui_built) break :drag false;
+
+        // @TODO: Find all draggable atoms and set to false when inside non draggable children
+        if (findDraggableAtom(cu.state.ui_root)) |atom| {
+            const pt = cu.vec2(@as(f32, @floatFromInt(point.x)), @floatFromInt(point.y));
+            break :drag atom.rect.contains(pt);
+        }
+
+        break :drag false;
+    };
+
+    return if (in_top and in_left)
+        .resize_topleft
+    else if (in_top and in_right)
+        .resize_topright
+    else if (in_bottom and in_left)
+        .resize_bottomleft
+    else if (in_bottom and in_right)
+        .resize_bottomright
+    else if (in_bottom)
+        .resize_bottom
+    else if (in_top)
+        .resize_top
+    else if (in_left)
+        .resize_left
+    else if (in_right)
+        .resize_right
+        // else if (point.y < 24)
+    else if (draggable)
+        .draggable
+    else
+        .normal;
+}
+
+fn findDraggableAtom(root: *cu.Atom) ?*cu.Atom {
+    if (root.children) |children| {
+        var maybe_child: ?*cu.Atom = children.first;
+        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+            if (child.flags.window_draggable) {
+                return child;
+            }
+
+            if (findDraggableAtom(child)) |draggable| return draggable;
+        }
+    }
+    return null;
+}

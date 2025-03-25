@@ -11,3 +11,8 @@ pub const FRect = extern struct {
     w: f32,
     h: f32,
 };
+
+pub const Point = extern struct {
+    x: c_int,
+    y: c_int,
+};
