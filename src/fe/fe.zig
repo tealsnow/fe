@@ -1,4 +1,6 @@
 // @TODO:
+//   @[ ]: rename general purpose allocator instances to gpa,
+//     this is aligned with zig's std and is more convienient
 //   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
@@ -51,33 +53,28 @@ pub fn main() !void {
     };
 }
 
+var debug_allocator = std.heap.DebugAllocator(.{
+    // .never_unmap = true,
+    // .retain_metadata = true,
+    // .verbose_log = true,
+    // .backing_allocator_zeroes = false,
+}).init;
+
 pub fn run() !void {
     // =-= allocator setup =-=
 
-    const debug_mode = builtin.mode == .Debug;
-    var debug_allocator = if (debug_mode) blk: {
-        var debug_alloc = std.heap.DebugAllocator(.{
-            // .never_unmap = true,
-            // .retain_metadata = true,
-            // .verbose_log = true,
-            // .backing_allocator_zeroes = false,
-        }).init;
-        debug_alloc.backing_allocator = std.heap.c_allocator;
-        break :blk debug_alloc;
-    } else {};
-    defer if (debug_mode) {
-        const result = debug_allocator.deinit();
-        if (result == .leak) {
-            std.debug.print("Memory leak detected\n", .{});
-        }
+    const allocator, const is_debug = gpa: {
+        if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
+        break :gpa switch (builtin.mode) {
+            .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
+            .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
+        };
     };
-
-    const allocator = if (builtin.mode == .Debug)
-        debug_allocator.allocator()
-    else if (builtin.mode == .ReleaseFast)
-        std.heap.smp_allocator // allocator optimized for release-fast
-    else
-        std.heap.c_allocator;
+    if (is_debug and builtin.link_libc)
+        debug_allocator.backing_allocator = std.heap.c_allocator;
+    defer if (is_debug) {
+        _ = debug_allocator.deinit();
+    };
 
     // =-= plugin setup =-=
 
