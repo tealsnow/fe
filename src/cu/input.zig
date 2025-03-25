@@ -1,5 +1,5 @@
 const std = @import("std");
-const sdl = @import("sdl");
+const sdl = @import("sdl3");
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 

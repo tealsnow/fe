@@ -31,9 +31,9 @@ pub fn build(b: *std.Build) void {
         break :schema mod;
     };
 
-    const sdl = sdl: {
+    const sdl3 = sdl3: {
         const mod = b.createModule(.{
-            .root_source_file = b.path("src/sdl/sdl.zig"),
+            .root_source_file = b.path("src/sdl3/sdl3.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -41,16 +41,16 @@ pub fn build(b: *std.Build) void {
         mod.linkSystemLibrary("sdl3", .{ .needed = true });
         mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
 
-        const sdl = b.addLibrary(.{
+        const sdl3 = b.addLibrary(.{
             .name = "sdl3",
             .root_module = mod,
 
             .use_llvm = use_llvm,
             .use_lld = use_llvm,
         });
-        b.installArtifact(sdl);
+        b.installArtifact(sdl3);
 
-        break :sdl sdl;
+        break :sdl3 sdl3;
     };
 
     const cu = cu: {
@@ -59,8 +59,8 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         });
-        mod.addImport("sdl", sdl.root_module);
-        mod.linkLibrary(sdl);
+        mod.addImport("sdl3", sdl3.root_module);
+        mod.linkLibrary(sdl3);
 
         const cu = b.addLibrary(.{
             .name = "cu",
@@ -83,8 +83,8 @@ pub fn build(b: *std.Build) void {
         mod.link_libc = true;
         mod.linkSystemLibrary("fontconfig", .{ .needed = true });
 
-        mod.addImport("sdl", sdl.root_module);
-        mod.linkLibrary(sdl);
+        mod.addImport("sdl3", sdl3.root_module);
+        mod.linkLibrary(sdl3);
 
         mod.addImport("cu", cu.root_module);
         mod.linkLibrary(cu);

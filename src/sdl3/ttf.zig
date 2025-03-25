@@ -1,12 +1,15 @@
-const std = @import("std");
+const c = @cImport({
+    @cInclude("SDL3_ttf/SDL_ttf.h");
+});
 
-const sdl = @import("sdl.zig");
-const c = sdl.c;
+const sdl = @import("sdl3.zig");
+const Color = sdl.Color;
+const Surface = sdl.Surface;
 
 pub const Error = error{sdl_ttf};
 
-pub fn init() !void {
-    if (!c.TTF_Init()) return error.ttf_init;
+pub fn init() Error!void {
+    if (!c.TTF_Init()) return error.sdl_ttf;
 }
 
 pub fn quit() void {
@@ -14,7 +17,7 @@ pub fn quit() void {
 }
 
 pub const Font = opaque {
-    pub fn open(file: [:0]u8, ptsize: f32) !*Font {
+    pub fn open(file: [:0]u8, ptsize: f32) Error!*Font {
         const font = c.TTF_OpenFont(file, ptsize) orelse return error.sdl_ttf;
         return @ptrCast(font);
     }
@@ -23,7 +26,7 @@ pub const Font = opaque {
         c.TTF_CloseFont(@ptrCast(self));
     }
 
-    pub fn renderTextLCD(self: *Font, text: []const u8, fg: sdl.Color, bg: sdl.Color) Error!*sdl.Surface {
+    pub fn renderTextLCD(self: *Font, text: []const u8, fg: Color, bg: Color) Error!*Surface {
         const surface = c.TTF_RenderText_LCD(
             @ptrCast(self),
             text.ptr,

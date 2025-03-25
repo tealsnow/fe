@@ -29,7 +29,7 @@ const assert = std.debug.assert;
 
 const cu = @import("cu");
 
-const sdl = @import("sdl");
+const sdl = @import("sdl3");
 const fc = @import("fontconfig.zig");
 
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
@@ -42,9 +42,9 @@ pub const std_options = std.Options{
 
 pub fn main() !void {
     run() catch |err| {
-        const sdl_err = sdl.getError();
-        if (sdl_err.len > 0) {
-            std.log.err("[SDL]: {s}", .{sdl_err});
+        if (sdl.getError()) |e| {
+            std.log.err("[SDL]: {s}", .{e});
+            sdl.clearError() catch {};
         }
 
         plugins.printLastWasmError();
@@ -92,12 +92,13 @@ pub fn run() !void {
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
-    const window_size = sdl.Window.Size{ .w = 800, .h = 600 };
-    const window = try sdl.Window.init(.{
-        .title = "fe",
-        .size = window_size,
-        .flags = sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
-    });
+    const window_size = cu.axis2(@as(c_int, 800), 600);
+    const window = try sdl.Window.init(
+        "fe",
+        window_size.w,
+        window_size.h,
+        sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
+    );
     defer window.deinit();
 
     const renderer = try sdl.Renderer.init(window, null);

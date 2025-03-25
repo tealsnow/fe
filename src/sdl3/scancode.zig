@@ -1,4 +1,6 @@
-const c = @import("sdl.zig").c;
+const c = @cImport({
+    @cInclude("SDL3/SDL_scancode.h");
+});
 
 pub const Scancode = enum(c_int) {
     unknown = c.SDL_SCANCODE_UNKNOWN,

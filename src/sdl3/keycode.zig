@@ -1,4 +1,6 @@
-const c = @import("sdl.zig").c;
+const c = @cImport({
+    @cInclude("SDL3/SDL_keycode.h");
+});
 
 pub const Keycode = enum(c_int) {
     unknown = c.SDLK_UNKNOWN,

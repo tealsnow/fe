@@ -3,7 +3,7 @@ const Renderer = @This();
 const std = @import("std");
 const fc = @import("fontconfig.zig");
 
-const sdl = @import("sdl");
+const sdl = @import("sdl3");
 const cu = @import("cu");
 
 sdl_rend: *sdl.Renderer,
