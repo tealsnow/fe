@@ -18,6 +18,12 @@ pub fn build(b: *std.Build) void {
         wasmtime.dependOn(&wasmtime_step.step);
     }
 
+    const fmt_step = b.addFmt(.{
+        .check = true,
+        .paths = &.{"src/"},
+    });
+    b.getInstallStep().dependOn(&fmt_step.step);
+
     const plugin_schema = schema: {
         const mod = b.createModule(.{
             .root_source_file = b.path("src/plugin-schema/schema.zig"),
