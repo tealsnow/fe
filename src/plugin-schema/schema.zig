@@ -19,16 +19,4 @@ pub const PluginSchema = struct {
     pub fn semanticVersion(schema: PluginSchema) !std.SemanticVersion {
         return .parse(schema.version);
     }
-
-    /// free slices when loaded dynamically through `std.zon.parse.fromSlice`
-    pub fn deinit(schema: PluginSchema, allocator: std.mem.Allocator) void {
-        allocator.free(schema.id);
-        allocator.free(schema.name);
-        allocator.free(schema.version);
-        allocator.free(schema.description);
-        for (schema.authors) |author| {
-            allocator.free(author);
-        }
-        allocator.free(schema.authors);
-    }
 };

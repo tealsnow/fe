@@ -249,7 +249,7 @@ pub const Plugin = struct {
         defer plugin.* = undefined;
         defer plugin.linker.deinit();
         defer plugin.module.deinit();
-        defer plugin.schema.deinit(allocator);
+        defer std.zon.parse.free(allocator, plugin.schema);
     }
 
     fn loadSchema(
