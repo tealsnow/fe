@@ -151,9 +151,9 @@ fn sdlRectFromCuRect(rect: cu.Range2(f32)) sdl.FRect {
 }
 
 /// ensure fonconfig is initialized
-pub fn createFontFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8, ptsize: f32) !*sdl.ttf.Font {
-    const path = try getFontPathFromFamilyName(allocator, family);
-    defer allocator.free(path);
+pub fn createFontFromFamilyName(gpa: std.mem.Allocator, family: [:0]const u8, ptsize: f32) !*sdl.ttf.Font {
+    const path = try getFontPathFromFamilyName(gpa, family);
+    defer gpa.free(path);
     return try sdl.ttf.Font.open(path, ptsize);
 }
 

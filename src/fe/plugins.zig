@@ -374,7 +374,7 @@ pub const PluginHost = struct {
     context: *wasm.Context,
     plugins: []Plugin,
 
-    pub fn init(allocator: std.mem.Allocator) !PluginHost {
+    pub fn init(gpa: std.mem.Allocator) !PluginHost {
         log.info("setup engine, store and context", .{});
         const engine = try wasm.Engine.init();
         const store = try wasm.Store.init(engine, null, null);
@@ -392,7 +392,7 @@ pub const PluginHost = struct {
         log.info("set wasi to context", .{});
         try context.setWasi(wasi_config);
 
-        var plugins = std.ArrayList(Plugin).init(allocator);
+        var plugins = std.ArrayList(Plugin).init(gpa);
         log.info("finding plugins", .{});
 
         const cwd = std.fs.cwd();
@@ -406,7 +406,7 @@ pub const PluginHost = struct {
             defer plugin_dir.close();
 
             log.info("setting up plugin in dir: '{s}'", .{entry.name});
-            const plugin = try Plugin.init(allocator, engine, context, plugin_dir);
+            const plugin = try Plugin.init(gpa, engine, context, plugin_dir);
             log.info("finshed setting up plugin in dir: '{s}'", .{entry.name});
 
             try plugins.append(plugin);
@@ -421,12 +421,12 @@ pub const PluginHost = struct {
         };
     }
 
-    pub fn deinit(host: PluginHost, allocator: std.mem.Allocator) void {
+    pub fn deinit(host: PluginHost, gpa: std.mem.Allocator) void {
         defer host.engine.deinit();
         defer host.store.deinit();
-        defer allocator.free(host.plugins);
+        defer gpa.free(host.plugins);
         defer for (host.plugins) |*plugin| {
-            plugin.deinit(allocator);
+            plugin.deinit(gpa);
         };
     }
 };

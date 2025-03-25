@@ -1,6 +1,4 @@
 // @TODO:
-//   @[ ]: rename general purpose allocator instances to gpa,
-//     this is aligned with zig's std and is more convienient
 //   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
@@ -22,6 +20,8 @@
 //     @[ ]: rounding
 //   @[x]: floating
 //   @[x]: text padding
+//   @[x]: rename general purpose allocator instances to gpa,
+//     this is aligned with zig's std and is more convienient
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -63,7 +63,7 @@ var debug_allocator = std.heap.DebugAllocator(.{
 pub fn run() !void {
     // =-= allocator setup =-=
 
-    const allocator, const is_debug = gpa: {
+    const gpa, const is_debug = gpa: {
         if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
         break :gpa switch (builtin.mode) {
             .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
@@ -78,8 +78,8 @@ pub fn run() !void {
 
     // =-= plugin setup =-=
 
-    const host = try plugins.PluginHost.init(allocator);
-    defer host.deinit(allocator);
+    const host = try plugins.PluginHost.init(gpa);
+    defer host.deinit(gpa);
 
     const plugin = &host.plugins[0];
     try plugins.doTest(plugin);
@@ -115,9 +115,9 @@ pub fn run() !void {
         const font_size = 13;
 
         const default =
-            try CuSdlRenderer.createFontFromFamilyName(allocator, "sans", font_size);
+            try CuSdlRenderer.createFontFromFamilyName(gpa, "sans", font_size);
         const monospace =
-            try CuSdlRenderer.createFontFromFamilyName(allocator, "monospace", font_size);
+            try CuSdlRenderer.createFontFromFamilyName(gpa, "monospace", font_size);
 
         break :blk .{ default, monospace };
     };
@@ -128,7 +128,7 @@ pub fn run() !void {
 
     // =-= cu setup =-=
 
-    try cu.state.init(allocator, CuSdlRenderer.Callbacks.callbacks);
+    try cu.state.init(gpa, CuSdlRenderer.Callbacks.callbacks);
     defer cu.state.deinit();
 
     const default_font =
@@ -512,7 +512,7 @@ fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*a
 
     const w, const h = window.getSize() catch @panic("could not get window size in hit test");
 
-    const padding = 6;
+    const padding = 4;
 
     const in_left = point.x < padding;
     const in_right = point.x > w - padding;

@@ -67,15 +67,15 @@ pub const EventPool = std.heap.MemoryPoolExtra(cu.Event, .{ .growable = true });
 
 pub fn init(
     self: *State,
-    allocator: Allocator,
+    gpa: Allocator,
     callbacks: Callbacks,
 ) !void {
     self.* = .{
         .callbacks = callbacks,
 
-        .arena = std.heap.ArenaAllocator.init(allocator),
+        .arena = std.heap.ArenaAllocator.init(gpa),
         .alloc_temp = undefined,
-        .alloc_persistent = allocator,
+        .alloc_persistent = gpa,
 
         .atom_pool = undefined,
         .atom_parent_stack = undefined,
