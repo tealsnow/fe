@@ -1,8 +1,11 @@
 const std = @import("std");
+const log = std.log.scoped(.@"cu::input");
+
 const sdl = @import("sdl3");
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 
+// @TODO: remove reliance on sdl
 pub const Event = struct {
     kind: Kind,
     key: struct {
@@ -15,17 +18,17 @@ pub const Event = struct {
         .mod = .{},
     },
     button: MouseButton = .none,
-    button_clicks: u8 = 0,
     state: PressState = .none,
     pos: cu.Vec2(f32) = .zero,
     scroll: cu.Vec2(f32) = .zero,
     text: []const u8 = "",
 
+    timestamp_us: u64 = 0, // populated by pushEvent
     consumed: bool = false,
 
     pub const Kind = enum {
         key_press, // key, state
-        mouse_press, // button, button_clicks, state, pos
+        mouse_press, // button, state, pos
         mouse_move, // pos
         scroll, // scroll, pos
         text_input, // text
@@ -46,6 +49,8 @@ pub const MouseButton = enum(u8) {
     forward,
     back,
     _,
+
+    pub const array = [_]MouseButton{ .left, .middle, .right, .forward, .back };
 };
 
 pub const InteractionFlags = packed struct(u32) {
@@ -172,6 +177,19 @@ pub const InteractionFlags = packed struct(u32) {
     pub inline fn isDragging(self: InteractionFlags) bool {
         return self.containsAny(.dragging);
     }
+
+    pub inline fn buttonPressed(f: InteractionFlags, button: MouseButton) bool {
+        return switch (button) {
+            .left, .middle, .right => {
+                const button_int: u5 = @intCast(@intFromEnum(button));
+                const base_int: u32 = @bitCast(InteractionFlags{ .left_pressed = true });
+                const f_int: u32 = @bitCast(f);
+                return (f_int & (base_int << button_int)) != 0;
+            },
+            .back, .forward => false,
+            else => false,
+        };
+    }
 };
 
 pub const Interation = struct {
@@ -180,6 +198,23 @@ pub const Interation = struct {
     modifiers: sdl.Keymod = .{},
     f: InteractionFlags = .{},
 };
+
+fn setButtonGeneric(
+    f: InteractionFlags,
+    base: InteractionFlags,
+    button: MouseButton,
+) InteractionFlags {
+    switch (button) {
+        .left, .middle, .right => {
+            const f_int: u32 = @bitCast(f);
+            const base_int: u32 = @bitCast(base);
+            const button_int: u5 = @intCast(@intFromEnum(button));
+            return @bitCast(f_int | (base_int << button_int));
+        },
+        .back, .forward => return f, // @TODO
+        else => return f,
+    }
+}
 
 pub fn interationFromAtom(atom: *Atom) Interation {
     var inter = Interation{ .atom = atom };
@@ -220,50 +255,67 @@ pub fn interationFromAtom(atom: *Atom) Interation {
         }
 
         const in_bounds = !blacklist_rect.contains(event.pos) and rect.contains(event.pos);
+        const button_idx = @intFromEnum(event.button);
 
-        // mouse down in box -> set box as 'active' -> press event
+        // mouse down in box -> set box as hot/active -> press event
         if (atom.flags.mouse_clickable and
             event.state == .pressed and
             in_bounds and
             event.button != .none)
         {
-            cu.state.hot_atom_key = atom.key;
-            cu.state.active_atom_key = atom.key;
+            event.consumed = true;
 
-            switch (event.button) {
-                .left => inter.f.left_pressed = true,
-                .middle => inter.f.middle_pressed = true,
-                .right => inter.f.right_pressed = true,
-                .back => {},
-                .forward => {},
-                else => {},
+            cu.state.hot_atom_key = atom.key;
+            cu.state.active_atom_key[button_idx] = atom.key;
+
+            cu.state.start_drag_pos = event.pos;
+
+            inter.f = setButtonGeneric(inter.f, .{ .left_pressed = true }, event.button);
+
+            const double_click_time_us = cu.state.graphics_info.double_click_time_us;
+
+            const last_pressed_key =
+                cu.state.press_history_key[button_idx].indexBack(0) orelse Atom.Key.nil;
+            const last_pressed_timestamp_us =
+                cu.state.press_history_timestamp_us[button_idx].indexBack(0) orelse std.math.maxInt(u64);
+
+            if (Atom.Key.eql(atom.key, last_pressed_key) and
+                event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us)
+            {
+                inter.f = setButtonGeneric(inter.f, .{ .left_double_clicked = true }, event.button);
             }
 
-            // drag_start_pos = event.pos
+            const last_last_pressed_key =
+                cu.state.press_history_key[button_idx].indexBack(1) orelse Atom.Key.nil;
+            const last_last_pressed_timestamp_us =
+                cu.state.press_history_timestamp_us[button_idx].indexBack(1) orelse std.math.maxInt(u64);
 
-            event.consumed = true;
+            if (Atom.Key.eql(atom.key, last_pressed_key) and
+                Atom.Key.eql(atom.key, last_last_pressed_key) and
+                event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us and
+                last_pressed_timestamp_us - last_last_pressed_timestamp_us <= double_click_time_us)
+            {
+                inter.f = setButtonGeneric(inter.f, .{ .left_triple_clicked = true }, event.button);
+            }
+
+            cu.state.press_history_timestamp_us[button_idx].push(event.timestamp_us);
+            cu.state.press_history_key[button_idx].push(atom.key);
         }
 
-        // mouse in/out release in box -> unset as 'active' -> release (and maybe click) event
+        // mouse in/out release in box -> unset as active -> release (and maybe click) event
         if (atom.flags.mouse_clickable and
             event.state == .released and
-            cu.state.active_atom_key.eql(atom.key) and
-            event.button != .none)
+            event.button != .none and
+            cu.state.active_atom_key[button_idx].eql(atom.key))
         {
-            cu.state.active_atom_key = .nil;
+            cu.state.active_atom_key[button_idx] = .nil;
 
             const click = in_bounds;
-            if (click)
-                cu.state.hot_atom_key = .nil;
+            if (click) cu.state.hot_atom_key = .nil;
 
-            switch (event.button) {
-                .left => inter.f = inter.f.combine(.{ .left_released = true, .left_clicked = click }),
-                .middle => inter.f = inter.f.combine(.{ .middle_released = true, .middle_clicked = click }),
-                .right => inter.f = inter.f.combine(.{ .right_released = true, .right_clicked = click }),
-                .back => {},
-                .forward => {},
-                else => {},
-            }
+            inter.f = setButtonGeneric(inter.f, .{ .left_released = true }, event.button);
+            if (click)
+                inter.f = setButtonGeneric(inter.f, .{ .left_clicked = true }, event.button);
 
             event.consumed = true;
         }
@@ -274,13 +326,32 @@ pub fn interationFromAtom(atom: *Atom) Interation {
     }
 
     // mouse over atom, without any other hot key -> set hot, mark hovering
-    if (atom.flags.mouse_clickable and
-        inter.f.mouse_over and
-        (cu.state.hot_atom_key.eql(.nil) or cu.state.hot_atom_key.eql(atom.key)) and
-        (cu.state.active_atom_key.eql(.nil) or cu.state.active_atom_key.eql(atom.key)))
     {
-        cu.state.hot_atom_key = atom.key;
-        inter.f.hovering = true;
+        if (atom.flags.mouse_clickable and
+            inter.f.mouse_over and
+            (cu.state.hot_atom_key.eql(.nil) or cu.state.hot_atom_key.eql(atom.key)))
+        {
+            var none_active_or_we_are_active = true;
+            for (cu.state.active_atom_key) |key| {
+                none_active_or_we_are_active = none_active_or_we_are_active and (key == .nil or key.eql(atom.key));
+            }
+            if (none_active_or_we_are_active) {
+                cu.state.hot_atom_key = atom.key;
+                inter.f.hovering = true;
+            }
+        }
+    }
+
+    // active -> dragging
+    if (atom.flags.mouse_clickable) {
+        for (MouseButton.array) |button| {
+            const idx = @intFromEnum(button);
+            if (Atom.Key.eql(atom.key, cu.state.active_atom_key[idx]) or
+                inter.f.buttonPressed(button))
+            {
+                inter.f = setButtonGeneric(inter.f, .{ .left_dragging = true }, button);
+            }
+        }
     }
 
     if (!ctx_menu_is_ancestor and inter.f.containsAny(.{ .left_pressed = true, .right_pressed = true, .middle_pressed = true })) {

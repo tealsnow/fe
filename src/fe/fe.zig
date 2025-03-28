@@ -1,5 +1,6 @@
 // @TODO:
-//   @[ ]: use a panicing allocators instead of 'catch @panic()' everywhere ?
+//   @[ ]: plugins: pass guest function to host to call
+//   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
 //   @[ ]: focus behaviour
@@ -57,6 +58,10 @@ pub fn main() !void {
 
         return err;
     };
+
+    // run() should not return in release mode
+    assert(builtin.mode == .Debug);
+    log.debug("finished quitting, bye-bye", .{});
 }
 
 var debug_allocator = std.heap.DebugAllocator(.{
@@ -68,6 +73,7 @@ var debug_allocator = std.heap.DebugAllocator(.{
 
 pub fn run() !void {
     // =-= allocator setup =-=
+    log.debug("initializing allocator", .{});
 
     const gpa, const is_debug = gpa: {
         if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
@@ -82,7 +88,8 @@ pub fn run() !void {
         _ = debug_allocator.deinit();
     };
 
-    // =-= plugin setup =-=
+    // // =-= plugin setup =-=
+    log.info("setting up plugins", .{});
 
     const host = try plugins.PluginHost.init(gpa);
     defer host.deinit(gpa);
@@ -91,6 +98,11 @@ pub fn run() !void {
     try plugins.doTest(plugin);
 
     // =-= sdl window and renderer setup =-=
+    log.debug("initilizing sdl", .{});
+
+    _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_APP_ID, "me.ketanr.fe");
+    _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
+    _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_PREFER_LIBDECOR, "0");
 
     try sdl.init(sdl.InitFlag.all);
     defer sdl.quit();
@@ -98,12 +110,14 @@ pub fn run() !void {
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
+    log.debug("creating window", .{});
     const window_size = cu.axis2(@as(c_int, 800), 600);
     const window = try sdl.Window.init(
         "fe",
         window_size.w,
         window_size.h,
         sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
+        // sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable,
     );
     defer window.deinit();
     try window.setHitTest(&windowHitTestCallback, null);
@@ -113,6 +127,7 @@ pub fn run() !void {
 
     // =-= font setup =-=
 
+    log.debug("setting up fonts", .{});
     var default_font_handle, var monospace_font_handle = blk: {
         // ensure fonconfig is initialized
         try fc.init();
@@ -133,6 +148,7 @@ pub fn run() !void {
     }
 
     // =-= cu setup =-=
+    log.debug("initializing cu", .{});
 
     try cu.state.init(gpa, CuSdlRenderer.Callbacks.callbacks);
     defer cu.state.deinit();
@@ -168,24 +184,36 @@ pub fn run() !void {
     try sdl.Event.push(.mkWindow(.window_resized, window.getID(), window_size.w, window_size.h));
 
     // =-= main loop =-=
+    log.debug("starting main loop", .{});
 
-    var running = true;
-    while (running) {
+    var dbg_running = if (is_debug) true else void{};
+    while (if (is_debug) dbg_running else true) {
         // frame stuff
         const current_time = try std.time.Instant.now();
         const delta_time_ns = current_time.since(previous_time);
         previous_time = current_time;
 
-        const delta_time_ms = delta_time_ns / 1_000_000;
-        const fps = 1e9 / @as(f32, @floatFromInt(delta_time_ns));
+        const delta_time_ms = delta_time_ns / std.time.ns_per_ms;
+        const fps = @as(f32, std.time.ns_per_s) / @as(f32, @floatFromInt(delta_time_ns));
         fps_buffer.push(fps);
 
         const uptime_s = current_time.since(app_start_time) / std.time.ns_per_s;
 
-        // process input
+        // process events
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
             switch (event.type) {
-                .quit => running = false,
+                .quit => {
+                    log.info("recived quit request", .{});
+
+                    if (is_debug) {
+                        log.debug("debug mode quit, cleaning up...", .{});
+                        dbg_running = false;
+                    } else {
+                        log.debug("release mode quit, exiting immediatly", .{});
+                        std.debug.lockStdErr();
+                        std.process.exit(0);
+                    }
+                },
 
                 .key_down, .key_up => key: {
                     const key = event.key;
@@ -203,7 +231,6 @@ pub fn run() !void {
 
                     switch (key.scancode) {
                         .escape => {
-                            // running = false;
                             try sdl.Event.push(.mkQuit());
                         },
                         .minus => {
@@ -246,7 +273,6 @@ pub fn run() !void {
                     cu.state.pushEvent(.{
                         .kind = .mouse_press,
                         .button = button_kind,
-                        .button_clicks = button.clicks,
                         .state = if (button.down) .pressed else .released,
                         .pos = .vec(button.x, button.y),
                     });
@@ -326,12 +352,19 @@ pub fn run() !void {
                 }
             }
 
-            const spacer = cu.build("topbar spacer");
-            spacer.pref_size = .square(.grow);
-            spacer.flags = spacer.flags.windowDraggable();
+            {
+                const topbar_space = cu.build("topbar spacer");
+                topbar_space.pref_size = .square(.grow);
+                topbar_space.flags = topbar_space.flags.clickable();
 
-            if (spacer.interation().f.left_double_clicked) {
-                std.log.debug("spacer double click", .{});
+                const inter = topbar_space.interation();
+                if (inter.f.left_double_clicked) {
+                    if (window.getFlags() & sdl.WindowFlag.maximized == 0) {
+                        try window.maximize();
+                    } else {
+                        try window.restore();
+                    }
+                }
             }
 
             for (0..3) |i| {
@@ -398,9 +431,15 @@ pub fn run() !void {
                         _ = cu.labelf("fps: {d:.2}", .{fps});
                         _ = cu.labelf("ave fps: {d:.2}", .{fps_buffer.average()});
                         _ = cu.labelf("frame time: {d:.2}ms", .{delta_time_ms});
+                        _ = cu.labelf("frame time: {d:.2}ns", .{delta_time_ns});
                         _ = cu.labelf("uptime: {d:.2}s", .{uptime_s});
                         _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
                         _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
+                    }
+
+                    {
+                        const spacer = cu.spacer(.axis(.grow, .text));
+                        spacer.display_string = " ";
                     }
 
                     _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
@@ -408,8 +447,24 @@ pub fn run() !void {
                     _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
                     _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
 
-                    const active = cu.state.atom_map.get(cu.state.active_atom_key);
-                    _ = cu.labelf("active atom: {?}", .{active});
+                    {
+                        const spacer = cu.spacer(.axis(.grow, .text));
+                        spacer.display_string = " ";
+                    }
+
+                    var an_active_atom = false;
+                    for (cu.state.active_atom_key, 0..) |key, i| {
+                        if (key != .nil) {
+                            const button: cu.MouseButton = @enumFromInt(i);
+                            const active = cu.state.atom_map.get(key).?;
+                            _ = cu.labelf("active atom: [{s}] {?}", .{ @tagName(button), active });
+
+                            an_active_atom = true;
+                        }
+                    }
+                    if (!an_active_atom)
+                        _ = cu.label("active atom: none");
+
                     const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
                     const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
                     hot_lbl.flags.draw_text_weak = true;
@@ -441,7 +496,7 @@ pub fn run() !void {
                         float.layout_axis = .y;
                         float.pref_size = .square(.fit);
 
-                        float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).asAxis();
+                        float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).intoAxis();
 
                         _ = cu.label("tool tip!");
                         _ = cu.label("extra tips!");
@@ -488,7 +543,7 @@ pub fn run() !void {
         try cu_sdl_renderer.render();
     }
 
-    std.process.cleanExit();
+    if (!is_debug) unreachable;
 }
 
 pub const FpsCircleBuffer = struct {
@@ -516,60 +571,86 @@ pub const FpsCircleBuffer = struct {
 fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*anyopaque) callconv(.c) sdl.HitTestResult {
     _ = data;
 
+    // I cannot for the life of me figure out a way to get window dragging/
+    // moving working.
+    //
+    // If I set the titlebar to be a draggable area in here then we don't get
+    // click events, okay so we set it to the empty space only.
+    // Oh well now we cannot maximize/restore on a double click since we never
+    // get such events.
+    //
+    // Okay so what if we set the area to be draggable dynamically?
+    // We deal with double clicks just fine and when we detect a drag from our
+    // end we can set a flag to set the area as draggable in the hit test.
+    // Oh but now thats not working. Sometimes it works, but most the time
+    // nothing happens.
+    //
+    // What about calling `SDL_SetWindowPosition`? Nope, wayland doesn't
+    // support it and on x11 its laggy as heck.
+    //
+    // **So we're just shit outa luck huh? Yes - at least with sdl.**
+    //
+    // We can path on a platform specific solution to sdl. Not easy.
+    // or we can give up on sdl and use something else
+    // This is one of many reminders that sdl is built for gamse not
+    // applications. Look at the note below about the resize handles
+    //
+    // What else then?
+    // Or we could implement it all our self like zed.
+    // We could go the ghostty route - custom-ish.
+    //
+    // It seams ghostty starts off with glfw and incrementally uses native apis:
+    // https://github.com/ghostty-org/ghostty/discussions/2563
+    // It is a good example of how we would do it in zig.
+    //
+    // Code of note from Zed custom implmentation:
+    // https://github.com/zed-industries/zed/blob/68d453da52df43390be0d69ab33d42f78a694e43/crates/gpui/src/platform/linux/wayland/window.rs#L979
+    // https://github.com/zed-industries/zed/blob/68d453da52df43390be0d69ab33d42f78a694e43/crates/gpui/src/platform/linux/x11/window.rs#L1428
+    //
+    // Looking at Zed's implementation, only x11 and wayland support this
+    // `window.start_window_move` method. MacOs and Windows must have another
+    // mechainisim for this. We could investigate further by looking into
+    // how the titlebar is implemented for these platforms.
+    //
+    // For now we'll continue to use sdl3, maybe we can investigate using glfw
+    // once we have gpu rendering.
+    // Then we can investigate using gtk/adwaita for a native linux experience.
+    // And also investiagte a custom implementation like Zed
+
+    // @NOTE: Looking at how this works in gnome as compared to other
+    //  applications the handles are on the outside of the window for others.
+    //
+    //  This includes: Ghostty (uses gtk/adwaita), Zed (wayland direct) and
+    //  Zen browser (firefox: probably wayland direct)
+    //
+    //  Ghostty uses a gtk/adwaita titlebar, client-side nether the less,
+    //  Zed uses a wholly custom titlebar and
+    //  Zen uses a custom (even from firefox) titlebar
+    //
+    //  And these windows are rounded unlike ours.
+    //
+    //  If we don't set the window to borderless sdl will use libdecor on both
+    //  x11 and wayland providing the out-of-window resizing.
+    //  It does not seem there is any way to hook into this useage of libdecor
+    //  to customize it any way.
+    if (window.getFlags() & sdl.WindowFlag.borderless == 0)
+        return .normal;
+
     const w, const h = window.getSize() catch @panic("could not get window size in hit test");
 
     const padding = 4;
-
     const in_left = point.x < padding;
     const in_right = point.x > w - padding;
     const in_top = point.y < padding;
     const in_bottom = point.y > h - padding;
 
-    const draggable = drag: {
-        if (!cu.state.ui_built) break :drag false;
-
-        // @TODO: Find all draggable atoms and set to false when inside non draggable children
-        if (findDraggableAtom(cu.state.ui_root)) |atom| {
-            const pt = cu.vec2(@as(f32, @floatFromInt(point.x)), @floatFromInt(point.y));
-            break :drag atom.rect.contains(pt);
-        }
-
-        break :drag false;
-    };
-
-    return if (in_top and in_left)
-        .resize_topleft
-    else if (in_top and in_right)
-        .resize_topright
-    else if (in_bottom and in_left)
-        .resize_bottomleft
-    else if (in_bottom and in_right)
-        .resize_bottomright
-    else if (in_bottom)
-        .resize_bottom
-    else if (in_top)
-        .resize_top
-    else if (in_left)
-        .resize_left
-    else if (in_right)
-        .resize_right
-        // else if (point.y < 24)
-    else if (draggable)
-        .draggable
-    else
-        .normal;
-}
-
-fn findDraggableAtom(root: *cu.Atom) ?*cu.Atom {
-    if (root.children) |children| {
-        var maybe_child: ?*cu.Atom = children.first;
-        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            if (child.flags.window_draggable) {
-                return child;
-            }
-
-            if (findDraggableAtom(child)) |draggable| return draggable;
-        }
-    }
-    return null;
+    return if (in_top and in_left) .resize_topleft //
+    else if (in_top and in_right) .resize_topright //
+    else if (in_bottom and in_left) .resize_bottomleft //
+    else if (in_bottom and in_right) .resize_bottomright //
+    else if (in_top) .resize_top //
+    else if (in_bottom) .resize_bottom //
+    else if (in_left) .resize_left //
+    else if (in_right) .resize_right //
+    else .normal;
 }

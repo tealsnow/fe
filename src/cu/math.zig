@@ -7,17 +7,22 @@ pub fn Vec2(comptime T: type) type {
 
         const Self = @This();
         pub const zero = std.mem.zeroes(Self);
-        pub const inf = vec(std.math.inf(T), std.math.inf(T));
+        pub const inf = splat(std.math.inf(T));
+        pub const nan = splat(std.math.nan(T));
 
         pub inline fn vec(x: T, y: T) Self {
             return .{ .x = x, .y = y };
         }
 
         pub inline fn square(s: T) Self {
-            return .vec(s, s);
+            return .splat(s);
         }
 
-        pub inline fn asAxis(self: Self) Axis2(T) {
+        pub inline fn splat(v: T) Self {
+            return .vec(v, v);
+        }
+
+        pub inline fn intoAxis(self: Self) Axis2(T) {
             return .axis(self.x, self.y);
         }
 
@@ -31,6 +36,11 @@ pub fn Vec2(comptime T: type) type {
 
         pub inline fn sub(self: Self, other: Self) Self {
             return .{ .x = self.x - other.x, .y = self.y - other.y };
+        }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = options;
+            try writer.print("Vec2({s}){{ .x = {" ++ fmt ++ "}, .y = {" ++ fmt ++ "} }}", .{ @typeName(T), self.x, self.y });
         }
     };
 }
@@ -47,14 +57,27 @@ pub fn Vec3(comptime T: type) type {
 
         const Self = @This();
         pub const zero = std.mem.zeroes(Self);
-        pub const inf = vec(std.math.inf(T), std.math.inf(T), std.math.inf(T));
+        pub const inf = splat(std.math.inf(T));
+        pub const nan = splat(std.math.nan(T));
 
         pub inline fn vec(x: T, y: T, z: T) Self {
             return .{ .x = x, .y = y, .z = z };
         }
 
+        pub inline fn splat(v: T) Self {
+            return .vec(v, v, v);
+        }
+
         pub inline fn arr(self: *Self) *[3]T {
             return @ptrCast(self);
+        }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = options;
+            try writer.print(
+                "Vec3({s}){{ .x = {" ++ fmt ++ "}, .y = {" ++ fmt ++ "}, .z = {" ++ fmt ++ "} }}",
+                .{ @typeName(T), self.x, self.y, self.z },
+            );
         }
     };
 }
@@ -72,14 +95,27 @@ pub fn Vec4(comptime T: type) type {
 
         const Self = @This();
         pub const zero = std.mem.zeroes(Self);
-        pub const inf = vec(std.math.inf(T), std.math.inf(T), std.math.inf(T), std.math.inf(T));
+        pub const inf = splat(std.math.inf(T));
+        pub const nan = splat(std.math.nan(T));
 
         pub inline fn vec(x: T, y: T, z: T, w: T) Self {
             return .{ .x = x, .y = y, .z = z, .w = w };
         }
 
+        pub inline fn splat(v: T) Self {
+            return .vec(v, v, v, v);
+        }
+
         pub inline fn arr(self: *Self) *[4]T {
             return @ptrCast(self);
+        }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = options;
+            try writer.print(
+                "Vec4({s}){{ .x = {" ++ fmt ++ "}, .y = {" ++ fmt ++ "}, .z = {" ++ fmt ++ "}, .w = {" ++ fmt ++ "} }}",
+                .{ @typeName(T), self.x, self.y, self.z, self.w },
+            );
         }
     };
 }
@@ -95,12 +131,13 @@ pub fn Axis2(comptime T: type) type {
 
         const Self = @This();
         pub const zero = std.mem.zeroes(Self);
-        pub const inf = axis(std.math.inf(T), std.math.inf(T));
+        pub const inf = splat(std.math.inf(T));
+        pub const nan = splat(std.math.nan(T));
 
         pub const Kind = enum(u2) {
+            none = std.math.maxInt(u2),
             x = 0,
             y,
-            none = std.math.maxInt(u2),
 
             pub const w = Kind.x;
             pub const h = Kind.y;
@@ -112,20 +149,29 @@ pub fn Axis2(comptime T: type) type {
             return .{ .w = w, .h = h };
         }
 
-        pub inline fn square(l: T) Self {
-            return .{ .w = l, .h = l };
+        pub inline fn splat(v: T) Self {
+            return axis(v, v);
         }
 
-        pub inline fn asVec(self: Self) Vec2(T) {
-            return .{ .x = self.w, .y = self.h };
+        pub inline fn square(l: T) Self {
+            return splat(l);
         }
 
         pub inline fn arr(self: *Self) *[2]T {
             return @ptrCast(self);
         }
 
-        pub inline fn asArr(self: Self) [2]T {
+        pub inline fn intoVec(self: Self) Vec2(T) {
+            return .{ .x = self.w, .y = self.h };
+        }
+
+        pub inline fn intoArr(self: Self) [2]T {
             return @bitCast(self);
+        }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = options;
+            try writer.print("Axis2({s}){{ .w = {" ++ fmt ++ "}, .h = {" ++ fmt ++ "} }}", .{ @typeName(T), self.w, self.h });
         }
     };
 }
@@ -184,6 +230,14 @@ pub fn Range2(comptime T: type) type {
                 @max(a.p0.y, b.p0.y),
                 @min(a.p1.x, b.p1.x),
                 @min(a.p1.y, b.p1.y),
+            );
+        }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = options;
+            try writer.print(
+                "Range2({s}){{ .p0 = {" ++ fmt ++ "}, .p1 = {" ++ fmt ++ "} }}",
+                .{ @typeName(T), self.p0, self.p1 },
             );
         }
     };

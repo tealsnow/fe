@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const log = std.log.scoped(.@"cu::layout");
 
 const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
@@ -221,9 +222,10 @@ fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
     if (allow_overflow) {
         var maybe_child: ?*Atom = children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            switch (child.pref_size.arr()[axis].kind) {
+            const pref_size = child.pref_size.arr()[axis];
+            switch (pref_size.kind) {
                 .percent_of_parent => {
-                    child.fixed_size.arr()[axis] = root.fixed_size.arr()[axis] * child.pref_size.arr()[axis].value;
+                    child.fixed_size.arr()[axis] = root.fixed_size.arr()[axis] * pref_size.value;
                 },
                 else => {},
             }

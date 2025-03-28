@@ -1,5 +1,6 @@
 const c = @cImport({
     @cInclude("SDL3/SDL_events.h");
+    @cInclude("SDL3/SDL_timer.h");
 });
 const sdl = @import("sdl3.zig");
 const Error = sdl.Error;
@@ -121,6 +122,7 @@ pub const EventType = enum(u32) {
     private3 = c.SDL_EVENT_PRIVATE3,
     poll_sentinel = c.SDL_EVENT_POLL_SENTINEL,
     user = c.SDL_EVENT_USER,
+    _, // user events
 };
 
 pub const Event = extern union {
@@ -196,7 +198,7 @@ pub const Event = extern union {
         return .{ .common = .{
             .type = undefined,
             .reserved = 0,
-            .timestamp = 0,
+            .timestamp = c.SDL_GetTicksNS(),
         } };
     }
 
@@ -212,6 +214,29 @@ pub const Event = extern union {
         ev.window.window_id = id;
         ev.window.data1 = data1;
         ev.window.data2 = data2;
+        return ev;
+    }
+
+    pub fn mkMouseButton(
+        ty: EventType,
+        window_id: WindowID,
+        which: MouseID,
+        button: MouseButton,
+        down: bool,
+        clicks: u8,
+        x: f32,
+        y: f32,
+    ) Event {
+        var ev = mkCommon();
+        ev.type = ty;
+        ev.button.window_id = window_id;
+        ev.button.which = which;
+        ev.button.button = button;
+        ev.button.down = down;
+        ev.button.clicks = clicks;
+        ev.button.padding = 0;
+        ev.button.x = x;
+        ev.button.y = y;
         return ev;
     }
 };

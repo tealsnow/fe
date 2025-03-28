@@ -53,19 +53,15 @@ pub inline fn interation(self: *Atom) cu.Interation {
     return cu.interationFromAtom(self);
 }
 
-pub fn format(self: *Atom, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+pub fn format(self: *const Atom, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
     _ = fmt;
     _ = options;
-    try writer.print(
-        "atom['{s}'#{d}]",
-        .{ self.string, self.key.asInt() },
-    );
+    try writer.print("atom['{s}'#{}]", .{ self.string, self.key });
 }
 
 pub const Key = enum(u32) {
+    nil = 0,
     _,
-
-    pub const nil: Key = @enumFromInt(0);
 
     pub const KeyContext = struct {
         pub fn hash(self: @This(), key: Key) u32 {
@@ -80,11 +76,13 @@ pub const Key = enum(u32) {
         }
     };
 
-    pub inline fn asInt(self: Key) u32 {
+    inline fn asInt(self: Key) u32 {
         return @intFromEnum(self);
     }
 
     pub inline fn eql(left: Key, right: Key) bool {
+        if (left == .nil and right == .nil) return true;
+        if (left == .nil or right == .nil) return false;
         return left.asInt() == right.asInt();
     }
 
@@ -104,26 +102,37 @@ pub const Key = enum(u32) {
         const three_hash = "###";
         // or just hash the string
 
-        return if (std.mem.indexOf(u8, string, two_hash)) |index| blk: {
-            const hash = hashString(seed, string);
+        return blk: {
+            if (std.mem.indexOf(u8, string, two_hash)) |index| {
+                const hash = hashString(seed, string);
 
-            const str = string[0..index];
-            break :blk .{ str, @enumFromInt(hash) };
-        } else if (std.mem.indexOf(u8, string, three_hash)) |index| blk: {
-            const slice = string[(index + three_hash.len)..];
-            const hash = hashString(seed, slice);
+                const str = string[0..index];
+                break :blk .{ str, @enumFromInt(hash) };
+            } else if (std.mem.indexOf(u8, string, three_hash)) |index| {
+                const slice = string[(index + three_hash.len)..];
+                const hash = hashString(seed, slice);
 
-            const str = string[0..index];
-            break :blk .{ str, @enumFromInt(hash) };
-        } else blk: {
-            const hash = hashString(seed, string);
+                const str = string[0..index];
+                break :blk .{ str, @enumFromInt(hash) };
+            } else {
+                const hash = hashString(seed, string);
 
-            break :blk .{ string, @enumFromInt(hash) };
+                break :blk .{ string, @enumFromInt(hash) };
+            }
         };
     }
 
     inline fn hashString(seed: u32, string: []const u8) u32 {
         return std.hash.XxHash32.hash(seed, string);
+    }
+
+    pub fn format(key: Key, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        if (key == .nil)
+            try writer.writeAll("nil")
+        else
+            try writer.print("{x}", .{key.asInt()});
     }
 };
 
@@ -146,7 +155,6 @@ pub const Flags = packed struct(u32) {
     // fixed_height: bool = false,
     allow_overflow_x: bool = false,
     allow_overflow_y: bool = false,
-    window_draggable: bool = false,
 
     // appearance
     // draw_drop_shadow: bool = false,
@@ -166,7 +174,7 @@ pub const Flags = packed struct(u32) {
 
     // render_custom: bool = false,
 
-    _padding: enum(u16) { zero } = .zero,
+    _padding: enum(u17) { zero } = .zero,
 
     pub fn mouseClickable(self: Self) Self {
         var this = self;
@@ -222,12 +230,6 @@ pub const Flags = packed struct(u32) {
         var this = self;
         this.allow_overflow_x = true;
         this.allow_overflow_y = true;
-        return this;
-    }
-
-    pub fn windowDraggable(self: Self) Self {
-        var this = self;
-        this.window_draggable = true;
         return this;
     }
 

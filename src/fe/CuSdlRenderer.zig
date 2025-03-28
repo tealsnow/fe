@@ -1,5 +1,6 @@
 const Renderer = @This();
 
+const builtin = @import("builtin");
 const std = @import("std");
 const fc = @import("fontconfig.zig");
 
@@ -10,6 +11,8 @@ sdl_rend: *sdl.Renderer,
 bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
 
 pub fn render(self: *Renderer) !void {
+    if (!cu.state.ui_built) return;
+
     defer self.bg_color_stack.clearAndFree(cu.state.alloc_temp);
 
     const color = cu.Color.hexRgb(0x000000);
@@ -191,13 +194,32 @@ pub const Callbacks = struct {
         return font.getSize() catch @panic("failed to get font size");
     }
 
-    pub const vtable = cu.State.Callbacks.VTable{
-        .measureText = &measureText,
-        .fontSize = &fontSize,
-    };
+    fn getGraphicsInfo(context: *anyopaque) cu.State.GraphicsInfo {
+        _ = context;
+        return switch (builtin.os.tag) {
+            .linux => .{
+                // linux does not supply a cohesive api for a double click time
+                // there is something in dbus/gnome, but its not widely used
+                .double_click_time_us = 500 * std.time.us_per_ms,
+            },
+            .windows => {
+                @compileError("TODO: use windows apis to get info");
+                // see: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdoubleclicktime
+            },
+            .macos => {
+                @compileError("TODO: use macos apis to get info");
+                // see: https://stackoverflow.com/questions/21935842/os-x-double-click-speed
+            },
+            else => @compileError("platform unsupported at present"),
+        };
+    }
 
     pub const callbacks = cu.State.Callbacks{
         .context = undefined,
-        .vtable = vtable,
+        .vtable = .{
+            .measureText = &measureText,
+            .fontSize = &fontSize,
+            .getGraphicsInfo = &getGraphicsInfo,
+        },
     };
 };

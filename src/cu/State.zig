@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 const Color = cu.Color;
+const MouseButton = cu.MouseButton;
 
 current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
@@ -42,17 +43,26 @@ ui_ctx_menu_root: *Atom = undefined,
 ctx_menu_open: bool = false,
 next_ctx_menu_open: bool = false,
 
+active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil), // currently interacting atom for button
 hot_atom_key: Atom.Key = .nil, // currenly over (event consuming) atom
-active_atom_key: Atom.Key = .nil, // currently interacting atom
 
 event_pool: EventPool,
 event_node_pool: EventNodePool,
 event_list: EventList = .{},
 
-window_size: cu.Axis2(f32) = .zero,
-mouse: cu.Vec2(f32) = .inf,
+graphics_info: GraphicsInfo,
 
-pub const MaxAtoms = 4000; // max 4000 atoms total
+window_size: cu.Axis2(f32) = .zero,
+mouse: cu.Vec2(f32) = .nan,
+start_drag_pos: cu.Vec2(f32) = .nan,
+
+press_history_timestamp_us: [MouseButton.array.len]HistoryRingBuffer(u64, HistoySize) = @splat(.empty),
+press_history_key: [MouseButton.array.len]HistoryRingBuffer(Atom.Key, HistoySize) = @splat(.empty),
+
+const HistoySize = 8;
+
+// @FIXME: possibly allow the consumer to specify this?
+pub const MaxAtoms = 4000;
 pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = true });
 pub const AtomMap = std.ArrayHashMapUnmanaged(
     Atom.Key,
@@ -85,6 +95,8 @@ pub fn init(
 
         .event_pool = undefined,
         .event_node_pool = undefined,
+
+        .graphics_info = undefined,
     };
 
     // workaround to ensure that the allocator vtable references the arena stored in gs, not in the stack
@@ -99,6 +111,8 @@ pub fn init(
 
     self.event_pool = .init(self.alloc_persistent);
     self.event_node_pool = .init(self.alloc_persistent);
+
+    self.graphics_info = self.callbacks.getGraphicsInfo();
 }
 
 pub fn deinit(self: *State) void {
@@ -115,13 +129,10 @@ pub fn deinit(self: *State) void {
     self.* = undefined;
 }
 
-pub inline fn allocAtom(self: *State) *Atom {
-    return self.atom_pool.create() catch @panic("oom");
-}
-
 pub fn pushEvent(self: *State, event: cu.Event) void {
     const evt = self.event_pool.create() catch @panic("oom");
     evt.* = event;
+    evt.timestamp_us = @intCast(std.time.microTimestamp());
     const node = self.event_node_pool.create() catch @panic("oom");
     node.* = .{ .data = evt };
     self.event_list.append(node);
@@ -134,6 +145,7 @@ pub const Callbacks = struct {
     pub const VTable = struct {
         measureText: *const fn (context: *anyopaque, text: []const u8, font: cu.FontHandle) cu.Axis2(f32),
         fontSize: *const fn (context: *anyopaque, font: cu.FontHandle) f32,
+        getGraphicsInfo: *const fn (context: *anyopaque) GraphicsInfo,
     };
 
     pub fn measureText(self: *Callbacks, text: []const u8, font: cu.FontHandle) cu.Axis2(f32) {
@@ -142,6 +154,10 @@ pub const Callbacks = struct {
 
     pub fn fontSize(self: *Callbacks, font: cu.FontHandle) f32 {
         return self.vtable.fontSize(self.context, font);
+    }
+
+    pub fn getGraphicsInfo(self: *Callbacks) GraphicsInfo {
+        return self.vtable.getGraphicsInfo(self.context);
     }
 };
 
@@ -212,6 +228,44 @@ fn PoolStack(comptime T: type) type {
         pub fn clearAndReset(self: *Self) void {
             self.stack.clearAndFree();
             _ = self.pool.reset(.free_all);
+        }
+    };
+}
+
+pub const GraphicsInfo = struct {
+    double_click_time_us: u64,
+    // caret_blink_time_ns: u64,
+    // default_refresh_rate: f32,
+};
+
+pub fn HistoryRingBuffer(
+    Elem: type,
+    Size: usize,
+) type {
+    return struct {
+        const Self = @This();
+
+        buffer: [Size]Elem,
+        head: usize,
+        count: usize,
+
+        pub const empty = Self{ .buffer = undefined, .head = 0, .count = 0 };
+
+        pub fn push(self: *Self, value: Elem) void {
+            self.buffer[self.head] = value;
+            self.head = (self.head + 1) % Size;
+            self.count = @min(self.count + 1, Size);
+        }
+
+        pub fn indexBack(self: Self, idx: usize) ?Elem {
+            if (idx >= self.count) return null;
+
+            const pos = (self.head + Size - 1 - idx) % Size;
+            return self.buffer[pos];
+        }
+
+        pub fn slice(self: *Self) []Elem {
+            return self.buffer[0..self.count];
         }
     };
 }

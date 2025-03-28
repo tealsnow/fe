@@ -1,5 +1,4 @@
 const std = @import("std");
-// const assert = std.debug.assert;
 
 const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
@@ -17,7 +16,7 @@ pub fn startBuild(window_id: u32) void {
 
     const root = buildFromStringF("###root window-id:{x}", .{window_id});
     root.pref_size = .axis(.px(cu.state.window_size.w), .px(cu.state.window_size.h));
-    root.rect = .range(.vec(0, 0), cu.state.window_size.asVec());
+    root.rect = .range(.vec(0, 0), cu.state.window_size.intoVec());
     root.layout_axis = .x;
     cu.state.ui_root = root;
 
@@ -49,6 +48,7 @@ pub fn endBuild() void {
     }
 
     for (to_remove.items) |key| {
+        if (key == .nil) continue;
         const atom = cu.state.atom_map.fetchSwapRemove(key).?.value;
         cu.state.atom_pool.destroy(atom);
     }
@@ -70,9 +70,7 @@ pub fn endBuild() void {
     cu.layout(cu.state.ui_ctx_menu_root) catch @panic("oom");
     // cu.layout(cu.state.ui_tooltip_root) catch @panic("oom");
 
-    if (cu.state.active_atom_key.eql(.nil)) {
-        cu.state.hot_atom_key = .nil;
-    }
+    cu.state.hot_atom_key = .nil;
 
     cu.state.ctx_menu_open = cu.state.next_ctx_menu_open;
 
@@ -107,7 +105,7 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
         atom.key = key;
         break :blk atom;
     } else blk: {
-        const atom = cu.state.allocAtom();
+        const atom = cu.state.atom_pool.create() catch @panic("oom");
         is_first_frame = true;
         const bad_atom = cu.state.atom_map.fetchPut(cu.state.alloc_persistent, key, atom) catch @panic("oom");
         debugAssert(

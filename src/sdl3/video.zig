@@ -106,4 +106,19 @@ pub const Window = opaque {
     pub fn setFullscreen(window: *Window, fullscreen: bool) Error!void {
         if (!c.SDL_SetWindowFullscreen(@ptrCast(window), fullscreen)) return error.sdl;
     }
+
+    pub fn sync(window: *Window) !void {
+        if (!c.SDL_SyncWindow(@ptrCast(window))) return error.sdl;
+    }
+
+    pub fn setPosition(window: *Window, x: c_int, y: c_int) !void {
+        if (!c.SDL_SetWindowPosition(@ptrCast(window), x, y)) return error.sdl;
+    }
+
+    pub fn getPosition(window: *Window) !struct { c_int, c_int } {
+        var x: c_int = undefined;
+        var y: c_int = undefined;
+        if (!c.SDL_GetWindowPosition(@ptrCast(window), &x, &y)) return error.sdl;
+        return .{ x, y };
+    }
 };
