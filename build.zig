@@ -10,6 +10,17 @@ pub fn build(b: *std.Build) void {
         "switch to use llvm or not (defaults to false on debug builds true for release builds)",
     ) orelse if (optimize == .Debug) false else true;
 
+    const log_level: std.log.Level =
+        b.option(
+            std.log.Level,
+            "log_level",
+            "What log level to use regardless of the build mode",
+        ) orelse switch (optimize) {
+            .Debug => .debug,
+            .ReleaseSafe => .info,
+            .ReleaseFast, .ReleaseSmall => .warn,
+        };
+
     // wasmtime url
     {
         const wasmtime_version = "30.0.2";
@@ -94,6 +105,10 @@ pub fn build(b: *std.Build) void {
         mod.addIncludePath(b.path("wasmtime/wasmtime/include/"));
         mod.addLibraryPath(b.path("wasmtime/wasmtime/lib/"));
         mod.linkSystemLibrary("wasmtime", .{ .needed = true });
+
+        const options = b.addOptions();
+        options.addOption(std.log.Level, "log_level", log_level);
+        mod.addOptions("build_options", options);
 
         const fe = b.addExecutable(.{
             .name = "fe",

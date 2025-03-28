@@ -26,6 +26,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
+const log = std.log;
 
 const cu = @import("cu");
 
@@ -36,11 +37,16 @@ const CuSdlRenderer = @import("CuSdlRenderer.zig");
 const plugins = @import("plugins.zig");
 const logFn = @import("logFn.zig");
 
+const build_options = @import("build_options");
+
 pub const std_options = std.Options{
     .logFn = logFn.logFn,
+    .log_level = @enumFromInt(@intFromEnum(build_options.log_level)),
 };
 
 pub fn main() !void {
+    log.info("starting fe", .{});
+
     run() catch |err| {
         if (sdl.getError()) |e| {
             std.log.err("[SDL]: {s}", .{e});
