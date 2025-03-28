@@ -2,6 +2,9 @@
     .id = "test-plugin",
     .name = "Wasm Test Plugin",
     .version = "0.0.0",
-    .description = "Test wasm plugin",
+    .description =
+    \\ Test wasm plugin
+    \\ plugin to test things with
+    ,
     .authors = .{"Ketan Reynolds <ketan.cs.reynolds@gmail.com>"},
 }
