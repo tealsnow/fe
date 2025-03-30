@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>**F**ile **E**ditor<h1>
+  <h1><i>F</i>ile <i>E</i>ditor<h1>
 </div>
 
 [License](LICENSE) | [Changelog](CHANGELOG.md)
