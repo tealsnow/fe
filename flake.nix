@@ -1,61 +1,83 @@
 {
-  description = "An empty flake template that you can adapt to your own environment";
+  description = "fe";
 
-  # Flake inputs
-  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
+    systems.url = "github:nix-systems/default";
 
-  # Flake outputs
-  outputs =
-    { self, nixpkgs }:
-    let
-      # The systems supported for this flake
-      supportedSystems = [
-        "x86_64-linux" # 64-bit Intel/AMD Linux
-        "aarch64-linux" # 64-bit ARM Linux
-        "x86_64-darwin" # 64-bit Intel macOS
-        "aarch64-darwin" # 64-bit ARM macOS
-      ];
-
-      # Helper to provide system-specific attributes
-      forEachSupportedSystem =
-        f:
-        nixpkgs.lib.genAttrs supportedSystems (
-          system:
-          f {
-            pkgs = import nixpkgs { inherit system; };
-          }
-        );
-    in
-    {
-      devShells = forEachSupportedSystem (
-        { pkgs }:
-        {
-          default = pkgs.mkShell {
-            # The Nix packages provided in the environment
-            # Add any you need here
-            packages = with pkgs; [
-              # tools
-              pkg-config
-              valgrind
-              # zig
-              zls
-              # llvmPackages_19.clang-tools
-
-              # libs
-              sdl3
-              sdl3-ttf
-              xorg.libX11.dev
-
-              fontconfig
-            ];
-
-            # Set any environment variables for your dev shell
-            env = { };
-
-            # Add any shell logic you want executed any time the environment is activated
-            shellHook = '''';
-          };
-        }
-      );
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+      inputs.systems.follows = "systems";
     };
+  };
+
+  outputs =
+    {
+      nixpkgs,
+      nixpkgs-stable,
+      flake-utils,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      rec {
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            zig
+            zls
+            lldb
+            pkg-config
+            valgrind
+
+            # libs
+            sdl3
+            sdl3-ttf
+            xorg.libX11.dev
+
+            fontconfig
+
+            wasmtime-c-api
+          ];
+
+          env = {
+            "SDL_VIDEODRIVER" = "wayland";
+          };
+
+          shellHook = '''';
+        };
+
+        wasmtime-c-api = pkgs.stdenv.mkDerivation rec {
+          name = "wasmtime-c-api";
+          version = "30.0.2";
+
+          src = pkgs.fetchurl {
+            url = "https://github.com/bytecodealliance/wasmtime/releases/download/v${version}/wasmtime-v${version}-${system}-c-api.tar.xz";
+            sha256 =
+              if system == "x86_64-linux" then "0mad44024z5b76dnz46x64p6vqdmmrvdfyc62swby523sr454xvc" else "TODO";
+          };
+
+          unpackPhase = ''
+            tar -xf $src
+          '';
+
+          installPhase = ''
+            mkdir -p $out/include
+            cp -r ./*/include/* $out/include/
+
+            mkdir -p $out/lib
+            cp ./*/lib/* $out/lib/
+          '';
+
+          meta = {
+            description = "Wasmtime C API library";
+            homepage = "https://wasmtime.dev/";
+            license = pkgs.lib.licenses.asl20;
+          };
+        };
+      }
+    );
 }

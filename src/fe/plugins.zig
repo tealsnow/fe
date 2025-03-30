@@ -6,7 +6,7 @@ const PluginSchema = @import("plugin-schema").PluginSchema;
 
 const logFn = @import("logFn.zig");
 
-const log = std.log.scoped(.plugins);
+const log = std.log.scoped(.@"fe::plugins");
 
 pub fn printLastWasmError() void {
     if (wasm.getLastError()) |e| {
@@ -34,7 +34,7 @@ pub const WasmGuestAllocator = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
     const Alignment = std.mem.Alignment;
-    const alloc_log = std.log.scoped(.WasmGuestAllocator);
+    const alloc_log = std.log.scoped(.@"fe::WasmGuestAllocator");
 
     context: *wasm.Context,
     guest_mem: [*]u8,

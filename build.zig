@@ -21,14 +21,6 @@ pub fn build(b: *std.Build) void {
             .ReleaseFast, .ReleaseSmall => .warn,
         };
 
-    // wasmtime url
-    {
-        const wasmtime_version = "30.0.2";
-        const wasmtime = b.step("print_wasmtime_url", "");
-        const wasmtime_step = GetWasmtimeUrl.create(b, .initFromTarget(target.result, wasmtime_version));
-        wasmtime.dependOn(&wasmtime_step.step);
-    }
-
     const fmt_step = b.addFmt(.{
         .check = true,
         .paths = &.{"src/"},
@@ -91,8 +83,10 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         });
+
         mod.link_libc = true;
         mod.linkSystemLibrary("fontconfig", .{ .needed = true });
+        mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
         mod.addImport("sdl3", sdl3.root_module);
         mod.linkLibrary(sdl3);
@@ -101,10 +95,6 @@ pub fn build(b: *std.Build) void {
         mod.linkLibrary(cu);
 
         mod.addImport("plugin-schema", plugin_schema);
-
-        mod.addIncludePath(b.path("wasmtime/wasmtime/include/"));
-        mod.addLibraryPath(b.path("wasmtime/wasmtime/lib/"));
-        mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
         const options = b.addOptions();
         options.addOption(std.log.Level, "log_level", log_level);
@@ -211,107 +201,3 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_exe_unit_tests.step);
     }
 }
-
-const WasmtimeTarget = struct {
-    /// The version tag to use for download
-    version: []const u8,
-
-    /// The architecture to download for,
-    /// only aarch64, armv7/arm, i686/x86, riscv64gc/riscv64, s390x and x86_64 are supported
-    arch: std.Target.Cpu.Arch,
-
-    /// The os to download for,
-    /// only android, linux, macos and windows are supported
-    os: std.Target.Os.Tag,
-
-    /// If not null, will use a different abi for the specified os,
-    /// only mingw(windows), musl(linux) and android(linux) are supported
-    abi: ?[]const u8 = null,
-
-    pub fn initFromTarget(target: std.Target, version: []const u8) WasmtimeTarget {
-        const assert = std.debug.assert;
-
-        assert(switch (target.cpu.arch) {
-            .aarch64, .arm, .x86, .riscv64, .s390x, .x86_64 => true,
-            else => false,
-        });
-        assert(switch (target.os.tag) {
-            .linux, .macos, .windows => true,
-            else => false,
-        });
-
-        var abi: ?[]const u8 = null;
-        switch (target.os.tag) {
-            .windows => if (target.abi.isGnu()) {
-                abi = "mingw";
-            },
-            .linux => if (target.abi.isMusl()) {
-                abi = "musl";
-            } else if (target.abi.isAndroid()) {
-                abi = "android";
-            },
-            else => {},
-        }
-
-        return .{
-            .version = version,
-            .arch = target.cpu.arch,
-            .os = target.os.tag,
-            .abi = abi,
-        };
-    }
-
-    pub fn resolveUrl(self: WasmtimeTarget, b: *std.Build) []const u8 {
-        const os_abi = if (self.abi) |abi|
-            abi
-        else
-            @tagName(self.os);
-
-        const arch = switch (self.arch) {
-            .arm => "armv7",
-            .x86 => "i686",
-            .riscv64 => "riscv64gc",
-            else => @tagName(self.arch),
-        };
-
-        const fmt = "https://github.com/bytecodealliance/wasmtime/releases/download/v{[version]s}/" ++
-            "wasmtime-v{[version]s}-{[arch]s}-{[os_abi]s}-c-api.tar.xz";
-        return b.fmt(fmt, .{
-            .version = self.version,
-            .arch = arch,
-            .os_abi = os_abi,
-        });
-    }
-};
-
-// I would have prefered to create a system that would download wasmtime and
-// extract it. returning us the needed paths
-// maybe one day
-const GetWasmtimeUrl = struct {
-    step: std.Build.Step,
-    target: WasmtimeTarget,
-
-    pub fn create(b: *std.Build, target: WasmtimeTarget) *GetWasmtimeUrl {
-        const self = b.allocator.create(GetWasmtimeUrl) catch @panic("OOM");
-        self.* = .{
-            .step = .init(.{
-                .id = .custom,
-                .name = "get_wasmtime_url",
-                .owner = b,
-                .makeFn = make,
-            }),
-            .target = target,
-        };
-        return self;
-    }
-
-    fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
-        const self: *GetWasmtimeUrl = @fieldParentPtr("step", step);
-        const b = step.owner;
-        _ = options;
-
-        const url = self.target.resolveUrl(b);
-        const stdout = std.io.getStdOut();
-        try stdout.writeAll(url);
-    }
-};
