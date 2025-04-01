@@ -1,5 +1,6 @@
 // @TODO:
-//   @[ ]: plugins: pass guest function to host to call
+//   @[ ]: Migrate to github issue tracker for all of these
+//   @[x]: plugins: pass guest function to host to call
 //   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
@@ -88,13 +89,13 @@ pub fn run() !void {
         _ = debug_allocator.deinit();
     };
 
-    // // =-= plugin setup =-=
+    // =-= plugin setup =-=
     log.info("setting up plugins", .{});
 
     const host = try plugins.PluginHost.init(gpa);
     defer host.deinit(gpa);
 
-    const plugin = &host.plugins[0];
+    const plugin = host.plugins[0];
     try plugins.doTest(plugin);
 
     // =-= sdl window and renderer setup =-=

@@ -8,12 +8,48 @@ const logFn = @import("logFn.zig");
 
 const log = std.log.scoped(.@"fe::plugins");
 
+// Mirrored in plugin-lib
+pub fn PackedSlice(comptime T: type) type {
+    const TypeInfo = @typeInfo(T);
+    const ChildType, const is_const = switch (TypeInfo) {
+        .pointer => |ptr| child: {
+            if (ptr.size != .slice)
+                @compileError("PackedSlice can only take slice");
+            break :child .{ ptr.child, ptr.is_const };
+        },
+        else => @compileError("PackedSlice can only take slice"),
+    };
+
+    return packed struct(u64) {
+        ptr: u32,
+        len: u32,
+
+        pub const Child = ChildType;
+        pub const Ptr = if (is_const) [*]const Child else [*]Child; // 32 bits wide
+        pub const Slice = T;
+
+        const Self = @This();
+
+        /// Ensure that the passed slice is actualy in the wasm memory space
+        pub fn fromSlice(slice: Slice) Self {
+            return .{
+                .ptr = @intCast(@intFromPtr(slice.ptr)),
+                .len = @intCast(slice.len),
+            };
+        }
+
+        pub fn toSlice(self: Self, data: [*]u8) Slice {
+            return sliceWasmMemory(Slice, data, @intCast(self.ptr), @intCast(self.len));
+        }
+    };
+}
+
 pub fn printLastWasmError() void {
     if (wasm.getLastError()) |e| {
         defer e.deinit();
         var message = e.message();
         defer message.deinit();
-        std.log.err("[WASM]: {s}", .{message.slice()});
+        log.err("[WASM]: {s}", .{message.slice()});
     }
 }
 
@@ -24,10 +60,20 @@ pub fn printTrap(trap: *wasm.Trap) void {
     log.err("trap: {s}", .{msg.slice()});
 }
 
-pub fn sliceWasmMemory(data: [*]u8, ptr: i32, len: i32) []u8 {
+pub fn sliceWasmMemory(comptime Slice: type, data: [*]u8, ptr: i32, len: i32) Slice {
+    const ChildType = switch (@typeInfo(Slice)) {
+        .pointer => |pointer| child: {
+            if (pointer.size != .slice)
+                @compileError("sliceWasmMemory can only take slice");
+            break :child pointer.child;
+        },
+        else => @compileError("sliceWasmMemory can only take slice"),
+    };
+
     const ptr_usize = @as(usize, @intCast(ptr));
+    const base_ptr: [*]ChildType = @ptrCast(&data[ptr_usize]);
     const len_usize = @as(usize, @intCast(len));
-    return data[ptr_usize..(ptr_usize + len_usize)];
+    return base_ptr[0..len_usize];
 }
 
 pub const WasmGuestAllocator = struct {
@@ -37,14 +83,13 @@ pub const WasmGuestAllocator = struct {
     const alloc_log = std.log.scoped(.@"fe::WasmGuestAllocator");
 
     context: *wasm.Context,
-    guest_mem: [*]u8,
+    memory: wasm.Memory,
     alloc_func: wasm.Func,
     resize_func: wasm.Func,
     remap_func: wasm.Func,
     free_func: wasm.Func,
 
-    pub fn init(context: *wasm.Context, instance: *wasm.Instance) !Self {
-        const guest_mem = instance.getMemoryData(context) orelse return error.noMemory;
+    pub fn init(context: *wasm.Context, instance: *wasm.Instance, memory: wasm.Memory) !Self {
         const alloc_func = instance.exportGetFunc(context, "Allocator_alloc") orelse return error.exportGet;
         const resize_func = instance.exportGetFunc(context, "Allocator_resize") orelse return error.exportGet;
         const remap_func = instance.exportGetFunc(context, "Allocator_remap") orelse return error.exportGet;
@@ -52,7 +97,7 @@ pub const WasmGuestAllocator = struct {
 
         return .{
             .context = context,
-            .guest_mem = guest_mem,
+            .memory = memory,
             .alloc_func = alloc_func,
             .resize_func = resize_func,
             .remap_func = remap_func,
@@ -73,13 +118,15 @@ pub const WasmGuestAllocator = struct {
     }
 
     pub fn toWasmPtr(self: *Self, comptime T: type, ptr: *const T) i32 {
-        return @intCast(@intFromPtr(ptr) - @intFromPtr(self.guest_mem));
+        const data = self.memory.data(self.context);
+        return @intCast(@intFromPtr(ptr) - @intFromPtr(data));
     }
 
-    pub fn toWasmSlice(self: *Self, comptime T: type, slice: []const T) struct { i32, i32 } {
-        const ptr = self.toWasmPtr(T, @ptrCast(slice.ptr));
-        const len: i32 = @intCast(slice.len);
-        return .{ ptr, len };
+    pub fn toWasmSlice(self: *Self, comptime Slice: type, slice: Slice) PackedSlice(Slice) {
+        const Packed = PackedSlice(Slice);
+        const ptr: u32 = @intCast(self.toWasmPtr(Packed.Child, @ptrCast(slice.ptr)));
+        const len: u32 = @intCast(slice.len);
+        return .{ .ptr = ptr, .len = len };
     }
 
     fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
@@ -109,7 +156,8 @@ pub const WasmGuestAllocator = struct {
         if (guest_ptr == 0) return null;
 
         const guest_ptr_usize: usize = @intCast(guest_ptr);
-        const host_ptr = &self.guest_mem[guest_ptr_usize];
+        const guest_mem = self.memory.data(self.context);
+        const host_ptr = &guest_mem[guest_ptr_usize];
         const ret: [*]u8 = @ptrCast(host_ptr);
 
         alloc_log.debug(" -- return: {*}", .{ret});
@@ -124,11 +172,11 @@ pub const WasmGuestAllocator = struct {
 
         const self: *Self = @ptrCast(@alignCast(ctx));
 
-        const memory_ptr_i32, const memory_len_i32 = self.toWasmSlice(u8, memory);
+        const memory_packed = self.toWasmSlice([]u8, memory);
         const alignment_i32: i32 = @intCast(alignment.toByteUnits());
         const new_len_i32: i32 = @intCast(new_len);
 
-        const args = [_]wasm.Val{ .newI32(memory_ptr_i32), .newI32(memory_len_i32), .newI32(alignment_i32), .newI32(new_len_i32) };
+        const args = [_]wasm.Val{ .newI64(@bitCast(memory_packed)), .newI32(alignment_i32), .newI32(new_len_i32) };
         var result: [1]wasm.Val = undefined;
 
         const trap = self.resize_func.call(self.context, &args, &result) catch {
@@ -156,11 +204,11 @@ pub const WasmGuestAllocator = struct {
 
         const self: *Self = @ptrCast(@alignCast(ctx));
 
-        const memory_ptr_i32, const memory_len_i32 = self.toWasmSlice(u8, memory);
+        const memory_packed = self.toWasmSlice([]u8, memory);
         const alignment_i32: i32 = @intCast(alignment.toByteUnits());
         const new_len_i32: i32 = @intCast(new_len);
 
-        const args = [_]wasm.Val{ .newI32(memory_ptr_i32), .newI32(memory_len_i32), .newI32(alignment_i32), .newI32(new_len_i32) };
+        const args = [_]wasm.Val{ .newI64(@bitCast(memory_packed)), .newI32(alignment_i32), .newI32(new_len_i32) };
         var result: [1]wasm.Val = undefined;
 
         const trap = self.remap_func.call(self.context, &args, &result) catch {
@@ -177,7 +225,8 @@ pub const WasmGuestAllocator = struct {
         if (guest_ptr == 0) return null;
 
         const guest_ptr_usize: usize = @intCast(guest_ptr);
-        const host_ptr = &self.guest_mem[guest_ptr_usize];
+        const guest_mem = self.memory.data(self.context);
+        const host_ptr = &guest_mem[guest_ptr_usize];
         const ret: [*]u8 = @ptrCast(host_ptr);
 
         alloc_log.debug(" -- return: {*}", .{ret});
@@ -192,10 +241,10 @@ pub const WasmGuestAllocator = struct {
 
         const self: *Self = @ptrCast(@alignCast(ctx));
 
-        const memory_ptr_i32, const memory_len_i32 = self.toWasmSlice(u8, memory);
+        const memory_packed = self.toWasmSlice([]u8, memory);
         const alignment_i32: i32 = @intCast(alignment.toByteUnits());
 
-        const args = [_]wasm.Val{ .newI32(memory_ptr_i32), .newI32(memory_len_i32), .newI32(alignment_i32) };
+        const args = [_]wasm.Val{ .newI64(@bitCast(memory_packed)), .newI32(alignment_i32) };
 
         const trap = self.free_func.call(self.context, &args, &.{}) catch {
             printLastWasmError();
@@ -214,17 +263,22 @@ pub const Plugin = struct {
     linker: *wasm.Linker,
     module: *wasm.Module,
     instance: wasm.Instance,
+    function_table: wasm.Table,
     wasm_allocator: WasmGuestAllocator,
 
     pub fn init(
-        allocator: std.mem.Allocator,
+        gpa: std.mem.Allocator,
         engine: *wasm.Engine,
         context: *wasm.Context,
         plugin_dir: std.fs.Dir,
-    ) !Plugin {
-        const schema = try loadSchema(allocator, plugin_dir);
-        const module = try loadModule(allocator, plugin_dir, schema.id, engine);
-        const linker = try setupCallbacks(engine, context, schema.id, module);
+    ) !*Plugin {
+        const plugin_ptr = try gpa.create(Plugin);
+
+        const memory = try wasm.Memory.init(context, try wasm.Memorytype.init(257, null, false, false));
+
+        const schema = try loadSchema(gpa, plugin_dir);
+        const module = try loadModule(gpa, plugin_dir, schema.id, engine);
+        const linker = try setupCallbacks(engine, context, schema.id, module, memory, plugin_ptr);
 
         var instance = switch (try linker.instantiate(context, module)) {
             .value => |inst| inst,
@@ -234,26 +288,33 @@ pub const Plugin = struct {
             },
         };
 
-        const wasm_allocator = try WasmGuestAllocator.init(context, &instance);
-        return .{
+        const table_ext = instance.exportGet(context, "__indirect_function_table") orelse return error.no_table;
+        assert(table_ext.kind == .table);
+        const function_table = table_ext.of.table;
+
+        const wasm_allocator = try WasmGuestAllocator.init(context, &instance, memory);
+        plugin_ptr.* = .{
             .schema = schema,
             .context = context,
             .linker = linker,
             .module = module,
             .instance = instance,
+            .function_table = function_table,
             .wasm_allocator = wasm_allocator,
         };
+        return plugin_ptr;
     }
 
-    pub fn deinit(plugin: *Plugin, allocator: std.mem.Allocator) void {
-        defer plugin.* = undefined;
-        defer plugin.linker.deinit();
-        defer plugin.module.deinit();
-        defer std.zon.parse.free(allocator, plugin.schema);
+    pub fn deinit(plugin: *Plugin, gpa: std.mem.Allocator) void {
+        std.zon.parse.free(gpa, plugin.schema);
+        plugin.module.deinit();
+        plugin.linker.deinit();
+        plugin.* = undefined;
+        gpa.destroy(plugin);
     }
 
     fn loadSchema(
-        allocator: std.mem.Allocator,
+        gpa: std.mem.Allocator,
         plugin_dir: std.fs.Dir,
     ) !PluginSchema {
         log.info("loading schema", .{});
@@ -263,16 +324,16 @@ pub const Plugin = struct {
 
         const size = try file.getEndPos();
 
-        const buffer: [:0]u8 = try allocator.allocSentinel(u8, size, 0);
-        defer allocator.free(buffer);
+        const buffer: [:0]u8 = try gpa.allocSentinel(u8, size, 0);
+        defer gpa.free(buffer);
         const read = try file.readAll(buffer);
         assert(read == buffer.len);
 
         var status = std.zon.parse.Status{};
-        defer status.deinit(allocator);
+        defer status.deinit(gpa);
         const schema = std.zon.parse.fromSlice(
             PluginSchema,
-            allocator,
+            gpa,
             buffer,
             &status,
             .{},
@@ -286,21 +347,21 @@ pub const Plugin = struct {
     }
 
     fn loadModule(
-        allocator: std.mem.Allocator,
+        gpa: std.mem.Allocator,
         plugin_dir: std.fs.Dir,
         id: []const u8,
         engine: *wasm.Engine,
     ) !*wasm.Module {
         log.info("loading wasm", .{});
-        const file_path = try std.fmt.allocPrint(allocator, "{s}.wasm", .{id});
-        defer allocator.free(file_path);
+        const file_path = try std.fmt.allocPrint(gpa, "{s}.wasm", .{id});
+        defer gpa.free(file_path);
 
         const file = try plugin_dir.openFile(file_path, .{});
         defer file.close();
 
         const size = try file.getEndPos();
-        const bytes = try file.readToEndAlloc(allocator, size);
-        defer allocator.free(bytes);
+        const bytes = try file.readToEndAlloc(gpa, size);
+        defer gpa.free(bytes);
 
         log.info("init module", .{});
         const module = try wasm.Module.init(engine, bytes);
@@ -313,10 +374,11 @@ pub const Plugin = struct {
         name: []const u8,
         functype: *wasm.Functype,
         callback: wasm.FuncCallback,
+        plugin_ptr: *Plugin,
     ) !void {
         defer functype.deinit();
         log.debug("defining callback '{s}::{s}'", .{ module, name });
-        try linker.defineFunc(module, name, functype, callback, null, null);
+        try linker.defineFunc(module, name, functype, callback, plugin_ptr, null);
     }
 
     fn setupCallbacks(
@@ -324,20 +386,25 @@ pub const Plugin = struct {
         context: *wasm.Context,
         module_name: []const u8,
         module: *wasm.Module,
+        memory: wasm.Memory,
+        plugin_ptr: *Plugin,
     ) !*wasm.Linker {
         log.info("init linker", .{});
         const linker = wasm.Linker.init(engine);
         try linker.defineWasi();
 
+        const item = wasm.Extern.newMemory(memory);
+        try linker.define(context, "env", "memory", &item);
+
         log.info("defining callbacks", .{});
-        try defineCallback(linker, "fe", "callback", wasm.Functype.init_0_0(), wasmCallback);
-        try defineCallback(linker, "fe", "FooType_inc", wasm.Functype.init_1_0(.newI64()), FooType_inc_wasm);
-        try defineCallback(linker, "fe", "takeString", .init_2_0(.newI32(), .newI32()), takeString);
+        try defineCallback(linker, "fe", "callback", wasm.Functype.init_0_0(), wasmCallback, plugin_ptr);
+        try defineCallback(linker, "fe", "FooType_inc", wasm.Functype.init_1_0(.newI64()), FooType_inc_wasm, plugin_ptr);
+        try defineCallback(linker, "fe", "takeString", .init_1_0(.newI64()), takeString, plugin_ptr);
         {
-            var params = wasm.ValtypeVec.init(&.{ .newI32(), .newI32(), .newI32(), .newI32(), .newI32() });
+            var params = wasm.ValtypeVec.init(&.{ .newI32(), .newI64(), .newI64() });
             var results = wasm.ValtypeVec.initEmpty();
             const functype = wasm.Functype.init(&params, &results);
-            try defineCallback(linker, "fe", "hostLogFn", functype, logFnCallback);
+            try defineCallback(linker, "fe", "hostLogFn", functype, logFnCallback, plugin_ptr);
         }
 
         log.info("linking module", .{});
@@ -372,17 +439,26 @@ pub const PluginHost = struct {
     engine: *wasm.Engine,
     store: *wasm.Store,
     context: *wasm.Context,
-    plugins: []Plugin,
+    plugins: []*Plugin,
 
     pub fn init(gpa: std.mem.Allocator) !PluginHost {
         log.info("setup engine, store and context", .{});
-        const engine = try wasm.Engine.init();
+
+        const config = try wasm.Config.init();
+        config.wasmTailCallSet(true);
+        config.wasmReferenceTypesSet(true);
+        config.wasmSimdSet(true);
+        config.wasmRelaxedSimdDeterministicSet(true);
+        config.wasmBulkMemorySet(true);
+        config.wasmMultiValueSet(true);
+        // config.wasmMultiMemorySet(true);
+
+        const engine = try wasm.Engine.initWithConfig(config);
         const store = try wasm.Store.init(engine, null, null);
         const context = store.context();
 
         log.info("setup wasi", .{});
         const wasi_config = try wasm.WasiConfig.init();
-        // defer wasi_config.deinit(); // panics
         // wasi_config.inheritArgv();
         wasi_config.inheritEnv();
         // wasi_config.inheritStdin();
@@ -392,7 +468,7 @@ pub const PluginHost = struct {
         log.info("set wasi to context", .{});
         try context.setWasi(wasi_config);
 
-        var plugins = std.ArrayList(Plugin).init(gpa);
+        var plugins = std.ArrayList(*Plugin).init(gpa);
         log.info("finding plugins", .{});
 
         const cwd = std.fs.cwd();
@@ -425,7 +501,7 @@ pub const PluginHost = struct {
         defer host.engine.deinit();
         defer host.store.deinit();
         defer gpa.free(host.plugins);
-        defer for (host.plugins) |*plugin| {
+        defer for (host.plugins) |plugin| {
             plugin.deinit(gpa);
         };
     }
@@ -439,24 +515,26 @@ fn logFnCallback(
     results: [*]wasm.Val,
     nresults: usize,
 ) callconv(.c) ?*wasm.Trap {
-    _ = env;
+    _ = caller;
     _ = results;
     _ = nresults;
 
-    assert(nargs == 5);
-    for (args[0..5]) |arg| assert(arg.kind == .i32);
+    const plugin: *Plugin = @alignCast(@ptrCast(env));
+
+    assert(nargs == 3);
+    assert(args[0].kind == .i32);
+    assert(args[1].kind == .i64);
+    assert(args[2].kind == .i64);
 
     const level_int = args[0].of.i32;
-    const scope_ptr = args[1].of.i32;
-    const scope_len = args[2].of.i32;
-    const message_ptr = args[3].of.i32;
-    const message_len = args[4].of.i32;
-
     const level: std.log.Level = @enumFromInt(level_int);
 
-    const data = caller.getMemoryData() orelse @panic("wasm: no memory export");
-    const scope = sliceWasmMemory(data, scope_ptr, scope_len);
-    const message = sliceWasmMemory(data, message_ptr, message_len);
+    const scope_slice: PackedSlice([]const u8) = @bitCast(args[1].of.i64);
+    const message_slice: PackedSlice([]const u8) = @bitCast(args[2].of.i64);
+
+    const data = plugin.wasm_allocator.memory.data(plugin.context);
+    const scope = scope_slice.toSlice(data);
+    const message = message_slice.toSlice(data);
 
     logFn.logFnRuntime(level, scope, message);
 
@@ -475,6 +553,7 @@ pub fn doTest(plugin: *Plugin) !void {
     const func_take_foo_type = try plugin.getFunc("takeFooType");
     const func_give_string = try plugin.getFunc("giveString");
     const func_use_string = try plugin.getFunc("useString");
+    const func_return_func = try plugin.getFunc("returnFunc");
 
     log.info("calling guest functions", .{});
 
@@ -485,7 +564,7 @@ pub fn doTest(plugin: *Plugin) !void {
         var results: [1]wasm.Val = undefined;
         try func_add.call(&args, &results);
         assert(results[0].kind == .i32);
-        std.debug.print("add: {d} + {d} = {d}\n", .{ args[0].of.i32, args[1].of.i32, results[0].of.i32 });
+        log.debug("add: {d} + {d} = {d}", .{ args[0].of.i32, args[1].of.i32, results[0].of.i32 });
     }
 
     { // addi64
@@ -493,19 +572,20 @@ pub fn doTest(plugin: *Plugin) !void {
         var results: [1]wasm.Val = undefined;
         try func_addi64.call(&args, &results);
         assert(results[0].kind == .i64);
-        std.debug.print("addi64: {d} + {d} = {d}\n", .{ args[0].of.i64, args[1].of.i64, results[0].of.i64 });
+        log.debug("addi64: {d} + {d} = {d}", .{ args[0].of.i64, args[1].of.i64, results[0].of.i64 });
     }
 
     try func_run_callback.call(&.{}, &.{});
 
     { // takeFooType
-        const foo = &FooType{ .string = "foo bar", .int = 32 };
-        std.debug.print("foo int (before): {d}\n", .{foo.int});
+        var foo = FooType{ .string = "foo bar", .int = 32 };
+        const ptr: *FooType = &foo;
+        log.debug("foo int (before): {d} ; ptr: {*}", .{ foo.int, ptr });
 
-        const args = [_]wasm.Val{.newI64(@intCast(@intFromPtr(foo)))};
+        const args = [_]wasm.Val{.newI64(@intCast(@intFromPtr(ptr)))};
         try func_take_foo_type.call(&args, &.{});
 
-        std.debug.print("foo int (after): {d}\n", .{foo.int});
+        log.debug("foo int (after): {d}", .{foo.int});
     }
 
     try func_give_string.call(&.{}, &.{});
@@ -516,9 +596,40 @@ pub fn doTest(plugin: *Plugin) !void {
         const string = try std.fmt.allocPrint(alloc, "Hello, {s}!", .{"allocator"});
         defer alloc.free(string);
 
-        const string_ptr, const string_len = plugin.wasm_allocator.toWasmSlice(u8, string);
-        const args = [_]wasm.Val{ .newI32(@intCast(string_ptr)), .newI32(string_len) };
+        const string_packed = plugin.wasm_allocator.toWasmSlice([]const u8, string);
+        const args = [_]wasm.Val{.newI64(@bitCast(string_packed))};
         try func_use_string.call(&args, &.{});
+    }
+
+    { // returnFunc
+        const func_idx = blk: {
+            var results: [1]wasm.Val = undefined;
+            try func_return_func.call(&.{}, &results);
+            const result = results[0];
+            assert(result.kind == .i32);
+            log.debug("got func index", .{});
+            break :blk result.of.i32;
+        };
+
+        const func = func: {
+            log.debug("geting func from table", .{});
+            const val = plugin.function_table.get(plugin.context, @intCast(func_idx)) orelse return error.table_get;
+            assert(val.kind == .funcref);
+            break :func val.of.funcref;
+        };
+
+        {
+            log.debug("calling returned and table indexed func", .{});
+
+            var results: [1]wasm.Val = undefined;
+            const trap = try func.call(plugin.context, &.{}, &results);
+            if (trap) |t| {
+                printTrap(t);
+                return error.trap;
+            }
+            assert(results[0].kind == .i32);
+            assert(results[0].of.i32 == 3);
+        }
     }
 }
 
@@ -547,10 +658,10 @@ fn FooType_inc_wasm(
     _ = nresults;
 
     assert(nargs == 1);
-    const foo = args[0];
-    assert(foo.kind == .i64);
+    assert(args[0].kind == .i64);
 
-    const ptr: *FooType = @ptrFromInt(@as(usize, @intCast(foo.of.i64)));
+    const ptr: *FooType = @ptrFromInt(@as(usize, @intCast(args[0].of.i64)));
+    log.debug("foo type inc ; ptr: {*}", .{ptr});
     ptr.inc();
 
     return null;
@@ -584,18 +695,18 @@ fn takeString(
     results: [*]wasm.Val,
     nresults: usize,
 ) callconv(.c) ?*wasm.Trap {
-    _ = env;
+    _ = caller; // autofix
     _ = results;
     _ = nresults;
 
-    assert(nargs == 2);
-    assert(args[0].kind == .i32);
-    assert(args[1].kind == .i32);
-    const ptr = args[0].of.i32;
-    const len = args[1].of.i32;
+    const plugin: *Plugin = @alignCast(@ptrCast(env));
 
-    const data = caller.getMemoryData() orelse @panic("wasm: no memory export");
-    const string = sliceWasmMemory(data, ptr, len);
+    assert(nargs == 1);
+    assert(args[0].kind == .i64);
+    const string_packed: PackedSlice([]const u8) = @bitCast(args[0].of.i64);
+
+    const data = plugin.wasm_allocator.memory.data(plugin.context);
+    const string = string_packed.toSlice(data);
     std.debug.print("got string: '{s}'\n", .{string});
 
     return null;

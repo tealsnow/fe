@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const assert = @import("std").debug.assert;
 
 pub const c = @cImport({
@@ -33,6 +34,10 @@ pub const Trap = opaque {
 pub const ByteVec = extern struct {
     size: usize,
     data: [*]u8,
+
+    comptime {
+        assert(@sizeOf(ByteVec) == @sizeOf(c.wasm_byte_vec_t));
+    }
 
     pub fn slice(vec: *const ByteVec) []const u8 {
         return vec.data[0..vec.size];
@@ -73,9 +78,177 @@ pub fn TrapOr(comptime T: type) type {
     };
 }
 
+pub const Config = opaque {
+    pub fn init() !*Config {
+        return @ptrCast(c.wasm_config_new() orelse return error.wasm);
+    }
+
+    pub fn deinit(config: *Config) void {
+        c.wasm_config_delete(@ptrCast(config));
+    }
+
+    pub fn debugInfoSet(config: *Config, set: bool) void {
+        c.wasmtime_config_debug_info_set(@ptrCast(config), set);
+    }
+
+    pub fn consumeFuelSet(config: *Config, set: bool) void {
+        c.wasmtime_config_consume_fuel_set(@ptrCast(config), set);
+    }
+
+    pub fn epochInterruptionSet(config: *Config, set: bool) void {
+        c.wasmtime_config_epoch_interruption_set(@ptrCast(config), set);
+    }
+
+    pub fn maxWasmStackSet(config: *Config, size: usize) void {
+        c.wasmtime_config_max_wasm_stack_set(@ptrCast(config), size);
+    }
+
+    pub fn wasmThreadsSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_threads_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmTailCallSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_tail_call_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmReferenceTypesSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_reference_types_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmFunctionReferencesSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_function_references_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmGcSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_gc_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmSimdSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_simd_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmRelaxedSimdSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_relaxed_simd_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmRelaxedSimdDeterministicSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_relaxed_simd_deterministic_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmBulkMemorySet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_bulk_memory_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmMultiValueSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_multi_value_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmMultiMemorySet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_multi_memory_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmMemory64Set(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_memory64_set(@ptrCast(config), set);
+    }
+
+    pub fn wasmWideArithmeticSet(config: *Config, set: bool) void {
+        c.wasmtime_config_wasm_wide_arithmetic_set(@ptrCast(config), set);
+    }
+
+    pub fn strategySet(config: *Config, strategy: Strategy) void {
+        c.wasmtime_config_strategy_set(@ptrCast(config), @intFromEnum(strategy));
+    }
+
+    pub fn parallelCompilationSet(config: *Config, set: bool) void {
+        c.wasmtime_config_parallel_compilation_set(@ptrCast(config), set);
+    }
+
+    pub fn craneliftDebugVerifierSet(config: *Config, set: bool) void {
+        c.wasmtime_config_cranelift_debug_verifier_set(@ptrCast(config), set);
+    }
+
+    pub fn craneliftNanCanonicalizationSet(config: *Config, set: bool) void {
+        c.wasmtime_config_cranelift_nan_canonicalization_set(@ptrCast(config), set);
+    }
+
+    pub fn craneliftOptLevelSet(config: *Config, opt_level: OptLevel) void {
+        c.wasmtime_config_cranelift_opt_level_set(@ptrCast(config), @intFromEnum(opt_level));
+    }
+
+    pub fn profilerSet(config: *Config, profiling_strategy: ProfilingStrategy) void {
+        c.wasmtime_config_profiler_set(@ptrCast(config), @intFromEnum(profiling_strategy));
+    }
+
+    pub fn memoryMayMoveSet(config: *Config, set: bool) void {
+        c.wasmtime_config_memory_may_move_set(@ptrCast(config), set);
+    }
+
+    pub fn memoryReservationSet(config: *Config, reservation: u64) void {
+        c.wasmtime_config_memory_reservation_set(@ptrCast(config), reservation);
+    }
+
+    pub fn memoryGuardSizeSet(config: *Config, guard: u64) void {
+        c.wasmtime_config_memory_guard_size_set(@ptrCast(config), guard);
+    }
+
+    pub fn memoryReservationForGrowthSet(config: *Config, reservation_for_grow: u64) void {
+        c.wasmtime_config_memory_reservation_for_growth_set(@ptrCast(config), reservation_for_grow);
+    }
+
+    pub fn nativeUnwindInfoSet(config: *Config, set: bool) void {
+        c.wasmtime_config_native_unwind_info_set(@ptrCast(config), set);
+    }
+
+    pub fn cacheConfigLoad(config: *Config, config_load: [*:0]const u8) !void {
+        const err = c.wasmtime_config_cache_config_load(@ptrCast(config), config_load);
+        if (maybeSetError(err)) return error.wasm;
+    }
+
+    pub fn targetSet(config: *Config, target: [*:0]const u8) !void {
+        const err = c.wasmtime_config_target_set(@ptrCast(config), target);
+        if (maybeSetError(err)) return error.wasm;
+    }
+
+    pub fn craneliftFlagEnable(config: *Config, flag: [*:0]const u8) void {
+        c.wasmtime_config_cranelift_flag_enable(@ptrCast(config), flag);
+    }
+
+    pub fn craneliftFlagSet(config: *Config, key: [*:0]const u8, value: [*:0]const u8) void {
+        c.wasmtime_config_cranelift_flag_set(@ptrCast(config), key, value);
+    }
+
+    pub fn macosUseMachPortsSet(config: *Config, set: bool) void {
+        c.wasmtime_config_macos_use_mach_ports_set(@ptrCast(config), set);
+    }
+};
+
+pub const Strategy = enum(c.wasmtime_strategy_t) {
+    auto = c.WASMTIME_STRATEGY_AUTO,
+    cranelift = c.WASMTIME_STRATEGY_CRANELIFT,
+    _,
+};
+
+pub const OptLevel = enum(c.wasmtime_opt_level_t) {
+    none = c.WASMTIME_OPT_LEVEL_NONE,
+    speed = c.WASMTIME_OPT_LEVEL_SPEED,
+    size_and_size = c.WASMTIME_OPT_LEVEL_SPEED_AND_SIZE,
+    _,
+};
+
+pub const ProfilingStrategy = enum(c.wasmtime_profiling_strategy_t) {
+    none = c.WASMTIME_PROFILING_STRATEGY_NONE,
+    jitdump = c.WASMTIME_PROFILING_STRATEGY_JITDUMP,
+    vtune = c.WASMTIME_PROFILING_STRATEGY_VTUNE,
+    perfmap = c.WASMTIME_PROFILING_STRATEGY_PERFMAP,
+};
+
 pub const Engine = opaque {
     pub fn init() !*Engine {
         return @ptrCast(c.wasm_engine_new() orelse return error.wasm);
+    }
+
+    pub fn initWithConfig(config: *Config) !*Engine {
+        return @ptrCast(c.wasm_engine_new_with_config(@ptrCast(config)) orelse return error.wasm);
     }
 
     pub fn deinit(engine: *Engine) void {
@@ -113,8 +286,8 @@ pub const Linker = opaque {
         c.wasmtime_linker_delete(@ptrCast(linker));
     }
 
-    pub fn defineWasi(linker: *Linker) !void {
-        const err = c.wasmtime_linker_define_wasi(@ptrCast(linker));
+    pub fn define(linker: *Linker, context: *Context, module: []const u8, name: []const u8, item: *const Extern) !void {
+        const err = c.wasmtime_linker_define(@ptrCast(linker), @ptrCast(context), module.ptr, module.len, name.ptr, name.len, @ptrCast(item));
         if (maybeSetError(err)) return error.wasm;
     }
 
@@ -131,6 +304,11 @@ pub const Linker = opaque {
         if (maybeSetError(err)) return error.wasm;
     }
 
+    pub fn defineWasi(linker: *Linker) !void {
+        const err = c.wasmtime_linker_define_wasi(@ptrCast(linker));
+        if (maybeSetError(err)) return error.wasm;
+    }
+
     pub fn linkModule(linker: *Linker, context: *Context, name: []const u8, module: *Module) !void {
         const err = c.wasmtime_linker_module(@ptrCast(linker), @ptrCast(context), name.ptr, name.len, @ptrCast(module));
         if (maybeSetError(err)) return error.wasm;
@@ -141,17 +319,21 @@ pub const Linker = opaque {
         var trap: ?*c.wasm_trap_t = null;
         const err = c.wasmtime_linker_instantiate(@ptrCast(linker), @ptrCast(context), @ptrCast(module), &instance, &trap);
         if (maybeSetError(err)) return error.wasm;
-
         if (trap != null) return .{ .trap = @ptrCast(trap) };
         return .{ .value = @bitCast(instance) };
     }
 };
 
+// c.wasmtime_func_callback_t
 pub const FuncCallback = *const fn (?*anyopaque, *Caller, [*]const Val, usize, [*]Val, usize) callconv(.c) ?*Trap;
 
 pub const Instance = extern struct {
     store_id: u64,
     index: usize,
+
+    comptime {
+        assert(@sizeOf(Instance) == @sizeOf(c.wasmtime_instance_t));
+    }
 
     pub fn deinit(instance: *Instance) void {
         c.wasm_instance_delete(@ptrCast(instance));
@@ -186,7 +368,7 @@ pub const Instance = extern struct {
     }
 };
 
-pub const ExternKind = enum(u8) {
+pub const ExternKind = enum(c.wasmtime_extern_kind_t) {
     func = c.WASMTIME_EXTERN_FUNC,
     global = c.WASMTIME_EXTERN_GLOBAL,
     table = c.WASMTIME_EXTERN_TABLE,
@@ -200,11 +382,54 @@ pub const ExternUnion = extern union {
     table: Table,
     memory: Memory,
     sharedmemory: *SharedMemory,
+
+    comptime {
+        assert(@sizeOf(ExternUnion) == @sizeOf(c.wasmtime_extern_union_t));
+    }
 };
 
 pub const Extern = extern struct {
     kind: ExternKind,
     of: ExternUnion,
+
+    comptime {
+        assert(@sizeOf(Extern) == @sizeOf(c.wasmtime_extern_t));
+    }
+
+    pub fn newFunc(func: Func) Extern {
+        return .{
+            .kind = .func,
+            .of = .{ .func = func },
+        };
+    }
+
+    pub fn newGlobal(global: Global) Extern {
+        return .{
+            .kind = .global,
+            .of = .{ .global = global },
+        };
+    }
+
+    pub fn newTable(table: Table) Extern {
+        return .{
+            .kind = .table,
+            .of = .{ .table = table },
+        };
+    }
+
+    pub fn newMemory(memory: Memory) Extern {
+        return .{
+            .kind = .memory,
+            .of = .{ .memory = memory },
+        };
+    }
+
+    pub fn newSharedmemory(sharedmemory: *SharedMemory) Extern {
+        return .{
+            .kind = .sharedmemory,
+            .of = .{ .sharedmemory = sharedmemory },
+        };
+    }
 
     pub fn needsDeinit(ext: Extern) bool {
         return ext.kind == .sharedmemory;
@@ -219,6 +444,10 @@ pub const Func = extern struct {
     store_id: u64,
     __private: usize,
 
+    comptime {
+        assert(@sizeOf(Func) == @sizeOf(c.wasmtime_func_t));
+    }
+
     pub fn call(func: *const Func, context: *Context, args: []const Val, results: []Val) !?*Trap {
         var trap: ?*c.wasm_trap_t = null;
         const err = c.wasmtime_func_call(@ptrCast(context), @ptrCast(func), @ptrCast(args.ptr), args.len, @ptrCast(results.ptr), results.len, &trap);
@@ -232,6 +461,10 @@ pub const Global = extern struct {
     store_id: u64,
     __private: usize,
 
+    comptime {
+        assert(@sizeOf(Global) == @sizeOf(c.wasmtime_global_t));
+    }
+
     pub fn get(global: *const Global, context: *Context) Val {
         var val: c.wasmtime_val_t = undefined;
         c.wasmtime_global_get(@ptrCast(context), @ptrCast(global), &val);
@@ -242,15 +475,137 @@ pub const Global = extern struct {
 pub const Table = extern struct {
     store_id: u64,
     __private: usize,
+
+    comptime {
+        assert(@sizeOf(Table) == @sizeOf(c.wasmtime_table_t));
+    }
+
+    // pub extern fn wasmtime_table_new(store: ?*wasmtime_context_t, ty: ?*const wasm_tabletype_t, init: [*c]const wasmtime_val_t, table: [*c]wasmtime_table_t) ?*wasmtime_error_t;
+    // pub extern fn wasmtime_table_type(store: ?*const wasmtime_context_t, table: [*c]const wasmtime_table_t) ?*wasm_tabletype_t;
+
+    pub fn get(table: *const Table, context: *Context, index: u64) ?Val {
+        var val: Val = undefined;
+        const got = c.wasmtime_table_get(@ptrCast(context), @ptrCast(table), index, @ptrCast(&val));
+        if (!got) return null;
+
+        // @BUG: not sure if this is zig or wasmtime, but when not in release
+        //  mode the value may be populated with incorrect enum values arising
+        //  from the enum order as opposed to the actual value for the enum.
+        //  i.e. for funcref we get 5 instead of 129
+        //
+        //  This is likekly a zig bug or could be an llvm bug
+        //
+        // @TODO: Report above described bug
+        if (builtin.mode == .Debug) {
+            switch (@intFromEnum(val.kind)) {
+                4 => val.kind = .externref,
+                5 => val.kind = .funcref,
+                else => {},
+            }
+        }
+
+        return val;
+    }
+
+    // pub extern fn wasmtime_table_set(store: ?*wasmtime_context_t, table: [*c]const wasmtime_table_t, index: u64, value: [*c]const wasmtime_val_t) ?*wasmtime_error_t;
+    // pub extern fn wasmtime_table_size(store: ?*const wasmtime_context_t, table: [*c]const wasmtime_table_t) u64;
+    // pub extern fn wasmtime_table_grow(store: ?*wasmtime_context_t, table: [*c]const wasmtime_table_t, delta: u64, init: [*c]const wasmtime_val_t, prev_size: [*c]u64) ?*wasmtime_error_t;
 };
 
 pub const Memory = extern struct {
     store_id: u64,
     __private: usize,
 
+    comptime {
+        assert(@sizeOf(Memory) == @sizeOf(c.wasmtime_memory_t));
+    }
+
+    pub fn init(context: *Context, ty: *const Memorytype) !Memory {
+        var memory: c.wasmtime_memory_t = undefined;
+        const err = c.wasmtime_memory_new(@ptrCast(context), @ptrCast(ty), &memory);
+        if (maybeSetError(err)) return error.wasm;
+        return @bitCast(memory);
+    }
+
+    pub fn getType(memory: *const Memory, store: *const Context) *Memorytype {
+        return @ptrCast(c.wasmtime_memory_type(@ptrCast(store), @ptrCast(memory)).?);
+    }
+
     pub fn data(memory: *const Memory, context: *const Context) [*]u8 {
         return c.wasmtime_memory_data(@ptrCast(context), @ptrCast(memory));
     }
+
+    pub fn dataSize(memory: *const Memory, context: *const Context) usize {
+        return c.wasmtime_memory_data_size(@ptrCast(context), @ptrCast(memory));
+    }
+
+    pub fn dataSlice(memory: *const Memory, context: *const Context) []u8 {
+        const ptr = memory.data(context);
+        const size = memory.dataSize(context);
+        return ptr[0..size];
+    }
+
+    pub fn getSize(memory: *const Memory, context: *const Context) u64 {
+        c.wasmtime_memory_size(@ptrCast(context), @ptrCast(memory));
+    }
+
+    /// Returns prev size
+    pub fn grow(memory: *const Memory, context: *Context, delta: u64) !u64 {
+        var prev_size: u64 = undefined;
+        const err = c.wasmtime_memory_grow(@ptrCast(context), @ptrCast(memory), delta, &prev_size);
+        if (maybeSetError(err)) return error.wasm;
+        return prev_size;
+    }
+};
+
+pub const Memorytype = opaque {
+    pub fn init(min: u64, max: ?u64, is_64: bool, shared: bool) !*Memorytype {
+        return @ptrCast(c.wasmtime_memorytype_new(min, max != null, if (max) |m| m else 0, is_64, shared) orelse return error.wasm);
+    }
+
+    pub fn initFromLimits(limits: *const Limits) !*Memorytype {
+        return @ptrCast(c.wasm_memorytype_new(@ptrCast(limits)) orelse return error.wasm);
+    }
+
+    pub fn deinit(ty: *Memorytype) void {
+        c.wasm_memory_delete(@ptrCast(ty));
+    }
+
+    pub fn minimum(ty: *Memorytype) u64 {
+        return c.wasmtime_memorytype_minimum(@ptrCast(ty));
+    }
+
+    pub fn maximum(ty: *Memorytype) ?u64 {
+        var max: u64 = undefined;
+        const has = c.wasmtime_memorytype_maximum(@ptrCast(ty), &max);
+        return if (has) max else null;
+    }
+
+    pub fn is64(ty: *Memorytype) bool {
+        return c.wasmtime_memorytype_is64(@ptrCast(ty));
+    }
+
+    pub fn isShared(ty: *Memorytype) bool {
+        return c.wasmtime_memorytype_isshared(@ptrCast(ty));
+    }
+
+    pub fn getLimits(ty: *Memorytype) *const Limits {
+        return @ptrCast(c.wasm_memorytype_limits(@ptrCast(ty)).?);
+    }
+};
+
+pub const Limits = extern struct {
+    min: u32,
+    max: u32,
+
+    comptime {
+        assert(@sizeOf(Limits) == @sizeOf(c.wasm_limits_t));
+    }
+
+    pub const default = Limits{
+        .min = 0,
+        .max = c.wasm_limits_max_default,
+    };
 };
 
 pub const SharedMemory = opaque {};
@@ -298,7 +653,7 @@ pub const WasiConfig = opaque {
     }
 };
 
-pub const Valkind = enum(u8) {
+pub const Valkind = enum(c.wasmtime_valkind_t) {
     i32 = c.WASM_I32,
     i64 = c.WASM_I64,
     f32 = c.WASM_F32,
@@ -324,25 +679,44 @@ pub const Valunion = extern union {
     externref: Externref,
     funcref: Func,
     v128: v128,
+
+    comptime {
+        assert(@sizeOf(Valunion) == @sizeOf(c.wasmtime_valunion_t));
+    }
 };
 
 pub const Anyref = extern struct {
     store_id: u64,
     __private1: u32,
     __private2: u32,
+
+    comptime {
+        assert(@sizeOf(Anyref) == @sizeOf(c.wasmtime_anyref_t));
+    }
 };
 
 pub const Externref = extern struct {
     store_id: u64,
     __private1: u32,
     __private2: u32,
+
+    comptime {
+        assert(@sizeOf(Externref) == @sizeOf(c.wasmtime_externref_t));
+    }
 };
 
 pub const v128 = [16]u8;
+comptime {
+    assert(@sizeOf(v128) == @sizeOf(c.wasmtime_v128));
+}
 
 pub const Val = extern struct {
     kind: Valkind,
     of: Valunion,
+
+    comptime {
+        assert(@sizeOf(Val) == @sizeOf(c.wasmtime_val_t));
+    }
 
     pub fn deinit(val: *Val) void {
         c.wasm_val_delete(@ptrCast(val));
@@ -444,6 +818,10 @@ pub const Valtype = opaque {
 pub const ValtypeVec = extern struct {
     size: usize,
     data: [*]*Valtype,
+
+    comptime {
+        assert(@sizeOf(ValtypeVec) == @sizeOf(c.wasm_valtype_vec_t));
+    }
 
     pub fn init(vals: []const *Valtype) ValtypeVec {
         var vec: c.wasm_valtype_vec_t = undefined;

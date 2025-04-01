@@ -32,6 +32,7 @@
             lldb
             pkg-config
             valgrind
+            wabt
 
             # libs
             sdl3

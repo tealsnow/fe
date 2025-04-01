@@ -1,11 +1,12 @@
 const std = @import("std");
 
 const lib = @import("plugin-lib");
+const PackedSlice = lib.PackedSlice;
 
-pub const plugin: lib.PluginSchema = @import("plugin.zon");
+const schema: lib.PluginSchema = @import("plugin.zon");
 
 pub const std_options = std.Options{
-    .logFn = lib.mkLogFn(plugin.id),
+    .logFn = lib.mkLogFn(schema.id),
 };
 
 fn now() std.time.Instant {
@@ -31,29 +32,39 @@ export fn addi64(a: i64, b: i64) i64 {
 extern "fe" fn callback() void;
 
 export fn runCallback() void {
-    std.debug.print("> running callback\n", .{});
+    std.log.debug("running callback", .{});
     callback();
 }
 
-const FooType_Ref = enum(i64) { _ };
+const FooType_Ref = enum(u64) { _ };
 
 extern "fe" fn FooType_inc(ptr: FooType_Ref) void;
 
 export fn takeFooType(ptr: FooType_Ref) void {
-    std.debug.print("taking footype + inc\n", .{});
+    std.log.debug("taking footype + inc ; ptr: {x}", .{@intFromEnum(ptr)});
     FooType_inc(ptr);
 }
 
-extern "fe" fn takeString(ptr: [*]const u8, length: u32) void;
+extern "fe" fn takeString(string_packed: PackedSlice([]const u8)) void;
 
 export fn giveString() void {
     const string = "Hello, Zig!";
-    takeString(string, string.len);
+    takeString(.fromSlice(string));
 }
 
-export fn useString(ptr: [*]const u8, length: u32) void {
-    std.debug.print("> useString(ptr: {*}/{d}, len: {d})\n", .{ ptr, @intFromPtr(ptr), length });
+export fn useString(string_packed: PackedSlice([]const u8)) void {
+    std.log.debug("> useString(ptr: {*}, len: {d})", .{ string_packed.ptr, string_packed.len });
 
-    const slice = ptr[0..length];
+    const slice = string_packed.toSlice();
     std.debug.print("using string: {s}\n", .{slice});
+}
+
+fn returnedFunc() callconv(.{ .wasm_mvp = .{} }) i32 {
+    std.log.debug("retuned func: wasm run function!", .{});
+    return add(1, 2);
+}
+
+export fn returnFunc() *const fn () callconv(.{ .wasm_mvp = .{} }) i32 {
+    std.log.debug("returning wasm function", .{});
+    return &returnedFunc;
 }
