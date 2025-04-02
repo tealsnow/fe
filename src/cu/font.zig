@@ -12,7 +12,7 @@ pub const FontManager = struct {
 
     pub fn registerFont(self: *FontManager, font: FontHandle) FontId {
         const id: FontId = @enumFromInt(self.list.items.len);
-        self.list.append(cu.state.alloc_persistent, font) catch @panic("oom");
+        self.list.append(cu.state.gpa, font) catch @panic("oom");
         return id;
     }
 
@@ -21,6 +21,6 @@ pub const FontManager = struct {
     }
 
     pub fn deinit(self: *FontManager) void {
-        self.list.deinit(cu.state.alloc_persistent);
+        self.list.deinit(cu.state.gpa);
     }
 };

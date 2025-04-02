@@ -28,15 +28,15 @@ pub fn pushScopeLocal(comptime T: type, value: *const T) ScopeLocalHandle {
 
     if (cu.state.scope_locals.get(name)) |node| {
         const old_ptr = node.ptr;
-        const prev = cu.state.alloc_temp.create(ScopeLocalNode) catch @panic("oom");
+        const prev = cu.state.arena.create(ScopeLocalNode) catch @panic("oom");
         prev.* = .{ .ptr = old_ptr };
         node.prev = prev;
         node.ptr = @alignCast(@ptrCast(value));
     } else {
-        const node = cu.state.alloc_temp.create(ScopeLocalNode) catch @panic("oom");
+        const node = cu.state.arena.create(ScopeLocalNode) catch @panic("oom");
         node.* = .{ .ptr = @alignCast(@ptrCast(value)) };
 
-        cu.state.scope_locals.put(cu.state.alloc_temp, name, node) catch @panic("oom");
+        cu.state.scope_locals.put(cu.state.arena, name, node) catch @panic("oom");
     }
 
     return .{ .name = name };

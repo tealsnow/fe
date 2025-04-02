@@ -1,6 +1,5 @@
 // @TODO:
 //   @[ ]: Migrate to github issue tracker for all of these
-//   @[x]: plugins: pass guest function to host to call
 //   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: animations
@@ -24,6 +23,8 @@
 //   @[x]: text padding
 //   @[x]: rename general purpose allocator instances to gpa,
 //     this is aligned with zig's std and is more convienient
+//   @[x]: plugins: pass guest function to host to call
+//   @[x]: Intergrate tracing with tracy
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -34,6 +35,8 @@ const cu = @import("cu");
 
 const sdl = @import("sdl3");
 const fc = @import("fontconfig.zig");
+
+const tracy = @import("tracy");
 
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
 const plugins = @import("plugins.zig");
@@ -73,10 +76,15 @@ var debug_allocator = std.heap.DebugAllocator(.{
 }).init;
 
 pub fn run() !void {
+    const app_init = tracy.initZone(@src(), .{ .name = "init" });
+
+    if (tracy.isConnected())
+        log.debug("tracing enabled", .{});
+
     // =-= allocator setup =-=
     log.debug("initializing allocator", .{});
 
-    const gpa, const is_debug = gpa: {
+    const root_allocator, const is_debug = gpa: {
         if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
         break :gpa switch (builtin.mode) {
             .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
@@ -88,6 +96,9 @@ pub fn run() !void {
     defer if (is_debug) {
         _ = debug_allocator.deinit();
     };
+
+    var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
+    const gpa = tracing_allocator.allocator();
 
     // =-= plugin setup =-=
     log.info("setting up plugins", .{});
@@ -105,18 +116,18 @@ pub fn run() !void {
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_PREFER_LIBDECOR, "0");
 
-    try sdl.init(sdl.InitFlag.all);
+    try sdl.init(sdl.InitFlag.events | sdl.InitFlag.video);
     defer sdl.quit();
 
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
     log.debug("creating window", .{});
-    const window_size = cu.axis2(@as(c_int, 800), 600);
+    const init_window_size = cu.axis2(@as(c_int, 800), 600);
     const window = try sdl.Window.init(
         "fe",
-        window_size.w,
-        window_size.h,
+        init_window_size.w,
+        init_window_size.h,
         sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
         // sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable,
     );
@@ -174,21 +185,24 @@ pub fn run() !void {
     // =-= main loop setup =-=
 
     // @TODO: base this value on display refresh rate
-    const app_start_time = try std.time.Instant.now();
     const event_timeout_ms = 10;
+    const app_start_time = try std.time.Instant.now();
     var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
-    var fps_buffer = FpsCircleBuffer{};
+    var fps_buffer = FpsCircleBuffer(100){}; // stores the last 100 fps values
 
     var cu_sdl_renderer = CuSdlRenderer{ .sdl_rend = renderer };
 
     // @BUG: for some reason the window shows up as black until resized, unless we do this
-    try sdl.Event.push(.mkWindow(.window_resized, window.getID(), window_size.w, window_size.h));
+    try sdl.Event.push(.mkWindow(.window_resized, window.getID(), init_window_size.w, init_window_size.h));
 
     // =-= main loop =-=
     log.debug("starting main loop", .{});
+    app_init.deinit();
 
     var dbg_running = if (is_debug) true else void{};
     while (if (is_debug) dbg_running else true) {
+        tracy.frameMark();
+
         // frame stuff
         const current_time = try std.time.Instant.now();
         const delta_time_ns = current_time.since(previous_time);
@@ -198,10 +212,16 @@ pub fn run() !void {
         const fps = @as(f32, std.time.ns_per_s) / @as(f32, @floatFromInt(delta_time_ns));
         fps_buffer.push(fps);
 
+        tracy.plot(f32, "fps", fps);
+
         const uptime_s = current_time.since(app_start_time) / std.time.ns_per_s;
 
         // process events
+        const trace_events = tracy.initZone(@src(), .{ .name = "events" });
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
+            const trace_handle_event = tracy.initZone(@src(), .{ .name = "handle event" });
+            defer trace_handle_event.deinit();
+
             switch (event.type) {
                 .quit => {
                     log.info("recived quit request", .{});
@@ -304,13 +324,16 @@ pub fn run() !void {
                 },
 
                 .window_exposed => {
+                    tracy.message("window expose");
                     try cu_sdl_renderer.render();
                 },
 
                 else => {},
             }
         }
+        trace_events.deinit();
 
+        const trace_build = tracy.initZone(@src(), .{ .name = "ui build" });
         // build ui
         cu.startBuild(@intFromEnum(window.getID()));
         cu.state.ui_root.layout_axis = .y;
@@ -541,33 +564,36 @@ pub fn run() !void {
         }
 
         cu.endBuild();
+        trace_build.deinit();
+
         try cu_sdl_renderer.render();
     }
 
     if (!is_debug) unreachable;
 }
 
-pub const FpsCircleBuffer = struct {
-    const Self = @This();
-    const size = 100;
+pub fn FpsCircleBuffer(comptime Size: usize) type {
+    return struct {
+        const Self = @This();
 
-    buffer: [size]f32 = undefined,
-    pos: usize = 0,
-    count: usize = 0,
+        buffer: [Size]f32 = undefined,
+        pos: usize = 0,
+        count: usize = 0,
 
-    pub fn push(self: *Self, value: f32) void {
-        self.buffer[self.pos] = value;
-        self.pos = (self.pos + 1) % size;
-        self.count = @min(self.count + 1, size);
-    }
+        pub fn push(self: *Self, value: f32) void {
+            self.buffer[self.pos] = value;
+            self.pos = (self.pos + 1) % Size;
+            self.count = @min(self.count + 1, Size);
+        }
 
-    pub fn average(self: Self) f32 {
-        var sum: f32 = 0;
-        for (self.buffer[0..self.count]) |value|
-            sum += value;
-        return sum / @as(f32, @floatFromInt(self.count));
-    }
-};
+        pub fn average(self: Self) f32 {
+            var sum: f32 = 0;
+            for (self.buffer[0..self.count]) |value|
+                sum += value;
+            return sum / @as(f32, @floatFromInt(self.count));
+        }
+    };
+}
 
 fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*anyopaque) callconv(.c) sdl.HitTestResult {
     _ = data;

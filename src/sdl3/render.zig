@@ -69,6 +69,24 @@ pub const Renderer = opaque {
     ) Error!void {
         if (!c.SDL_RenderTexture(@ptrCast(self), @ptrCast(texture), @ptrCast(src_rect), @ptrCast(dest_rect))) return error.sdl;
     }
+
+    pub fn getWindow(renderer: *Renderer) Error!*Window {
+        const window = c.SDL_GetRenderWindow(@ptrCast(renderer));
+        if (window == null) return error.sdl;
+        return @ptrCast(window);
+    }
+
+    pub fn getRenderTarget(renderer: *Renderer) Error!*Texture {
+        const texture = c.SDL_GetRenderTarget(@ptrCast(renderer));
+        if (texture == null) return error.sdl;
+        return @ptrCast(texture);
+    }
+
+    pub fn readPixels(renderer: *Renderer, rect: *const Rect) Error!*Surface {
+        const surface = c.SDL_RenderReadPixels(@ptrCast(renderer), @ptrCast(rect));
+        if (surface == null) return error.sdl;
+        return @ptrCast(surface);
+    }
 };
 
 pub const Texture = extern struct {
@@ -79,5 +97,21 @@ pub const Texture = extern struct {
 
     pub fn deinit(self: *Texture) void {
         c.SDL_DestroyTexture(@ptrCast(self));
+    }
+
+    pub const LockTextureResult = struct {
+        pixels: *anyopaque,
+        pitch: c_int,
+    };
+
+    pub fn lock(texture: *Texture, rect: *const Rect) Error!LockTextureResult {
+        var pixels: ?*anyopaque = null;
+        var pitch: c_int = undefined;
+        if (!c.SDL_LockTexture(@ptrCast(texture), @ptrCast(rect), &pixels, &pitch)) return error.sdl;
+        return .{ .pixels = pixels.?, .pitch = pitch };
+    }
+
+    pub fn unlock(texture: *Texture) void {
+        c.SDL_UnlockTexture(@ptrCast(texture));
     }
 };

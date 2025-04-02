@@ -1,6 +1,8 @@
 const std = @import("std");
 const TermColor = @import("TermColor.zig");
 
+const tracy = @import("tracy");
+
 pub fn logFn(
     comptime message_level: std.log.Level,
     comptime scope: @TypeOf(.enum_literal),
@@ -38,21 +40,28 @@ pub fn logFnRuntime(
 
     std.debug.lockStdErr();
     defer std.debug.unlockStdErr();
-    nosuspend {
-        writer.print(
-            "{[faint]}[{[now]d}{[reset]}{[scope]s}{[faint]}]{[reset]} {[level_color]} {[level]s} {[reset]} ",
-            .{
-                .faint = faint,
-                .reset = reset,
-                .now = now,
-                .scope = scope,
-                .level = level_str,
-                .level_color = level_color,
-            },
-        ) catch return;
 
-        writer.print("{s}" ++ "\n", .{message}) catch return;
+    const term_fmt =
+        "{[faint]}[{[now]d}{[reset]}{[scope]s}{[faint]}]{[reset]} {[level_color]} {[level]s} {[reset]} {[message]s}";
+    const term_args = .{
+        .faint = faint,
+        .reset = reset,
+        .now = now,
+        .scope = scope,
+        .level = level_str,
+        .level_color = level_color,
+        .message = message,
+    };
+    const tracy_fmt =
+        "[{[scope]s}] {[level]s} {[message]s}";
+    const tracy_args = .{
+        .scope = scope,
+        .level = level_str,
+        .message = message,
+    };
 
-        bw.flush() catch return;
-    }
+    writer.print(term_fmt ++ "\n", term_args) catch return;
+    tracy.print(tracy_fmt, tracy_args);
+
+    bw.flush() catch return;
 }

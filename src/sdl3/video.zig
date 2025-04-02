@@ -121,4 +121,10 @@ pub const Window = opaque {
         if (!c.SDL_GetWindowPosition(@ptrCast(window), &x, &y)) return error.sdl;
         return .{ x, y };
     }
+
+    pub fn getSurface(window: *Window) Error!*sdl.Surface {
+        const surface = c.SDL_GetWindowSurface(@ptrCast(window));
+        if (surface == null) return error.sdl;
+        return @ptrCast(surface);
+    }
 };

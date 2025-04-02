@@ -8,8 +8,8 @@ pub fn startBuild(window_id: u32) void {
     cu.state.palette_stack.clearAndReset();
     cu.state.font_stack.clearAndFree();
 
-    cu.state.scope_locals.clearAndFree(cu.state.alloc_temp); // @FIXME: not sure if this is needed
-    _ = cu.state.arena.reset(.retain_capacity);
+    cu.state.scope_locals.clearAndFree(cu.state.arena); // @FIXME: not sure if this is needed
+    _ = cu.state.arena_allocator.reset(.retain_capacity);
 
     cu.state.palette_stack.push(cu.state.default_palette);
     cu.state.font_stack.push(cu.state.default_font);
@@ -39,7 +39,7 @@ pub fn startBuild(window_id: u32) void {
 
 pub fn endBuild() void {
     var to_remove = std.ArrayList(Atom.Key)
-        .initCapacity(cu.state.alloc_temp, cu.State.MaxAtoms / 4) catch @panic("oom");
+        .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch @panic("oom");
 
     for (cu.state.atom_map.values()) |atom| {
         if (atom.build_index_touched_last < cu.state.current_build_index) {
@@ -98,7 +98,7 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
     var is_first_frame = false;
 
     const atom = if (Atom.Key.eql(key, .nil)) blk: {
-        const atom = cu.state.alloc_temp.create(Atom) catch @panic("oom");
+        const atom = cu.state.arena.create(Atom) catch @panic("oom");
         is_first_frame = true;
         break :blk atom;
     } else if (tryAtomFromKey(key)) |atom| blk: {
@@ -107,7 +107,7 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
     } else blk: {
         const atom = cu.state.atom_pool.create() catch @panic("oom");
         is_first_frame = true;
-        const bad_atom = cu.state.atom_map.fetchPut(cu.state.alloc_persistent, key, atom) catch @panic("oom");
+        const bad_atom = cu.state.atom_map.fetchPut(cu.state.gpa, key, atom) catch @panic("oom");
         debugAssert(
             bad_atom == null,
             "got an atom for a key that was thought to not have a value -- keying/hashing is broken",
@@ -179,7 +179,7 @@ pub fn buildFromString(string: []const u8) *Atom {
 }
 
 pub fn buildFromStringF(comptime fmt: []const u8, args: anytype) *Atom {
-    const string = std.fmt.allocPrint(cu.state.alloc_temp, fmt, args) catch @panic("oom");
+    const string = std.fmt.allocPrint(cu.state.arena, fmt, args) catch @panic("oom");
     return buildFromString(string);
 }
 
@@ -262,7 +262,7 @@ pub fn label(string: []const u8) *Atom {
 }
 
 pub fn labelf(comptime fmt: []const u8, args: anytype) *Atom {
-    const string = std.fmt.allocPrint(cu.state.alloc_temp, fmt, args) catch @panic("oom");
+    const string = std.fmt.allocPrint(cu.state.arena, fmt, args) catch @panic("oom");
     return label(string);
 }
 

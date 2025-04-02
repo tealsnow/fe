@@ -7,16 +7,21 @@ const fc = @import("fontconfig.zig");
 const sdl = @import("sdl3");
 const cu = @import("cu");
 
+const tracy = @import("tracy");
+
 sdl_rend: *sdl.Renderer,
 bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
 
 pub fn render(self: *Renderer) !void {
     if (!cu.state.ui_built) return;
 
-    defer self.bg_color_stack.clearAndFree(cu.state.alloc_temp);
+    const trace = tracy.initZone(@src(), .{ .name = "render" });
+    defer trace.deinit();
+
+    defer self.bg_color_stack.clearAndFree(cu.state.arena);
 
     const color = cu.Color.hexRgb(0x000000);
-    try self.bg_color_stack.append(cu.state.alloc_temp, color);
+    try self.bg_color_stack.append(cu.state.arena, color);
     defer _ = self.bg_color_stack.pop().?;
 
     try self.setDrawColor(color);
@@ -68,7 +73,7 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
     };
 
     if (atom.flags.draw_background) {
-        try self.bg_color_stack.append(cu.state.alloc_temp, atom.palette.background);
+        try self.bg_color_stack.append(cu.state.arena, atom.palette.background);
 
         try self.setDrawColor(atom.palette.background);
         try self.fillRect(rect);

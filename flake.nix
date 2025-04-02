@@ -33,6 +33,7 @@
             pkg-config
             valgrind
             wabt
+            tracy
 
             # libs
             sdl3

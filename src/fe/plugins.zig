@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const tracy = @import("tracy");
+
 const wasm = @import("wasm.zig");
 const PluginSchema = @import("plugin-schema").PluginSchema;
 
@@ -272,6 +274,9 @@ pub const Plugin = struct {
         context: *wasm.Context,
         plugin_dir: std.fs.Dir,
     ) !*Plugin {
+        const trace = tracy.initZone(@src(), .{ .name = "plugin init" });
+        defer trace.deinit();
+
         const plugin_ptr = try gpa.create(Plugin);
 
         const memory = try wasm.Memory.init(context, try wasm.Memorytype.init(257, null, false, false));
@@ -318,6 +323,8 @@ pub const Plugin = struct {
         plugin_dir: std.fs.Dir,
     ) !PluginSchema {
         log.info("loading schema", .{});
+        const trace = tracy.initZone(@src(), .{ .name = "load schema" });
+        defer trace.deinit();
 
         const file = try plugin_dir.openFile("plugin.zon", .{});
         defer file.close();
@@ -353,6 +360,9 @@ pub const Plugin = struct {
         engine: *wasm.Engine,
     ) !*wasm.Module {
         log.info("loading wasm", .{});
+        const trace = tracy.initZone(@src(), .{ .name = "load wasm/module" });
+        defer trace.deinit();
+
         const file_path = try std.fmt.allocPrint(gpa, "{s}.wasm", .{id});
         defer gpa.free(file_path);
 
@@ -364,8 +374,7 @@ pub const Plugin = struct {
         defer gpa.free(bytes);
 
         log.info("init module", .{});
-        const module = try wasm.Module.init(engine, bytes);
-        return module;
+        return try wasm.Module.init(engine, bytes);
     }
 
     fn defineCallback(
@@ -390,6 +399,9 @@ pub const Plugin = struct {
         plugin_ptr: *Plugin,
     ) !*wasm.Linker {
         log.info("init linker", .{});
+        const trace = tracy.initZone(@src(), .{ .name = "define callbacks" });
+        defer trace.deinit();
+
         const linker = wasm.Linker.init(engine);
         try linker.defineWasi();
 
@@ -442,6 +454,9 @@ pub const PluginHost = struct {
     plugins: []*Plugin,
 
     pub fn init(gpa: std.mem.Allocator) !PluginHost {
+        const trace = tracy.initZone(@src(), .{ .name = "init plugins" });
+        defer trace.deinit();
+
         log.info("setup engine, store and context", .{});
 
         const config = try wasm.Config.init();
@@ -545,6 +560,8 @@ fn logFnCallback(
 
 pub fn doTest(plugin: *Plugin) !void {
     log.info("getting guest functions", .{});
+    const trace = tracy.initZone(@src(), .{ .name = "plugin test" });
+    defer trace.deinit();
 
     const func_hello_world = try plugin.getFunc("helloWorld");
     const func_add = try plugin.getFunc("add");
@@ -695,7 +712,7 @@ fn takeString(
     results: [*]wasm.Val,
     nresults: usize,
 ) callconv(.c) ?*wasm.Trap {
-    _ = caller; // autofix
+    _ = caller;
     _ = results;
     _ = nresults;
 

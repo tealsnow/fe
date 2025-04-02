@@ -3,7 +3,12 @@
     .version = "0.0.0",
     .fingerprint = 0x4fa64b09c8d4ed6e, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .tracy = .{
+            .url = "https://github.com/tealsnow/zig-tracy/archive/refs/tags/v0.0.8.zip",
+            .hash = "tracy-0.0.8-Dn49m7BRAACAagkc35eMGwhZhoYMxTUcEwxNS9DZ0t5m",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

@@ -187,7 +187,7 @@ fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
         if (violation > 0) {
             // figure out how much we can take in total
             // var child_fixup_sum: f32 = 0;
-            const child_fixups = cu.state.alloc_temp.alloc(f32, children.count) catch @panic("oom");
+            const child_fixups = cu.state.arena.alloc(f32, children.count) catch @panic("oom");
             {
                 var child_idx: usize = 0;
                 var maybe_child: ?*Atom = children.first;

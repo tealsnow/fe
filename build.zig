@@ -11,6 +11,15 @@ pub fn build(b: *std.Build) void {
     // ) orelse if (optimize == .Debug) false else true;
     // const use_llvm = true;
 
+    const enable_profiling = b.option(
+        bool,
+        "enable_profiling",
+        "Enable profiling with tracy intergration",
+    ) orelse switch (optimize) {
+        .Debug => true,
+        else => false,
+    };
+
     const log_level: std.log.Level =
         b.option(
             std.log.Level,
@@ -27,6 +36,13 @@ pub fn build(b: *std.Build) void {
         .paths = &.{"src/"},
     });
     b.getInstallStep().dependOn(&fmt_step.step);
+
+    const tracy = b.dependency("tracy", .{
+        .target = target,
+        .optimize = optimize,
+        .tracy_enable = enable_profiling,
+        .shared = false,
+    });
 
     const sdl3 = sdl3: {
         const mod = b.createModule(.{
@@ -57,8 +73,13 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         });
+
         mod.addImport("sdl3", sdl3.root_module);
         mod.linkLibrary(sdl3);
+
+        mod.addImport("tracy", tracy.module("tracy"));
+        mod.linkLibrary(tracy.artifact("tracy"));
+        if (enable_profiling) mod.link_libcpp = true;
 
         const cu = b.addLibrary(.{
             .name = "cu",
@@ -89,6 +110,10 @@ pub fn build(b: *std.Build) void {
 
         mod.addImport("cu", cu.root_module);
         mod.linkLibrary(cu);
+
+        mod.addImport("tracy", tracy.module("tracy"));
+        mod.linkLibrary(tracy.artifact("tracy"));
+        if (enable_profiling) mod.link_libcpp = true;
 
         const plugin_schema = getPluginSchema(b);
         mod.addImport("plugin-schema", plugin_schema);
@@ -140,13 +165,27 @@ pub fn build(b: *std.Build) void {
     }
 
     // run
-    {
+    const run_cmd = run: {
         const run_cmd = b.addRunArtifact(fe);
         run_cmd.step.dependOn(b.getInstallStep());
         if (b.args) |args| run_cmd.addArgs(args);
 
         const run_step = b.step("run", "Run the app");
         run_step.dependOn(&run_cmd.step);
+
+        break :run run_cmd;
+    };
+
+    // trace/profiling
+    if (enable_profiling) {
+        // @TODO: Figure out a portable alternative to setsid
+        // @NOTE: setsid used since `addSystemCommand` is blocking
+        //  without it, it would launch tracy then wait for it to close before running the app
+        const tracy_cmd = b.addSystemCommand(&.{ "setsid", "-f", "tracy", "-a", "localhost" });
+
+        const trace_step = b.step("trace", "Run with tracy");
+        trace_step.dependOn(&tracy_cmd.step);
+        trace_step.dependOn(&run_cmd.step);
     }
 
     // check

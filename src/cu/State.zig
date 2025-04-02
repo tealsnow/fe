@@ -16,9 +16,9 @@ build_atom_count: u64 = 0,
 font_manager: cu.FontManager = .empty,
 callbacks: Callbacks,
 
-arena: std.heap.ArenaAllocator,
-alloc_temp: Allocator,
-alloc_persistent: Allocator,
+arena_allocator: std.heap.ArenaAllocator,
+arena: Allocator,
+gpa: Allocator,
 
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
@@ -76,16 +76,16 @@ pub const EventNodePool = std.heap.MemoryPoolExtra(EventList.Node, .{ .growable 
 pub const EventPool = std.heap.MemoryPoolExtra(cu.Event, .{ .growable = true });
 
 pub fn init(
-    self: *State,
+    state: *State,
     gpa: Allocator,
     callbacks: Callbacks,
 ) !void {
-    self.* = .{
+    state.* = .{
         .callbacks = callbacks,
 
-        .arena = std.heap.ArenaAllocator.init(gpa),
-        .alloc_temp = undefined,
-        .alloc_persistent = gpa,
+        .arena_allocator = std.heap.ArenaAllocator.init(gpa),
+        .arena = undefined,
+        .gpa = gpa,
 
         .atom_pool = undefined,
         .atom_parent_stack = undefined,
@@ -99,43 +99,43 @@ pub fn init(
         .graphics_info = undefined,
     };
 
-    // workaround to ensure that the allocator vtable references the arena stored in gs, not in the stack
-    self.alloc_temp = self.arena.allocator();
+    // workaround to ensure that the allocator vtable references the arena stored in state, not in the stack
+    state.arena = state.arena_allocator.allocator();
 
     // self.atom_pool = try .initPreheated(self.alloc_persistent, State.MaxAtoms);
-    self.atom_pool = .init(self.alloc_persistent);
-    self.atom_parent_stack = .init(self.alloc_temp);
+    state.atom_pool = .init(state.gpa);
+    state.atom_parent_stack = .init(state.arena);
 
-    self.palette_stack = .init(self.alloc_temp, self.alloc_temp);
-    self.font_stack = .init(self.alloc_temp);
+    state.palette_stack = .init(state.arena, state.arena);
+    state.font_stack = .init(state.arena);
 
-    self.event_pool = .init(self.alloc_persistent);
-    self.event_node_pool = .init(self.alloc_persistent);
+    state.event_pool = .init(state.gpa);
+    state.event_node_pool = .init(state.gpa);
 
-    self.graphics_info = self.callbacks.getGraphicsInfo();
+    state.graphics_info = state.callbacks.getGraphicsInfo();
 }
 
-pub fn deinit(self: *State) void {
-    self.font_manager.deinit();
+pub fn deinit(state: *State) void {
+    state.font_manager.deinit();
 
     // state.parent_stack.deinit(state.alloc_temp);
-    self.atom_map.deinit(self.alloc_persistent);
+    state.atom_map.deinit(state.gpa);
 
-    self.arena.deinit();
-    self.atom_pool.deinit();
-    self.event_pool.deinit();
-    self.event_node_pool.deinit();
+    state.arena_allocator.deinit();
+    state.atom_pool.deinit();
+    state.event_pool.deinit();
+    state.event_node_pool.deinit();
 
-    self.* = undefined;
+    state.* = undefined;
 }
 
-pub fn pushEvent(self: *State, event: cu.Event) void {
-    const evt = self.event_pool.create() catch @panic("oom");
+pub fn pushEvent(state: *State, event: cu.Event) void {
+    const evt = state.event_pool.create() catch @panic("oom");
     evt.* = event;
     evt.timestamp_us = @intCast(std.time.microTimestamp());
-    const node = self.event_node_pool.create() catch @panic("oom");
+    const node = state.event_node_pool.create() catch @panic("oom");
     node.* = .{ .data = evt };
-    self.event_list.append(node);
+    state.event_list.append(node);
 }
 
 pub const Callbacks = struct {
