@@ -76,7 +76,7 @@ var debug_allocator = std.heap.DebugAllocator(.{
 }).init;
 
 pub fn run() !void {
-    const app_init = tracy.initZone(@src(), .{ .name = "init" });
+    const trace_app_init = tracy.beginZone(@src(), .{ .name = "init" });
 
     if (tracy.isConnected())
         log.debug("tracing enabled", .{});
@@ -197,7 +197,7 @@ pub fn run() !void {
 
     // =-= main loop =-=
     log.debug("starting main loop", .{});
-    app_init.deinit();
+    trace_app_init.end();
 
     var dbg_running = if (is_debug) true else void{};
     while (if (is_debug) dbg_running else true) {
@@ -217,10 +217,10 @@ pub fn run() !void {
         const uptime_s = current_time.since(app_start_time) / std.time.ns_per_s;
 
         // process events
-        const trace_events = tracy.initZone(@src(), .{ .name = "events" });
+        const trace_events = tracy.beginZone(@src(), .{ .name = "events" });
         if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
-            const trace_handle_event = tracy.initZone(@src(), .{ .name = "handle event" });
-            defer trace_handle_event.deinit();
+            const trace_handle_event = tracy.beginZone(@src(), .{ .name = "handle event" });
+            defer trace_handle_event.end();
 
             switch (event.type) {
                 .quit => {
@@ -331,9 +331,9 @@ pub fn run() !void {
                 else => {},
             }
         }
-        trace_events.deinit();
+        trace_events.end();
 
-        const trace_build = tracy.initZone(@src(), .{ .name = "ui build" });
+        const trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
         // build ui
         cu.startBuild(@intFromEnum(window.getID()));
         cu.state.ui_root.layout_axis = .y;
@@ -564,7 +564,7 @@ pub fn run() !void {
         }
 
         cu.endBuild();
-        trace_build.deinit();
+        trace_build.end();
 
         try cu_sdl_renderer.render();
     }

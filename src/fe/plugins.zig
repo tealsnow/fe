@@ -274,8 +274,8 @@ pub const Plugin = struct {
         context: *wasm.Context,
         plugin_dir: std.fs.Dir,
     ) !*Plugin {
-        const trace = tracy.initZone(@src(), .{ .name = "plugin init" });
-        defer trace.deinit();
+        const trace = tracy.beginZone(@src(), .{ .name = "plugin init" });
+        defer trace.end();
 
         const plugin_ptr = try gpa.create(Plugin);
 
@@ -323,8 +323,8 @@ pub const Plugin = struct {
         plugin_dir: std.fs.Dir,
     ) !PluginSchema {
         log.info("loading schema", .{});
-        const trace = tracy.initZone(@src(), .{ .name = "load schema" });
-        defer trace.deinit();
+        const trace = tracy.beginZone(@src(), .{ .name = "load schema" });
+        defer trace.end();
 
         const file = try plugin_dir.openFile("plugin.zon", .{});
         defer file.close();
@@ -360,8 +360,8 @@ pub const Plugin = struct {
         engine: *wasm.Engine,
     ) !*wasm.Module {
         log.info("loading wasm", .{});
-        const trace = tracy.initZone(@src(), .{ .name = "load wasm/module" });
-        defer trace.deinit();
+        const trace = tracy.beginZone(@src(), .{ .name = "load wasm/module" });
+        defer trace.end();
 
         const file_path = try std.fmt.allocPrint(gpa, "{s}.wasm", .{id});
         defer gpa.free(file_path);
@@ -399,8 +399,8 @@ pub const Plugin = struct {
         plugin_ptr: *Plugin,
     ) !*wasm.Linker {
         log.info("init linker", .{});
-        const trace = tracy.initZone(@src(), .{ .name = "define callbacks" });
-        defer trace.deinit();
+        const trace = tracy.beginZone(@src(), .{ .name = "define callbacks" });
+        defer trace.end();
 
         const linker = wasm.Linker.init(engine);
         try linker.defineWasi();
@@ -454,8 +454,8 @@ pub const PluginHost = struct {
     plugins: []*Plugin,
 
     pub fn init(gpa: std.mem.Allocator) !PluginHost {
-        const trace = tracy.initZone(@src(), .{ .name = "init plugins" });
-        defer trace.deinit();
+        const trace = tracy.beginZone(@src(), .{ .name = "init plugins" });
+        defer trace.end();
 
         log.info("setup engine, store and context", .{});
 
@@ -560,8 +560,8 @@ fn logFnCallback(
 
 pub fn doTest(plugin: *Plugin) !void {
     log.info("getting guest functions", .{});
-    const trace = tracy.initZone(@src(), .{ .name = "plugin test" });
-    defer trace.deinit();
+    const trace = tracy.beginZone(@src(), .{ .name = "plugin test" });
+    defer trace.end();
 
     const func_hello_world = try plugin.getFunc("helloWorld");
     const func_add = try plugin.getFunc("add");

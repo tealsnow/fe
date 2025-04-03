@@ -15,8 +15,8 @@ bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
 pub fn render(self: *Renderer) !void {
     if (!cu.state.ui_built) return;
 
-    const trace = tracy.initZone(@src(), .{ .name = "render" });
-    defer trace.deinit();
+    const trace = tracy.beginZone(@src(), .{ .name = "render" });
+    defer trace.end();
 
     defer self.bg_color_stack.clearAndFree(cu.state.arena);
 
