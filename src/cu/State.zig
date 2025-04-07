@@ -1,6 +1,7 @@
 const State = @This();
 
 const std = @import("std");
+const log = std.log.scoped(.@"cu::State");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
@@ -13,7 +14,6 @@ const MouseButton = cu.MouseButton;
 current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
 
-font_manager: cu.FontManager = .empty,
 callbacks: Callbacks,
 
 arena_allocator: std.heap.ArenaAllocator,
@@ -22,12 +22,14 @@ gpa: Allocator,
 
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
-atom_parent_stack: Stack(*Atom),
+atom_parent_stack: Stack(*Atom) = .empty,
 
 default_palette: Atom.Palette = undefined,
-palette_stack: PoolStack(Atom.Palette),
-default_font: cu.FontId = undefined,
-font_stack: Stack(cu.FontId),
+default_font: FontId = undefined,
+
+palette_stack: OnceStack(Atom.Palette) = .empty,
+font_stack: OnceStack(FontId) = .empty,
+pref_size_stack: OnceStack(cu.Axis2(Atom.PrefSize)) = .empty,
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -43,7 +45,7 @@ ui_ctx_menu_root: *Atom = undefined,
 ctx_menu_open: bool = false,
 next_ctx_menu_open: bool = false,
 
-active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil), // currently interacting atom for button
+active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil), // currently interacting atom for mouse button
 hot_atom_key: Atom.Key = .nil, // currenly over (event consuming) atom
 
 event_pool: EventPool,
@@ -56,13 +58,13 @@ window_size: cu.Axis2(f32) = .zero,
 mouse: cu.Vec2(f32) = .nan,
 start_drag_pos: cu.Vec2(f32) = .nan,
 
-press_history_timestamp_us: [MouseButton.array.len]HistoryRingBuffer(u64, HistoySize) = @splat(.empty),
+fonthandles: std.ArrayListUnmanaged(FontHandle) = .empty,
+
 press_history_key: [MouseButton.array.len]HistoryRingBuffer(Atom.Key, HistoySize) = @splat(.empty),
+press_history_timestamp_us: [MouseButton.array.len]HistoryRingBuffer(u64, HistoySize) = @splat(.empty),
 
 const HistoySize = 8;
 
-// @FIXME: possibly allow the consumer to specify this?
-pub const MaxAtoms = 4000;
 pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = true });
 pub const AtomMap = std.ArrayHashMapUnmanaged(
     Atom.Key,
@@ -71,15 +73,12 @@ pub const AtomMap = std.ArrayHashMapUnmanaged(
     false,
 );
 
-pub const EventList = std.DoublyLinkedList(*cu.Event);
-pub const EventNodePool = std.heap.MemoryPoolExtra(EventList.Node, .{ .growable = true });
-pub const EventPool = std.heap.MemoryPoolExtra(cu.Event, .{ .growable = true });
+const EventList = std.DoublyLinkedList(*cu.Event);
+const EventNodePool = std.heap.MemoryPoolExtra(EventList.Node, .{ .growable = true });
+const EventPool = std.heap.MemoryPoolExtra(cu.Event, .{ .growable = true });
 
-pub fn init(
-    state: *State,
-    gpa: Allocator,
-    callbacks: Callbacks,
-) !void {
+pub fn init(gpa: Allocator, callbacks: Callbacks) !*State {
+    const state = try gpa.create(State);
     state.* = .{
         .callbacks = callbacks,
 
@@ -88,54 +87,59 @@ pub fn init(
         .gpa = gpa,
 
         .atom_pool = undefined,
-        .atom_parent_stack = undefined,
-
-        .palette_stack = undefined,
-        .font_stack = undefined,
 
         .event_pool = undefined,
         .event_node_pool = undefined,
 
         .graphics_info = undefined,
     };
-
-    // workaround to ensure that the allocator vtable references the arena stored in state, not in the stack
     state.arena = state.arena_allocator.allocator();
 
-    // self.atom_pool = try .initPreheated(self.alloc_persistent, State.MaxAtoms);
     state.atom_pool = .init(state.gpa);
-    state.atom_parent_stack = .init(state.arena);
-
-    state.palette_stack = .init(state.arena, state.arena);
-    state.font_stack = .init(state.arena);
 
     state.event_pool = .init(state.gpa);
     state.event_node_pool = .init(state.gpa);
 
     state.graphics_info = state.callbacks.getGraphicsInfo();
+
+    return state;
 }
 
 pub fn deinit(state: *State) void {
-    state.font_manager.deinit();
-
-    // state.parent_stack.deinit(state.alloc_temp);
     state.atom_map.deinit(state.gpa);
 
     state.arena_allocator.deinit();
     state.atom_pool.deinit();
+
     state.event_pool.deinit();
     state.event_node_pool.deinit();
 
-    state.* = undefined;
+    state.fonthandles.deinit(cu.state.gpa);
+
+    const gpa = state.gpa;
+    gpa.destroy(state);
 }
 
-pub fn pushEvent(state: *State, event: cu.Event) void {
-    const evt = state.event_pool.create() catch @panic("oom");
-    evt.* = event;
-    evt.timestamp_us = @intCast(std.time.microTimestamp());
+pub fn pushEvent(state: *State, kind: cu.EventKind) void {
+    const event = state.event_pool.create() catch @panic("oom");
     const node = state.event_node_pool.create() catch @panic("oom");
-    node.* = .{ .data = evt };
+    event.* = .{
+        .kind = kind,
+        .timestamp_us = @intCast(std.time.microTimestamp()),
+        .consumed = false,
+    };
+    node.* = .{ .data = event };
     state.event_list.append(node);
+}
+
+pub fn registerFont(state: *State, font: FontHandle) FontId {
+    const id: FontId = @enumFromInt(state.fonthandles.items.len);
+    state.fonthandles.append(state.gpa, font) catch @panic("oom");
+    return id;
+}
+
+pub fn getFont(state: *const State, id: FontId) FontHandle {
+    return state.fonthandles.items[@intFromEnum(id)];
 }
 
 pub const Callbacks = struct {
@@ -143,12 +147,12 @@ pub const Callbacks = struct {
     vtable: VTable,
 
     pub const VTable = struct {
-        measureText: *const fn (context: *anyopaque, text: []const u8, font: cu.FontHandle) cu.Axis2(f32),
-        fontSize: *const fn (context: *anyopaque, font: cu.FontHandle) f32,
+        measureText: *const fn (context: *anyopaque, text: []const u8, font: FontHandle) cu.Axis2(f32),
+        fontSize: *const fn (context: *anyopaque, font: FontHandle) f32,
         getGraphicsInfo: *const fn (context: *anyopaque) GraphicsInfo,
     };
 
-    pub fn measureText(self: *Callbacks, text: []const u8, font: cu.FontHandle) cu.Axis2(f32) {
+    pub fn measureText(self: *Callbacks, text: []const u8, font: FontHandle) cu.Axis2(f32) {
         return self.vtable.measureText(self.context, text, font);
     }
 
@@ -164,70 +168,70 @@ pub const Callbacks = struct {
 fn Stack(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const empty = Self{};
 
-        stack: std.ArrayList(T),
+        list: std.ArrayListUnmanaged(T),
 
-        pub fn init(allocator: Allocator) Self {
-            return .{ .stack = .init(allocator) };
-        }
+        pub const empty = Self{ .list = .empty };
 
-        pub fn push(self: *Self, item: T) void {
-            self.stack.append(item) catch @panic("oom");
-        }
-
-        pub fn pop(self: *Self) ?T {
-            return self.stack.pop();
+        pub fn push(self: *Self, allocator: Allocator, item: T) void {
+            self.list.append(allocator, item) catch @panic("oom");
         }
 
         pub fn top(self: *Self) ?T {
-            return self.stack.getLastOrNull();
+            return self.list.getLastOrNull();
         }
 
-        pub fn clearAndFree(self: *Self) void {
-            self.stack.clearAndFree();
+        pub fn pop(self: *Self) ?T {
+            return self.list.pop();
+        }
+
+        pub fn clearAndFree(self: *Self, allocator: Allocator) void {
+            self.list.clearAndFree(allocator);
         }
     };
 }
 
-fn PoolStack(comptime T: type) type {
+/// Allows items to put onto the stack that will be removed once they are read
+fn OnceStack(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        pool: std.heap.MemoryPoolExtra(T, .{}),
-        stack: Stack(*T),
+        pub const StackItem = struct {
+            item: T,
+            once: bool,
+        };
 
-        pub fn init(pool_allocator: Allocator, stack_allocator: Allocator) Self {
-            return .{
-                .pool = .init(pool_allocator),
-                .stack = .init(stack_allocator),
-            };
+        stack: std.MultiArrayList(StackItem),
+
+        pub const empty = Self{ .stack = .empty };
+
+        pub fn push(self: *Self, allocator: Allocator, item: T, once: bool) void {
+            self.stack.append(allocator, .{ .once = once, .item = item }) catch @panic("oom");
         }
 
-        pub fn push(self: *Self, item: T) void {
-            const ptr = self.pool.create() catch @panic("oom");
-            ptr.* = item;
-            self.stack.push(ptr);
+        pub fn top(self: *Self) ?T {
+            if (self.stack.len == 0) return null;
+            const elem = self.stack.get(self.stack.len - 1);
+            if (elem.once)
+                self.stack.len -= 1;
+            return elem.item;
         }
 
-        pub fn pop(self: *Self) ?*T {
-            return self.stack.pop();
+        pub fn topNoPop(self: *Self) ?T {
+            if (self.stack.len == 0) return null;
+            const elem = self.stack.get(self.stack.len - 1);
+            return elem.item;
         }
 
-        pub fn top(self: *Self) ?*T {
-            return self.stack.top();
+        pub fn pop(self: *Self) ?T {
+            return if (self.stack.pop()) |elem|
+                elem.item
+            else
+                null;
         }
 
-        pub fn dupeTop(self: *Self) ?*T {
-            const t = self.top() orelse return null;
-            const dup = self.pool.create() catch @panic("oom");
-            dup.* = t.*;
-            return dup;
-        }
-
-        pub fn clearAndReset(self: *Self) void {
-            self.stack.clearAndFree();
-            _ = self.pool.reset(.free_all);
+        pub fn clearAndFree(self: *Self, allocator: Allocator) void {
+            self.stack.clearAndFree(allocator);
         }
     };
 }
@@ -269,3 +273,6 @@ pub fn HistoryRingBuffer(
         }
     };
 }
+
+pub const FontHandle = *anyopaque;
+pub const FontId = enum(u32) { _ };

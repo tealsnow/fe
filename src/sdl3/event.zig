@@ -202,13 +202,13 @@ pub const Event = extern union {
         } };
     }
 
-    pub fn mkQuit() Event {
+    pub fn makeQuit() Event {
         var ev = mkCommon();
         ev.type = .quit;
         return ev;
     }
 
-    pub fn mkWindow(ty: EventType, id: WindowID, data1: i32, data2: i32) Event {
+    pub fn makeWindow(ty: EventType, id: WindowID, data1: i32, data2: i32) Event {
         var ev = mkCommon();
         ev.type = ty;
         ev.window.window_id = id;
@@ -217,7 +217,15 @@ pub const Event = extern union {
         return ev;
     }
 
-    pub fn mkMouseButton(
+    pub fn makeWindowResized(id: WindowID, w: i32, h: i32) Event {
+        return .makeWindow(.window_resized, id, w, h);
+    }
+
+    pub fn makeWindowCloseRequested(id: WindowID) Event {
+        return .makeWindow(.window_close_requested, id, 0, 0);
+    }
+
+    pub fn makeMouseButton(
         ty: EventType,
         window_id: WindowID,
         which: MouseID,

@@ -7,31 +7,42 @@ const Atom = cu.Atom;
 
 // @TODO: remove reliance on sdl
 pub const Event = struct {
-    kind: Kind,
-    key: struct {
+    kind: EventKind,
+    timestamp_us: u64,
+    consumed: bool,
+};
+
+pub const EventKind = union(enum) {
+    key: KeyEvent,
+    mouse_button: MouseButtonEvent,
+    mouse_move: MouseMoveEvent,
+    scroll: ScrollEvent,
+    text: TextEvent,
+
+    pub const KeyEvent = struct {
         scancode: sdl.Scancode,
         keycode: sdl.Keycode,
         mod: sdl.Keymod,
-    } = .{
-        .scancode = .unknown,
-        .keycode = .unknown,
-        .mod = .{},
-    },
-    button: MouseButton = .none,
-    state: PressState = .none,
-    pos: cu.Vec2(f32) = .zero,
-    scroll: cu.Vec2(f32) = .zero,
-    text: []const u8 = "",
+        state: PressState,
+    };
 
-    timestamp_us: u64 = 0, // populated by pushEvent
-    consumed: bool = false,
+    pub const MouseButtonEvent = struct {
+        button: MouseButton,
+        pos: cu.Vec2(f32),
+        state: PressState,
+    };
 
-    pub const Kind = enum {
-        key_press, // key, state
-        mouse_press, // button, state, pos
-        mouse_move, // pos
-        scroll, // scroll, pos
-        text_input, // text
+    pub const MouseMoveEvent = struct {
+        pos: cu.Vec2(f32),
+    };
+
+    pub const ScrollEvent = struct {
+        scroll: cu.Vec2(f32),
+        pos: cu.Vec2(f32),
+    };
+
+    pub const TextEvent = struct {
+        text: []const u8,
     };
 
     pub const PressState = enum(u8) {
@@ -216,7 +227,7 @@ fn setButtonGeneric(
     }
 }
 
-pub fn interationFromAtom(atom: *Atom) Interation {
+pub fn interactionFromAtom(atom: *Atom) Interation {
     var inter = Interation{ .atom = atom };
 
     var rect = atom.rect;
@@ -247,30 +258,37 @@ pub fn interationFromAtom(atom: *Atom) Interation {
         const event = node.data;
         if (event.consumed) continue;
 
-        switch (event.kind) {
-            .mouse_press, .mouse_move => {
-                cu.state.mouse = event.pos;
+        const button = switch (event.kind) {
+            .mouse_button => |button| button: {
+                cu.state.mouse = button.pos;
+                break :button button;
             },
-            else => {},
-        }
+            .mouse_move => |move| {
+                cu.state.mouse = move.pos;
+                continue;
+            },
+            else => {
+                continue;
+            },
+        };
 
-        const in_bounds = !blacklist_rect.contains(event.pos) and rect.contains(event.pos);
-        const button_idx = @intFromEnum(event.button);
+        const in_bounds = !blacklist_rect.contains(cu.state.mouse) and rect.contains(cu.state.mouse);
+        const button_idx = @intFromEnum(button.button);
 
         // mouse down in box -> set box as hot/active -> press event
         if (atom.flags.mouse_clickable and
-            event.state == .pressed and
+            button.state == .pressed and
             in_bounds and
-            event.button != .none)
+            button.button != .none)
         {
             event.consumed = true;
 
             cu.state.hot_atom_key = atom.key;
             cu.state.active_atom_key[button_idx] = atom.key;
 
-            cu.state.start_drag_pos = event.pos;
+            cu.state.start_drag_pos = cu.state.mouse;
 
-            inter.f = setButtonGeneric(inter.f, .{ .left_pressed = true }, event.button);
+            inter.f = setButtonGeneric(inter.f, .{ .left_pressed = true }, button.button);
 
             const double_click_time_us = cu.state.graphics_info.double_click_time_us;
 
@@ -282,7 +300,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
             if (Atom.Key.eql(atom.key, last_pressed_key) and
                 event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us)
             {
-                inter.f = setButtonGeneric(inter.f, .{ .left_double_clicked = true }, event.button);
+                inter.f = setButtonGeneric(inter.f, .{ .left_double_clicked = true }, button.button);
             }
 
             const last_last_pressed_key =
@@ -295,7 +313,7 @@ pub fn interationFromAtom(atom: *Atom) Interation {
                 event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us and
                 last_pressed_timestamp_us - last_last_pressed_timestamp_us <= double_click_time_us)
             {
-                inter.f = setButtonGeneric(inter.f, .{ .left_triple_clicked = true }, event.button);
+                inter.f = setButtonGeneric(inter.f, .{ .left_triple_clicked = true }, button.button);
             }
 
             cu.state.press_history_timestamp_us[button_idx].push(event.timestamp_us);
@@ -304,8 +322,8 @@ pub fn interationFromAtom(atom: *Atom) Interation {
 
         // mouse in/out release in box -> unset as active -> release (and maybe click) event
         if (atom.flags.mouse_clickable and
-            event.state == .released and
-            event.button != .none and
+            button.state == .released and
+            button.button != .none and
             cu.state.active_atom_key[button_idx].eql(atom.key))
         {
             cu.state.active_atom_key[button_idx] = .nil;
@@ -313,9 +331,9 @@ pub fn interationFromAtom(atom: *Atom) Interation {
             const click = in_bounds;
             if (click) cu.state.hot_atom_key = .nil;
 
-            inter.f = setButtonGeneric(inter.f, .{ .left_released = true }, event.button);
+            inter.f = setButtonGeneric(inter.f, .{ .left_released = true }, button.button);
             if (click)
-                inter.f = setButtonGeneric(inter.f, .{ .left_clicked = true }, event.button);
+                inter.f = setButtonGeneric(inter.f, .{ .left_clicked = true }, button.button);
 
             event.consumed = true;
         }

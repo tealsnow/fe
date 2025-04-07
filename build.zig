@@ -4,21 +4,20 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // const use_llvm = b.option(
-    //     bool,
-    //     "use_llvm",
-    //     "switch to use llvm or not (defaults to false on debug builds true for release builds)",
-    // ) orelse if (optimize == .Debug) false else true;
-    // const use_llvm = true;
+    const profile =
+        b.option(
+            bool,
+            "profile",
+            "Enable profiling with tracy (always uses llvm)",
+        ) orelse false;
 
-    const enable_profiling = b.option(
-        bool,
-        "enable_profiling",
-        "Enable profiling with tracy intergration",
-    ) orelse switch (optimize) {
-        .Debug => true,
-        else => false,
-    };
+    const use_llvm =
+        b.option(
+            bool,
+            "use_llvm",
+            "switch to use llvm or not (defaults to false for debug and true for release)",
+        ) orelse
+        if (optimize == .Debug) profile else true;
 
     const log_level: std.log.Level =
         b.option(
@@ -31,6 +30,13 @@ pub fn build(b: *std.Build) void {
             .ReleaseFast, .ReleaseSmall => .warn,
         };
 
+    const poll_event_loop =
+        b.option(
+            bool,
+            "poll_event_loop",
+            "Whether to poll for events or have a timeout (default: false)",
+        ) orelse false;
+
     const fmt_step = b.addFmt(.{
         .check = true,
         .paths = &.{"src/"},
@@ -40,7 +46,7 @@ pub fn build(b: *std.Build) void {
     const tracy = b.dependency("tracy", .{
         .target = target,
         .optimize = optimize,
-        .tracy_enable = enable_profiling,
+        .tracy_enable = profile,
         .shared = false,
     });
 
@@ -58,8 +64,8 @@ pub fn build(b: *std.Build) void {
             .name = "sdl3",
             .root_module = mod,
 
-            // .use_llvm = use_llvm,
-            // .use_lld = use_llvm,
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
             // .use_lld = false,
         });
         b.installArtifact(sdl3);
@@ -78,15 +84,17 @@ pub fn build(b: *std.Build) void {
         mod.linkLibrary(sdl3);
 
         mod.addImport("tracy", tracy.module("tracy"));
-        mod.linkLibrary(tracy.artifact("tracy"));
-        if (enable_profiling) mod.link_libcpp = true;
+        if (profile) {
+            mod.linkLibrary(tracy.artifact("tracy"));
+            mod.link_libcpp = true;
+        }
 
         const cu = b.addLibrary(.{
             .name = "cu",
             .root_module = mod,
 
-            // .use_llvm = use_llvm,
-            // .use_lld = use_llvm,
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
             // .use_lld = false,
         });
         b.installArtifact(cu);
@@ -112,22 +120,25 @@ pub fn build(b: *std.Build) void {
         mod.linkLibrary(cu);
 
         mod.addImport("tracy", tracy.module("tracy"));
-        mod.linkLibrary(tracy.artifact("tracy"));
-        if (enable_profiling) mod.link_libcpp = true;
+        if (profile) {
+            mod.linkLibrary(tracy.artifact("tracy"));
+            mod.link_libcpp = true;
+        }
 
         const plugin_schema = getPluginSchema(b);
         mod.addImport("plugin-schema", plugin_schema);
 
         const options = b.addOptions();
         options.addOption(std.log.Level, "log_level", log_level);
+        options.addOption(bool, "poll_event_loop", poll_event_loop);
         mod.addOptions("build_options", options);
 
         const fe = b.addExecutable(.{
             .name = "fe",
             .root_module = mod,
 
-            // .use_llvm = use_llvm,
-            // .use_lld = use_llvm,
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
             // .use_lld = false,
         });
         b.installArtifact(fe);
@@ -165,7 +176,7 @@ pub fn build(b: *std.Build) void {
     }
 
     // run
-    const run_cmd = run: {
+    {
         const run_cmd = b.addRunArtifact(fe);
         run_cmd.step.dependOn(b.getInstallStep());
         if (b.args) |args| run_cmd.addArgs(args);
@@ -173,19 +184,14 @@ pub fn build(b: *std.Build) void {
         const run_step = b.step("run", "Run the app");
         run_step.dependOn(&run_cmd.step);
 
-        break :run run_cmd;
-    };
-
-    // trace/profiling
-    if (enable_profiling) {
-        // @TODO: Figure out a portable alternative to setsid
-        // @NOTE: setsid used since `addSystemCommand` is blocking
-        //  without it, it would launch tracy then wait for it to close before running the app
-        const tracy_cmd = b.addSystemCommand(&.{ "setsid", "-f", "tracy", "-a", "localhost" });
-
-        const trace_step = b.step("trace", "Run with tracy");
-        trace_step.dependOn(&tracy_cmd.step);
-        trace_step.dependOn(&run_cmd.step);
+        if (profile) {
+            // @TODO: Figure out a portable alternative to setsid
+            // @NOTE: setsid used since `addSystemCommand` is blocking
+            //  without it, the build system would launch tracy then wait for
+            //  it to close before running the app
+            const tracy_cmd = b.addSystemCommand(&.{ "setsid", "-f", "tracy", "-a", "localhost" });
+            run_cmd.step.dependOn(&tracy_cmd.step);
+        }
     }
 
     // check

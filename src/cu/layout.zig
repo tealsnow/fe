@@ -25,7 +25,7 @@ pub fn layout(root: *Atom) !void {
 fn sizeText(root: *Atom) void {
     // any-order
 
-    const font_handle = cu.state.font_manager.getFont(root.font);
+    const font_handle = cu.state.getFont(root.font);
     root.text_size = cu.state.callbacks.measureText(root.display_string, font_handle);
 
     if (root.children) |children| {

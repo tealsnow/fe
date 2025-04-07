@@ -24,11 +24,9 @@ const input = @import("input.zig");
 pub usingnamespace input;
 const scope_locals = @import("scope_locals.zig");
 pub usingnamespace scope_locals;
-const font = @import("font.zig");
-pub usingnamespace font;
 
 pub const State = @import("State.zig");
-pub var state: State = undefined;
+pub var state: *State = undefined;
 
 pub fn debugAssert(ok: bool, comptime fmt: []const u8, args: anytype) void {
     if (builtin.mode == .Debug) {

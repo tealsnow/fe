@@ -1,8 +1,10 @@
 // @TODO:
+//   @[ ]: toggle box component
+//   @[ ]: pre-reserve mmaped memory for allocators
+//   @[ ]: animations
 //   @[ ]: Migrate to github issue tracker for all of these
 //   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
-//   @[ ]: animations
 //   @[ ]: focus behaviour
 //   @[ ]: migrate to wgpu rendering
 //     harfbuzz for shaping
@@ -11,6 +13,8 @@
 //   @[ ]: scrolling
 //     @[x]: overflow
 //     @[x]: clip
+//     @[ ]: builder support
+//       @[ ]: event handling
 //   @[ ]: better rendering
 //     @[x]: text alignment
 //     @[x]: backgrounds
@@ -69,11 +73,170 @@ pub fn main() !void {
 }
 
 var debug_allocator = std.heap.DebugAllocator(.{
-    // .never_unmap = true,
-    // .retain_metadata = true,
+    .never_unmap = true,
+    .retain_metadata = true,
     // .verbose_log = true,
     // .backing_allocator_zeroes = false,
 }).init;
+
+pub const Window = struct {
+    window_handle: *sdl.Window,
+    render_handle: CuSdlRenderer,
+    ui_state: *cu.State,
+
+    default_font_handle: *sdl.ttf.Font,
+    monospace_font_handle: *sdl.ttf.Font,
+    default_font: cu.State.FontId,
+    monospace_font: cu.State.FontId,
+
+    pub fn init(
+        gpa: std.mem.Allocator,
+        title: [:0]const u8,
+        borderless: bool,
+        size: cu.Axis2(c_int),
+    ) !*Window {
+        const trace = tracy.beginZone(@src(), .{ .name = "init window" });
+        defer trace.end();
+
+        log.debug("creating window", .{});
+
+        const window = try sdl.Window.init(
+            title,
+            size.w,
+            size.h,
+            sdl.WindowFlag.high_pixel_density |
+                sdl.WindowFlag.resizable |
+                if (borderless) sdl.WindowFlag.borderless else 0,
+        );
+        try window.setHitTest(&windowHitTestCallback, null);
+
+        // @BUG: for some reason the window shows up as black until resized, unless we do this
+        try sdl.Event.push(.makeWindowResized(window.getID(), size.w, size.h));
+
+        const sdl_renderer = try sdl.Renderer.init(window, null);
+        const renderer = CuSdlRenderer{ .sdl_rend = sdl_renderer };
+
+        const ui_state = try cu.State.init(gpa, CuSdlRenderer.Callbacks.callbacks);
+
+        log.debug("setting up fonts", .{});
+        const default_font_handle, const monospace_font_handle = blk: {
+            // ensure fonconfig is initialized
+            try fc.init();
+            defer fc.deinit();
+
+            const font_size = 13;
+
+            const default =
+                try CuSdlRenderer.createFontFromFamilyName(gpa, "sans", font_size);
+            const monospace =
+                try CuSdlRenderer.createFontFromFamilyName(gpa, "monospace", font_size);
+
+            break :blk .{ default, monospace };
+        };
+
+        const default_font =
+            ui_state.registerFont(@alignCast(@ptrCast(default_font_handle)));
+        const monospace_font =
+            ui_state.registerFont(@alignCast(@ptrCast(monospace_font_handle)));
+
+        ui_state.default_palette = cu.Atom.Palette{
+            .background = .hexRgb(0x1d2021), // gruvbox bg0
+            .text = .hexRgb(0xebdbb2), // gruvbox fg1
+            .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
+            .border = .hexRgb(0x3c3836), // gruvbox bg1
+            .hot = .hexRgb(0x665c54), // grovbox bg3
+            .active = .hexRgb(0xfbf1c7), // grovbox fg0
+        };
+        ui_state.default_font = default_font;
+
+        const result = try gpa.create(Window);
+        result.* = .{
+            .window_handle = window,
+            .render_handle = renderer,
+            .ui_state = ui_state,
+
+            .default_font_handle = default_font_handle,
+            .monospace_font_handle = monospace_font_handle,
+
+            .default_font = default_font,
+            .monospace_font = monospace_font,
+        };
+        return result;
+    }
+
+    pub fn deinit(window: *Window, gpa: std.mem.Allocator) void {
+        window.ui_state.deinit();
+
+        window.default_font_handle.close();
+        window.monospace_font_handle.close();
+
+        window.render_handle.sdl_rend.deinit();
+        window.window_handle.deinit();
+
+        gpa.destroy(window);
+    }
+};
+
+pub const AppState = struct {
+    gpa: std.mem.Allocator,
+    dbg_running: if (builtin.mode == .Debug) bool else void = if (builtin.mode == .Debug) true else false,
+
+    main_window: *Window,
+    dbg_window: *Window,
+
+    // move to AppState
+    fps_buffer: FpsCircleBuffer(100) = .{},
+    app_start_time: std.time.Instant,
+    previous_time: std.time.Instant,
+    delta_time_ms: u64 = 0,
+    uptime_s: u64 = 0,
+    fps: f32 = 0,
+
+    pub fn init(gpa: std.mem.Allocator) !AppState {
+        const main_window = try Window.init(gpa, "fe", true, .axis(800, 600));
+        const dbg_window = try Window.init(gpa, "fe dbg", false, .axis(600, 400));
+
+        const now = try std.time.Instant.now();
+
+        return AppState{
+            .gpa = gpa,
+            .main_window = main_window,
+            .dbg_window = dbg_window,
+            .app_start_time = now,
+            .previous_time = now,
+        };
+    }
+
+    pub fn deinit(app: *AppState) void {
+        app.main_window.deinit(app.gpa);
+        app.dbg_window.deinit(app.gpa);
+    }
+
+    pub fn windowFromId(app: *const AppState, id: sdl.WindowID) ?*Window {
+        return if (app.main_window.window_handle.getID() == id)
+            app.main_window
+        else if (app.dbg_window.window_handle.getID() == id)
+            app.dbg_window
+        else
+            null;
+    }
+
+    pub fn frameStart(app: *AppState) !void {
+        const current_time = try std.time.Instant.now();
+
+        const delta_time_ns = current_time.since(app.previous_time);
+        app.previous_time = current_time;
+        app.delta_time_ms = delta_time_ns / std.time.ns_per_ms;
+
+        app.fps = @as(f32, std.time.ns_per_s) / @as(f32, @floatFromInt(delta_time_ns));
+        app.fps_buffer.push(app.fps);
+        tracy.plot(f32, "fps", app.fps);
+
+        app.uptime_s = current_time.since(app.app_start_time) / std.time.ns_per_s;
+    }
+};
+
+var state: AppState = undefined;
 
 pub fn run() !void {
     const trace_app_init = tracy.beginZone(@src(), .{ .name = "init" });
@@ -82,8 +245,6 @@ pub fn run() !void {
         log.debug("tracing enabled", .{});
 
     // =-= allocator setup =-=
-    log.debug("initializing allocator", .{});
-
     const root_allocator, const is_debug = gpa: {
         if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
         break :gpa switch (builtin.mode) {
@@ -109,7 +270,7 @@ pub fn run() !void {
     const plugin = host.plugins[0];
     try plugins.doTest(plugin);
 
-    // =-= sdl window and renderer setup =-=
+    // =-= sdl setup =-=
     log.debug("initilizing sdl", .{});
 
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_APP_ID, "me.ketanr.fe");
@@ -122,454 +283,431 @@ pub fn run() !void {
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
-    log.debug("creating window", .{});
-    const init_window_size = cu.axis2(@as(c_int, 800), 600);
-    const window = try sdl.Window.init(
-        "fe",
-        init_window_size.w,
-        init_window_size.h,
-        sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable | sdl.WindowFlag.borderless,
-        // sdl.WindowFlag.high_pixel_density | sdl.WindowFlag.resizable,
-    );
-    defer window.deinit();
-    try window.setHitTest(&windowHitTestCallback, null);
-
-    const renderer = try sdl.Renderer.init(window, null);
-    defer renderer.deinit();
-
-    // =-= font setup =-=
-
-    log.debug("setting up fonts", .{});
-    var default_font_handle, var monospace_font_handle = blk: {
-        // ensure fonconfig is initialized
-        try fc.init();
-        defer fc.deinit();
-
-        const font_size = 13;
-
-        const default =
-            try CuSdlRenderer.createFontFromFamilyName(gpa, "sans", font_size);
-        const monospace =
-            try CuSdlRenderer.createFontFromFamilyName(gpa, "monospace", font_size);
-
-        break :blk .{ default, monospace };
-    };
-    defer {
-        default_font_handle.close();
-        monospace_font_handle.close();
-    }
-
-    // =-= cu setup =-=
-    log.debug("initializing cu", .{});
-
-    try cu.state.init(gpa, CuSdlRenderer.Callbacks.callbacks);
-    defer cu.state.deinit();
-
-    const default_font =
-        cu.state.font_manager.registerFont(@alignCast(@ptrCast(default_font_handle)));
-    const monospace_font =
-        cu.state.font_manager.registerFont(@alignCast(@ptrCast(monospace_font_handle)));
-
-    cu.state.default_palette = cu.Atom.Palette{
-        .background = .hexRgb(0x1d2021), // gruvbox bg0
-        .text = .hexRgb(0xebdbb2), // gruvbox fg1
-        .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
-        .border = .hexRgb(0x3c3836), // gruvbox bg1
-    };
-    cu.state.default_font = default_font;
-
     // =-= state =-=
-
-    // var dropdown_open = false;
-
-    // =-= main loop setup =-=
-
-    // @TODO: base this value on display refresh rate
-    const event_timeout_ms = 10;
-    const app_start_time = try std.time.Instant.now();
-    var previous_time = try std.time.Instant.now(); // used to measure elapsed time between frames
-    var fps_buffer = FpsCircleBuffer(100){}; // stores the last 100 fps values
-
-    var cu_sdl_renderer = CuSdlRenderer{ .sdl_rend = renderer };
-
-    // @BUG: for some reason the window shows up as black until resized, unless we do this
-    try sdl.Event.push(.mkWindow(.window_resized, window.getID(), init_window_size.w, init_window_size.h));
+    state = try AppState.init(gpa);
+    defer state.deinit();
 
     // =-= main loop =-=
     log.debug("starting main loop", .{});
+
     trace_app_init.end();
 
-    var dbg_running = if (is_debug) true else void{};
-    while (if (is_debug) dbg_running else true) {
+    while (if (builtin.mode == .Debug) state.dbg_running else true) {
         tracy.frameMark();
 
-        // frame stuff
-        const current_time = try std.time.Instant.now();
-        const delta_time_ns = current_time.since(previous_time);
-        previous_time = current_time;
+        try state.frameStart();
 
-        const delta_time_ms = delta_time_ns / std.time.ns_per_ms;
-        const fps = @as(f32, std.time.ns_per_s) / @as(f32, @floatFromInt(delta_time_ns));
-        fps_buffer.push(fps);
+        try processEvents();
 
-        tracy.plot(f32, "fps", fps);
-
-        const uptime_s = current_time.since(app_start_time) / std.time.ns_per_s;
-
-        // process events
-        const trace_events = tracy.beginZone(@src(), .{ .name = "events" });
-        if (sdl.Event.waitTimeout(event_timeout_ms)) |event| {
-            const trace_handle_event = tracy.beginZone(@src(), .{ .name = "handle event" });
-            defer trace_handle_event.end();
-
-            switch (event.type) {
-                .quit => {
-                    log.info("recived quit request", .{});
-
-                    if (is_debug) {
-                        log.debug("debug mode quit, cleaning up...", .{});
-                        dbg_running = false;
-                    } else {
-                        log.debug("release mode quit, exiting immediatly", .{});
-                        std.debug.lockStdErr();
-                        std.process.exit(0);
-                    }
-                },
-
-                .key_down, .key_up => key: {
-                    const key = event.key;
-                    cu.state.pushEvent(.{
-                        .kind = .key_press,
-                        .key = .{
-                            .scancode = key.scancode,
-                            .keycode = key.key,
-                            .mod = key.mod,
-                        },
-                        .state = if (key.down) .pressed else .released,
-                    });
-
-                    if (!key.down) break :key;
-
-                    switch (key.scancode) {
-                        .escape => {
-                            try sdl.Event.push(.mkQuit());
-                        },
-                        .minus => {
-                            try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) - 1);
-                            try monospace_font_handle.setSize((monospace_font_handle.getSize() catch @panic("")) - 1);
-                        },
-                        .equals => {
-                            try default_font_handle.setSize((default_font_handle.getSize() catch @panic("")) + 1);
-                            try monospace_font_handle.setSize((monospace_font_handle.getSize() catch @panic("")) + 1);
-                        },
-                        .f11 => {
-                            if (window.getFlags() & sdl.WindowFlag.fullscreen != 0) {
-                                try window.setFullscreen(false);
-                            } else {
-                                try window.setFullscreen(true);
-                            }
-                        },
-                        else => {},
-                    }
-                },
-
-                .mouse_motion => {
-                    const motion = event.motion;
-                    cu.state.pushEvent(.{
-                        .kind = .mouse_move,
-                        .pos = .vec(motion.x, motion.y),
-                    });
-                },
-
-                .mouse_button_down, .mouse_button_up => {
-                    const button = event.button;
-                    const button_kind: cu.MouseButton = switch (button.button) {
-                        .left => .left,
-                        .middle => .middle,
-                        .right => .right,
-                        .x1 => .forward,
-                        .x2 => .back,
-                        else => @enumFromInt(@intFromEnum(button.button)),
-                    };
-                    cu.state.pushEvent(.{
-                        .kind = .mouse_press,
-                        .button = button_kind,
-                        .state = if (button.down) .pressed else .released,
-                        .pos = .vec(button.x, button.y),
-                    });
-                },
-
-                .mouse_wheel => {
-                    const wheel = event.wheel;
-                    cu.state.pushEvent(.{
-                        .kind = .scroll,
-                        .scroll = .vec(wheel.x, wheel.y),
-                        .pos = .vec(wheel.mouse_x, wheel.mouse_y),
-                    });
-                },
-
-                .text_input => {
-                    const text = event.text;
-                    const slice = std.mem.sliceTo(text.text[0..], 0);
-                    cu.state.pushEvent(.{
-                        .kind = .text_input,
-                        .text = slice,
-                    });
-                },
-
-                .window_resized => {
-                    const wind = event.window;
-                    cu.state.window_size =
-                        .axis(@floatFromInt(wind.data1), @floatFromInt(wind.data2));
-                },
-
-                .window_exposed => {
-                    tracy.message("window expose");
-                    try cu_sdl_renderer.render();
-                },
-
-                else => {},
-            }
-        }
-        trace_events.end();
-
-        const trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
-        // build ui
-        cu.startBuild(@intFromEnum(window.getID()));
-        cu.state.ui_root.layout_axis = .y;
-        cu.state.ui_root.flags.draw_background = true;
-        // Don't ask me why, but no matter how I slice it without the if, it doesn't work
-        // I know it should, I don't know why it doesn't
-        cu.state.ui_root.flags.draw_border =
-            if (window.getFlags() & (sdl.WindowFlag.fullscreen | sdl.WindowFlag.maximized) != 0)
-                false
-            else
-                true;
-
-        { // topbar
-            const topbar = cu.open("topbar");
-            defer cu.close(topbar);
-            topbar.flags = topbar.flags.drawSideBottom();
-            topbar.layout_axis = .x;
-            topbar.pref_size = .{ .w = .fill, .h = .px(24) };
-
-            const menu_items = [_][]const u8{
-                "Fe",
-                "File",
-                "Edit",
-                "Help",
-            };
-
-            for (menu_items) |item_str| {
-                const item = cu.build(item_str);
-                item.flags = item.flags.clickable().drawText();
-                item.pref_size = .square(.text_pad(8));
-
-                const inter = item.interation();
-                if (inter.f.hovering) {
-                    item.flags.draw_border = true;
-                }
-
-                if (inter.f.isClicked()) {
-                    std.debug.print("clicked {s}\n", .{item_str});
-                    // dropdown_open = true;
-                }
-            }
-
-            {
-                const topbar_space = cu.build("topbar spacer");
-                topbar_space.pref_size = .square(.grow);
-                topbar_space.flags = topbar_space.flags.clickable();
-
-                const inter = topbar_space.interation();
-                if (inter.f.left_double_clicked) {
-                    if (window.getFlags() & sdl.WindowFlag.maximized == 0) {
-                        try window.maximize();
-                    } else {
-                        try window.restore();
-                    }
-                }
-            }
-
-            for (0..3) |i| {
-                const button = cu.openf("top bar button {d}", .{i});
-                defer cu.close(button);
-                button.flags = button.flags.clickable().drawBorder();
-                button.pref_size = .square(.px(24));
-
-                const int = button.interation();
-                if (int.f.hovering) {
-                    button.palette.border = cu.Color.hexRgb(0xFF0000);
-                }
-
-                if (int.f.isClicked()) {
-                    switch (i) {
-                        0 => try window.minimize(),
-                        1 => if (window.getFlags() & sdl.WindowFlag.maximized != 0) {
-                            try window.restore();
-                        } else {
-                            try window.maximize();
-                        },
-                        2 => try sdl.Event.push(.mkQuit()),
-                        else => unreachable,
-                    }
-                }
-            }
-        }
-
-        { // main pane
-            const main_pane = cu.open("main pain");
-            defer cu.close(main_pane);
-            main_pane.layout_axis = .x;
-            main_pane.pref_size = .square(.grow);
-
-            { // left pane
-                const pane = cu.open("left pane");
-                defer cu.close(pane);
-                pane.flags = pane.flags.drawSideRight();
-                pane.layout_axis = .y;
-                pane.pref_size = .{ .w = .percent(0.4), .h = .fill };
-
-                { // header
-                    const header = cu.build("left header");
-                    header.flags = header.flags.drawSideBottom().drawText();
-                    header.display_string = "Left Header gylp";
-                    header.pref_size = .{ .w = .grow, .h = .text };
-                    header.text_align = .{ .w = .end, .h = .center };
-                }
-
-                { // content
-                    const content = cu.open("left content");
-                    defer cu.close(content);
-                    content.flags = content.flags.clipRect().allowOverflow();
-                    content.layout_axis = .y;
-                    content.pref_size = .square(.grow);
-
-                    cu.pushFont(monospace_font);
-                    defer cu.popFont();
-
-                    {
-                        cu.pushTextColor(.hexRgb(0xff0000));
-                        defer cu.popPalette();
-
-                        _ = cu.labelf("fps: {d:.2}", .{fps});
-                        _ = cu.labelf("ave fps: {d:.2}", .{fps_buffer.average()});
-                        _ = cu.labelf("frame time: {d:.2}ms", .{delta_time_ms});
-                        _ = cu.labelf("frame time: {d:.2}ns", .{delta_time_ns});
-                        _ = cu.labelf("uptime: {d:.2}s", .{uptime_s});
-                        _ = cu.labelf("build count: {d}", .{cu.state.current_build_index});
-                        _ = cu.labelf("atom build count: {d}", .{cu.state.build_atom_count});
-                    }
-
-                    {
-                        const spacer = cu.spacer(.axis(.grow, .text));
-                        spacer.display_string = " ";
-                    }
-
-                    _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
-
-                    _ = cu.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
-                    _ = cu.labelf("event count: {d}", .{cu.state.event_list.len});
-
-                    {
-                        const spacer = cu.spacer(.axis(.grow, .text));
-                        spacer.display_string = " ";
-                    }
-
-                    var an_active_atom = false;
-                    for (cu.state.active_atom_key, 0..) |key, i| {
-                        if (key != .nil) {
-                            const button: cu.MouseButton = @enumFromInt(i);
-                            const active = cu.state.atom_map.get(key).?;
-                            _ = cu.labelf("active atom: [{s}] {?}", .{ @tagName(button), active });
-
-                            an_active_atom = true;
-                        }
-                    }
-                    if (!an_active_atom)
-                        _ = cu.label("active atom: none");
-
-                    const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
-                    const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
-                    hot_lbl.flags.draw_text_weak = true;
-                }
-            }
-
-            { // right pane
-                const pane = cu.open("right pane");
-                defer cu.close(pane);
-                pane.layout_axis = .y;
-                pane.pref_size = .{ .w = .grow, .h = .fill };
-
-                { // header
-                    const header = cu.open("right header");
-                    defer cu.close(header);
-                    header.flags = header.flags.drawSideBottom().drawText();
-                    header.display_string = "Right Header";
-                    header.pref_size = .{ .w = .grow, .h = .text };
-                    header.text_align = .square(.center);
-                    header.layout_axis = .x;
-
-                    if (header.interation().f.mouse_over) {
-                        cu.pushBackgroundColor(.hexRgb(0x001800));
-                        defer cu.popPalette();
-
-                        const float = cu.open("floating");
-                        defer cu.close(float);
-                        float.flags = float.flags.floating().drawBackground();
-                        float.layout_axis = .y;
-                        float.pref_size = .square(.fit);
-
-                        float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).intoAxis();
-
-                        _ = cu.label("tool tip!");
-                        _ = cu.label("extra tips!");
-                    }
-                }
-
-                { // content
-                    const content = cu.open("right content");
-                    defer cu.close(content);
-                    content.layout_axis = .y;
-                    content.pref_size = .square(.grow);
-                }
-            }
-
-            { // right bar
-                const bar = cu.open("right bar");
-                defer cu.close(bar);
-                bar.flags = bar.flags.drawSideLeft();
-                bar.layout_axis = .y;
-
-                const icon_size = cu.Atom.PrefSize.px(24);
-                bar.pref_size = .{ .w = icon_size, .h = .grow };
-
-                { // inner
-                    const inner = cu.open("right bar inner");
-                    defer cu.close(inner);
-                    inner.layout_axis = .y;
-                    inner.pref_size = .{ .w = icon_size, .h = .fit };
-
-                    for (0..5) |i| {
-                        {
-                            const icon = cu.buildf("right bar icon {d}", .{i});
-                            icon.flags.draw_border = true;
-                            icon.pref_size = .square(icon_size);
-                        }
-
-                        _ = cu.spacer(.{ .w = icon_size, .h = .px(4) });
-                    }
-                }
-            }
-        }
-
-        cu.endBuild();
-        trace_build.end();
-
-        try cu_sdl_renderer.render();
+        try update();
     }
 
-    if (!is_debug) unreachable;
+    if (builtin.mode != .Debug) unreachable;
+}
+
+fn processEvents() !void {
+    const trace_events = tracy.beginZone(@src(), .{ .name = "events" });
+    defer trace_events.end();
+
+    // @TODO: base this value on display refresh rate
+    const event_timeout_ms = 10;
+
+    if (if (comptime build_options.poll_event_loop)
+        sdl.Event.poll()
+    else
+        sdl.Event.waitTimeout(event_timeout_ms)) |event|
+    ev: {
+        const trace_handle_event = tracy.beginZone(@src(), .{ .name = "handle event" });
+        defer trace_handle_event.end();
+
+        switch (event.type) {
+            .quit => {
+                log.info("recived quit request", .{});
+
+                if (builtin.mode == .Debug) {
+                    log.debug("debug mode quit, cleaning up...", .{});
+                    state.dbg_running = false;
+                } else {
+                    log.debug("release mode quit, exiting immediatly", .{});
+                    std.debug.lockStdErr();
+                    std.process.exit(0);
+                }
+            },
+
+            .key_down, .key_up => {
+                const key = event.key;
+                const window = state.windowFromId(key.window_id) orelse break :ev;
+
+                cu.state.pushEvent(.{
+                    .key = .{
+                        .scancode = key.scancode,
+                        .keycode = key.key,
+                        .mod = key.mod,
+                        .state = if (key.down) .pressed else .released,
+                    },
+                });
+
+                if (!key.down) break :ev;
+
+                switch (key.scancode) {
+                    .minus => {
+                        try window.default_font_handle.setSize((window.default_font_handle.getSize() catch @panic("")) - 1);
+                        try window.monospace_font_handle.setSize((window.monospace_font_handle.getSize() catch @panic("")) - 1);
+                    },
+                    .equals => {
+                        try window.default_font_handle.setSize((window.default_font_handle.getSize() catch @panic("")) + 1);
+                        try window.monospace_font_handle.setSize((window.monospace_font_handle.getSize() catch @panic("")) + 1);
+                    },
+                    .f11 => {
+                        if (window.window_handle.getFlags() & sdl.WindowFlag.fullscreen != 0) {
+                            try window.window_handle.setFullscreen(false);
+                        } else {
+                            try window.window_handle.setFullscreen(true);
+                        }
+                    },
+                    else => {},
+                }
+            },
+
+            .mouse_motion => {
+                const motion = event.motion;
+                const window = state.windowFromId(motion.window_id) orelse break :ev;
+
+                window.ui_state.pushEvent(.{
+                    .mouse_move = .{ .pos = .vec(motion.x, motion.y) },
+                });
+            },
+
+            .mouse_button_down, .mouse_button_up => {
+                const button = event.button;
+                const window = state.windowFromId(button.window_id) orelse break :ev;
+
+                const button_kind: cu.MouseButton = switch (button.button) {
+                    .left => .left,
+                    .middle => .middle,
+                    .right => .right,
+                    .x1 => .forward,
+                    .x2 => .back,
+                    else => @enumFromInt(@intFromEnum(button.button)),
+                };
+                window.ui_state.pushEvent(.{
+                    .mouse_button = .{
+                        .button = button_kind,
+                        .pos = .vec(button.x, button.y),
+                        .state = if (button.down) .pressed else .released,
+                    },
+                });
+            },
+
+            .mouse_wheel => {
+                const wheel = event.wheel;
+                const window = state.windowFromId(wheel.window_id) orelse break :ev;
+
+                window.ui_state.pushEvent(.{
+                    .scroll = .{
+                        .scroll = .vec(wheel.x, wheel.y),
+                        .pos = .vec(wheel.mouse_x, wheel.mouse_y),
+                    },
+                });
+            },
+
+            .text_input => {
+                const text = event.text;
+                const window = state.windowFromId(text.window_id) orelse break :ev;
+
+                const slice = std.mem.sliceTo(text.text[0..], 0);
+                window.ui_state.pushEvent(.{
+                    .text = .{ .text = slice },
+                });
+            },
+
+            .window_resized => {
+                const resized = event.window;
+                const window = state.windowFromId(resized.window_id) orelse break :ev;
+
+                window.ui_state.window_size =
+                    .axis(@floatFromInt(resized.data1), @floatFromInt(resized.data2));
+            },
+
+            .window_exposed => {
+                tracy.message("window expose");
+
+                const exposed = event.window;
+                const window = state.windowFromId(exposed.window_id) orelse break :ev;
+
+                cu.state = window.ui_state;
+                try window.render_handle.render();
+            },
+
+            .window_close_requested => {
+                // const close = event.window;
+                // const window = state.windowFromId(close.window_id) orelse break :ev;
+
+                try sdl.Event.push(.makeQuit());
+            },
+
+            else => {},
+        }
+    }
+}
+
+fn update() !void {
+    const window = state.main_window;
+    cu.state = window.ui_state;
+
+    // build ui
+    cu.startBuild(@intFromEnum(window.window_handle.getID()));
+    cu.state.ui_root.layout_axis = .y;
+    cu.state.ui_root.flags.draw_background = true;
+    // Don't ask me why, but no matter how I slice it without the if, it doesn't work
+    // I know it should, I don't know why it doesn't
+    cu.state.ui_root.flags.draw_border =
+        if (window.window_handle.getFlags() & (sdl.WindowFlag.fullscreen | sdl.WindowFlag.maximized) != 0)
+            false
+        else
+            true;
+
+    { // topbar
+        const topbar = cu.open("topbar");
+        defer cu.close(topbar);
+        topbar.flags = topbar.flags.drawSideBottom();
+        topbar.layout_axis = .x;
+        topbar.pref_size = .{ .w = .fill, .h = .px(24) };
+
+        const menu_items = [_][]const u8{
+            "Fe",
+            "File",
+            "Edit",
+            "Help",
+        };
+
+        for (menu_items) |item_str| {
+            cu.pushOncePrefSize(.square(.text_pad(8)));
+            const item = cu.build(item_str);
+            item.flags = item.flags.clickable().drawText();
+
+            const inter = item.interaction();
+            if (inter.f.hovering) {
+                item.flags.draw_border = true;
+            }
+
+            if (inter.f.isClicked()) {
+                std.debug.print("clicked {s}\n", .{item_str});
+                // dropdown_open = true;
+            }
+        }
+
+        {
+            const topbar_space = cu.build("topbar spacer");
+            topbar_space.pref_size = .square(.grow);
+            topbar_space.flags = topbar_space.flags.clickable();
+
+            const inter = topbar_space.interaction();
+            if (inter.f.left_double_clicked) {
+                if (window.window_handle.getFlags() & sdl.WindowFlag.maximized == 0) {
+                    try window.window_handle.maximize();
+                } else {
+                    try window.window_handle.restore();
+                }
+            }
+        }
+
+        for (0..3) |i| {
+            const button = cu.openf("top bar button {d}", .{i});
+            defer cu.close(button);
+            button.flags = button.flags.clickable().drawBorder();
+            button.pref_size = .square(.px(24));
+
+            const int = button.interaction();
+            if (int.f.hovering) {
+                button.palette.border = cu.Color.hexRgb(0xFF0000);
+            }
+
+            if (int.f.isClicked()) {
+                switch (i) {
+                    0 => try window.window_handle.minimize(),
+                    1 => if (window.window_handle.getFlags() & sdl.WindowFlag.maximized != 0) {
+                        try window.window_handle.restore();
+                    } else {
+                        try window.window_handle.maximize();
+                    },
+                    2 => try sdl.Event.push(.makeWindowCloseRequested(window.window_handle.getID())),
+                    else => unreachable,
+                }
+            }
+        }
+    }
+
+    { // main pane
+        const main_pane = cu.open("main pain");
+        defer cu.close(main_pane);
+        main_pane.layout_axis = .x;
+        main_pane.pref_size = .square(.grow);
+
+        { // left pane
+            const pane = cu.open("left pane");
+            defer cu.close(pane);
+            pane.flags = pane.flags.drawSideRight();
+            pane.layout_axis = .y;
+            pane.pref_size = .{ .w = .percent(0.4), .h = .fill };
+
+            { // header
+                const header = cu.build("left header");
+                header.flags = header.flags.drawSideBottom().drawText();
+                header.display_string = "Left Header gylp";
+                header.pref_size = .{ .w = .grow, .h = .text };
+                header.text_align = .{ .w = .end, .h = .center };
+            }
+
+            { // content
+                const content = cu.open("left content");
+                defer cu.close(content);
+                content.flags = content.flags.clipRect().allowOverflow();
+                content.layout_axis = .y;
+                content.pref_size = .square(.grow);
+
+                cu.pushFont(window.monospace_font);
+                defer cu.popFont();
+
+                _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
+
+                _ = cu.lineSpacer();
+            }
+        }
+
+        { // right pane
+            const pane = cu.open("right pane");
+            defer cu.close(pane);
+            pane.layout_axis = .y;
+            // pane.pref_size = .{ .w = .percent(0.6), .h = .fill };
+            pane.pref_size = .{ .w = .grow, .h = .fill };
+
+            { // header
+                const header = cu.open("right header");
+                defer cu.close(header);
+                header.flags = header.flags.drawSideBottom().drawText();
+                header.display_string = "Right Header";
+                header.pref_size = .{ .w = .grow, .h = .text };
+                header.text_align = .square(.center);
+                header.layout_axis = .x;
+
+                if (header.interaction().f.mouse_over) {
+                    cu.pushBackgroundColor(.hexRgb(0x001800));
+                    defer cu.popPalette();
+
+                    const float = cu.open("floating");
+                    defer cu.close(float);
+                    float.flags = float.flags.floating().drawBackground();
+                    float.layout_axis = .y;
+                    float.pref_size = .square(.fit);
+
+                    float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).intoAxis();
+
+                    _ = cu.label("tool tip!");
+                    _ = cu.label("extra tips!");
+                }
+            }
+
+            { // content
+                const content = cu.open("right content");
+                defer cu.close(content);
+                content.layout_axis = .y;
+                content.pref_size = .square(.grow);
+
+                cu.pushOncePrefSize(.square(.text_pad(8)));
+                if (cu.button("foo bar").f.isClicked()) {
+                    log.debug("foo bar clicked", .{});
+                }
+            }
+        }
+
+        { // right bar
+            // const bar = cu.open("right bar");
+            // defer cu.close(bar);
+            // bar.flags = bar.flags.drawSideLeft();
+            // bar.layout_axis = .y;
+
+            // const icon_size = cu.Atom.PrefSize.px(24);
+            // bar.pref_size = .{ .w = icon_size, .h = .grow };
+
+            // { // inner
+            //     const inner = cu.open("right bar inner");
+            //     defer cu.close(inner);
+            //     inner.layout_axis = .y;
+            //     inner.pref_size = .{ .w = icon_size, .h = .fit };
+
+            //     for (0..5) |i| {
+            //         {
+            //             const icon = cu.buildf("right bar icon {d}", .{i});
+            //             icon.flags.draw_border = true;
+            //             icon.pref_size = .square(icon_size);
+            //         }
+
+            //         _ = cu.spacer(.{ .w = icon_size, .h = .px(4) });
+            //     }
+            // }
+        }
+    }
+
+    // the debug window accesses information that is reset with endBuild
+    try updateDbgWindow();
+    cu.state = window.ui_state;
+
+    cu.endBuild();
+    try window.render_handle.render();
+}
+
+pub fn updateDbgWindow() !void {
+    const window = state.dbg_window;
+    cu.state = window.ui_state;
+
+    cu.startBuild(@intFromEnum(window.window_handle.getID()));
+    cu.state.ui_root.layout_axis = .y;
+    cu.state.ui_root.flags.draw_background = true;
+
+    {
+        cu.pushTextColor(.hexRgb(0xff0000));
+        defer cu.popPalette();
+
+        _ = cu.labelf("fps: {d:.2}", .{state.fps});
+        _ = cu.labelf("ave fps: {d:.2}", .{state.fps_buffer.average()});
+        _ = cu.labelf("frame time: {d:.2}ms", .{state.delta_time_ms});
+        _ = cu.labelf("uptime: {d:.2}s", .{state.uptime_s});
+    }
+
+    _ = cu.lineSpacer();
+
+    const main_state = state.main_window.ui_state;
+
+    _ = cu.labelf("build count: {d}", .{main_state.current_build_index});
+    _ = cu.labelf("atom build count: {d}", .{main_state.build_atom_count});
+
+    _ = cu.lineSpacer();
+
+    _ = cu.labelf("current atom count: {d}", .{main_state.atom_map.count()});
+    // _ = cu.labelf("event count: {d}", .{main_state.event_list.items.len});
+
+    _ = cu.lineSpacer();
+
+    var an_active_atom = false;
+    for (main_state.active_atom_key, 0..) |key, i| {
+        if (key != .nil) {
+            const button: cu.MouseButton = @enumFromInt(i);
+            const active = main_state.atom_map.get(key).?;
+            _ = cu.labelf("active atom: [{s}] {?}", .{ @tagName(button), active });
+
+            an_active_atom = true;
+        }
+    }
+    if (!an_active_atom)
+        _ = cu.label("active atom: none");
+
+    const hot = main_state.atom_map.get(main_state.hot_atom_key);
+    const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
+    hot_lbl.flags.draw_text_weak = true;
+
+    cu.endBuild();
+    try window.render_handle.render();
 }
 
 pub fn FpsCircleBuffer(comptime Size: usize) type {
@@ -595,7 +733,11 @@ pub fn FpsCircleBuffer(comptime Size: usize) type {
     };
 }
 
-fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*anyopaque) callconv(.c) sdl.HitTestResult {
+fn windowHitTestCallback(
+    window: *sdl.Window,
+    point: *const sdl.Point,
+    data: ?*anyopaque,
+) callconv(.c) sdl.HitTestResult {
     _ = data;
 
     // I cannot for the life of me figure out a way to get window dragging/
@@ -625,6 +767,8 @@ fn windowHitTestCallback(window: *sdl.Window, point: *const sdl.Point, data: ?*a
     // What else then?
     // Or we could implement it all our self like zed.
     // We could go the ghostty route - custom-ish.
+    // We can also look into how raddbg does it,
+    // but I'm unsure if linux support has been done for this kind if thing
     //
     // It seams ghostty starts off with glfw and incrementally uses native apis:
     // https://github.com/ghostty-org/ghostty/discussions/2563

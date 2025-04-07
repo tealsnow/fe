@@ -1,85 +1,127 @@
 const std = @import("std");
+const log = std.log.scoped(.@"cu::builder");
 
 const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
 
+const tracy = @import("tracy");
+
+var trace_build: tracy.ZoneContext = undefined;
+
 pub fn startBuild(window_id: u32) void {
-    cu.state.palette_stack.clearAndReset();
-    cu.state.font_stack.clearAndFree();
+    trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
+    const trace_start = tracy.beginZone(@src(), .{ .name = "ui build setup" });
+    defer trace_start.end();
 
-    cu.state.scope_locals.clearAndFree(cu.state.arena); // @FIXME: not sure if this is needed
-    _ = cu.state.arena_allocator.reset(.retain_capacity);
+    cu.state.scope_locals.clearAndFree(cu.state.arena);
 
-    cu.state.palette_stack.push(cu.state.default_palette);
-    cu.state.font_stack.push(cu.state.default_font);
+    { // clear stacks
+        cu.state.palette_stack.clearAndFree(cu.state.arena);
+        cu.state.font_stack.clearAndFree(cu.state.arena);
+        cu.state.pref_size_stack.clearAndFree(cu.state.arena);
+    }
 
-    const root = buildFromStringF("###root window-id:{x}", .{window_id});
-    root.pref_size = .axis(.px(cu.state.window_size.w), .px(cu.state.window_size.h));
-    root.rect = .range(.vec(0, 0), cu.state.window_size.intoVec());
-    root.layout_axis = .x;
-    cu.state.ui_root = root;
+    { // setup stacks
+        cu.state.palette_stack.push(cu.state.arena, cu.state.default_palette, false);
+        cu.state.font_stack.push(cu.state.arena, cu.state.default_font, false);
+        cu.state.pref_size_stack.push(cu.state.arena, .axis(.fill, .fill), false);
+    }
 
-    const ctx_menu_root = buildFromStringF("###ctx_menu_root window-id:{x}", .{window_id});
-    ctx_menu_root.pref_size = .square(.fit);
-    ctx_menu_root.rect = .zero;
-    ctx_menu_root.layout_axis = .x;
-    cu.state.ui_ctx_menu_root = ctx_menu_root;
+    { // setup ui roots
 
-    // const tooltip_root = buildFromStringF("###tooltip_root window-id:{x}", .{window_id});
-    // tooltip_root.pref_size = .square(.fit);
-    // tooltip_root.rect = .zero;
-    // tooltip_root.layout_axis = .x;
-    // cu.state.ui_tooltip_root = tooltip_root;
+        const root = buildFromStringF("###root window-id:{x}", .{window_id});
+        root.pref_size = .axis(.px(cu.state.window_size.w), .px(cu.state.window_size.h));
+        root.rect = .range(.vec(0, 0), cu.state.window_size.intoVec());
+        root.layout_axis = .x;
+        cu.state.ui_root = root;
 
-    cu.state.atom_parent_stack.push(cu.state.ui_root);
+        const ctx_menu_root = buildFromStringF("###ctx_menu_root window-id:{x}", .{window_id});
+        ctx_menu_root.pref_size = .square(.fit);
+        ctx_menu_root.rect = .zero;
+        ctx_menu_root.layout_axis = .x;
+        cu.state.ui_ctx_menu_root = ctx_menu_root;
+
+        // const tooltip_root = buildFromStringF("###tooltip_root window-id:{x}", .{window_id});
+        // tooltip_root.pref_size = .square(.fit);
+        // tooltip_root.rect = .zero;
+        // tooltip_root.layout_axis = .x;
+        // cu.state.ui_tooltip_root = tooltip_root;
+    }
+
+    { // setup atom stack
+        cu.state.atom_parent_stack.clearAndFree(cu.state.arena);
+        cu.state.atom_parent_stack.push(cu.state.arena, cu.state.ui_root);
+    }
 
     cu.state.next_ctx_menu_open = cu.state.ctx_menu_open;
 }
 
 pub fn endBuild() void {
-    var to_remove = std.ArrayList(Atom.Key)
-        .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch @panic("oom");
+    defer trace_build.end();
+    const trace_end = tracy.beginZone(@src(), .{ .name = "ui build end" });
+    defer trace_end.end();
 
-    for (cu.state.atom_map.values()) |atom| {
-        if (atom.build_index_touched_last < cu.state.current_build_index) {
-            to_remove.append(atom.key) catch @panic("oom");
+    // remove stale atoms
+    {
+        const trace = tracy.beginZone(@src(), .{ .name = "remove stale atoms" });
+        defer trace.end();
+
+        var to_remove = std.ArrayList(Atom.Key)
+            .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch @panic("oom");
+
+        for (cu.state.atom_map.values()) |atom| {
+            if (atom.build_index_touched_last < cu.state.current_build_index) {
+                to_remove.append(atom.key) catch @panic("oom");
+            }
+        }
+
+        for (to_remove.items) |key| {
+            if (key == .nil) continue;
+            const atom = cu.state.atom_map.fetchSwapRemove(key).?.value;
+            cu.state.atom_pool.destroy(atom);
         }
     }
 
-    for (to_remove.items) |key| {
-        if (key == .nil) continue;
-        const atom = cu.state.atom_map.fetchSwapRemove(key).?.value;
-        cu.state.atom_pool.destroy(atom);
+    // check stack
+    const root = root: {
+        const root = cu.state.atom_parent_stack.pop().?;
+        debugAssert(
+            cu.state.atom_parent_stack.list.items.len == 0,
+            "Parent stack not empty after build; likely forgot a defer -- last: {}",
+            .{root},
+        );
+        debugAssert(
+            cu.state.ui_root.key.eql(root.key),
+            "Last item on parent stack was not ui root; instead found: {}",
+            .{root},
+        );
+        break :root root;
+    };
+
+    // layout
+    {
+        const trace = tracy.beginZone(@src(), .{ .name = "layout" });
+        defer trace.end();
+
+        cu.layout(root) catch @panic("oom");
+        cu.layout(cu.state.ui_ctx_menu_root) catch @panic("oom");
+        // cu.layout(cu.state.ui_tooltip_root) catch @panic("oom");
     }
 
-    const root = cu.state.atom_parent_stack.pop().?;
-    debugAssert(
-        cu.state.atom_parent_stack.stack.items.len == 0,
-        "Parent stack not empty after build; likely forgot a defer -- last: {}",
-        .{root},
-    );
-    debugAssert(
-        cu.state.ui_root.key.eql(root.key),
-        "Last item on parent stack was not ui root; instead found: {}",
-        .{root},
-    );
-    cu.state.atom_parent_stack.clearAndFree();
+    // reset and cleanup state
+    {
+        cu.state.hot_atom_key = .nil;
+        cu.state.ctx_menu_open = cu.state.next_ctx_menu_open;
+        cu.state.current_build_index += 1;
+        cu.state.ui_built = true;
 
-    cu.layout(root) catch @panic("oom");
-    cu.layout(cu.state.ui_ctx_menu_root) catch @panic("oom");
-    // cu.layout(cu.state.ui_tooltip_root) catch @panic("oom");
+        _ = cu.state.event_pool.reset(.retain_capacity);
+        _ = cu.state.event_node_pool.reset(.retain_capacity);
+        cu.state.event_list = .{};
 
-    cu.state.hot_atom_key = .nil;
-
-    cu.state.ctx_menu_open = cu.state.next_ctx_menu_open;
-
-    cu.state.current_build_index += 1;
-    _ = cu.state.event_pool.reset(.retain_capacity);
-    _ = cu.state.event_node_pool.reset(.retain_capacity);
-    cu.state.event_list = .{};
-
-    cu.state.ui_built = true;
+        _ = cu.state.arena_allocator.reset(.retain_capacity);
+    }
 }
 
 pub fn tryAtomFromKey(key: Atom.Key) ?*Atom {
@@ -122,6 +164,9 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
             .key = key,
             .build_index_touched_first = cu.state.current_build_index,
             .build_index_touched_last = cu.state.current_build_index,
+
+            .hot_t = 0,
+            .active_t = 0,
         };
     } else {
         atom.build_index_touched_last = cu.state.current_build_index;
@@ -142,7 +187,10 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
 
     // per build info
     atom.font = cu.state.font_stack.top().?;
-    atom.palette = cu.state.palette_stack.dupeTop().?;
+    atom.palette = cu.state.palette_stack.top().?;
+
+    if (cu.state.pref_size_stack.top()) |pref_size|
+        atom.pref_size = pref_size;
 
     // add to parent
     if (cu.state.atom_parent_stack.top()) |parent| {
@@ -232,13 +280,13 @@ pub fn endCtxMenu() void {
 
 pub fn open(string: []const u8) *Atom {
     const atom = build(string);
-    cu.state.atom_parent_stack.push(atom);
+    cu.state.atom_parent_stack.push(cu.state.arena, atom);
     return atom;
 }
 
 pub fn openf(comptime fmt: []const u8, args: anytype) *Atom {
     const atom = buildf(fmt, args);
-    cu.state.atom_parent_stack.push(atom);
+    cu.state.atom_parent_stack.push(cu.state.arena, atom);
     return atom;
 }
 
@@ -255,7 +303,7 @@ pub fn close(atom: *Atom) void {
 
 pub fn label(string: []const u8) *Atom {
     const atom = buildFromKey(.nil);
-    atom.pref_size = .square(.text);
+    atom.pref_size = .square(.text); // should this stay? or let the user decide with pushPrefSize
     atom.display_string = string;
     atom.flags = atom.flags.drawText();
     return atom;
@@ -266,40 +314,104 @@ pub fn labelf(comptime fmt: []const u8, args: anytype) *Atom {
     return label(string);
 }
 
-pub fn spacer(pref_size: cu.Axis2(Atom.PrefSize)) *Atom {
+pub fn spacer(pref_size: ?cu.Axis2(Atom.PrefSize)) *Atom {
     const atom = buildFromKey(.nil);
-    atom.pref_size = pref_size;
+    if (pref_size) |size|
+        atom.pref_size = size;
     return atom;
 }
 
+pub fn lineSpacer() *Atom {
+    const line_spacer = spacer(.axis(.grow, .text));
+    line_spacer.display_string = " ";
+    return line_spacer;
+}
+
+pub fn button(string: []const u8) cu.Interation {
+    const atom = build(string);
+    atom.flags = atom.flags.clickable().drawText().drawBorder();
+
+    const interaction = atom.interaction();
+    if (interaction.f.hovering)
+        atom.palette.border = atom.palette.hot;
+    if (interaction.f.left_dragging)
+        atom.palette.border = atom.palette.active;
+
+    return interaction;
+}
+
+pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
+    const string = std.fmt.allocPrint(cu.state.arena, fmt, args) catch @panic("oom");
+    return button(string);
+}
+
+// =-=-=-=-=-=-=
 // =-= stacks
 
-pub inline fn pushFont(fontid: cu.FontId) void {
-    cu.state.font_stack.push(fontid);
+// =-= prefSize
+
+pub inline fn pushPrefSize(pref_size: cu.Axis2(Atom.PrefSize)) void {
+    cu.state.pref_size_stack.push(cu.state.arena, pref_size, false);
+}
+
+pub inline fn popPrefSize() void {
+    _ = cu.state.pref_size_stack.pop();
+}
+
+pub inline fn pushOncePrefSize(pref_size: cu.Axis2(Atom.PrefSize)) void {
+    cu.state.pref_size_stack.push(cu.state.arena, pref_size, true);
+}
+
+// =-= Font
+
+pub inline fn pushFont(fontid: cu.State.FontId) void {
+    cu.state.font_stack.push(cu.state.arena, fontid, false);
 }
 
 pub inline fn popFont() void {
     _ = cu.state.font_stack.pop().?;
 }
 
+pub inline fn pushOnceFont(fontid: cu.State.FontId) void {
+    cu.state.font_stack.push(cu.state.arena, fontid, true);
+}
+
+// =-= palette
+
 pub inline fn pushPalette(palette: Atom.Palette) void {
-    cu.state.palette_stack.push(palette);
+    cu.state.palette_stack.push(cu.state.arena, palette, false);
 }
 
 pub inline fn popPalette() void {
     _ = cu.state.palette_stack.pop().?;
 }
 
-pub fn pushTextColor(color: cu.Color) void {
-    const current = cu.state.palette_stack.top().?;
-    var palette = current.*;
+pub inline fn pushOncePalette(palette: Atom.Palette) void {
+    cu.state.palette_stack.push(cu.state.arena, palette, true);
+}
+
+// =-= textColor
+
+pub inline fn pushTextColor(color: cu.Color) void {
+    var palette = cu.state.palette_stack.topNoPop().?;
     palette.text = color;
     pushPalette(palette);
 }
 
-pub fn pushBackgroundColor(color: cu.Color) void {
-    const current = cu.state.palette_stack.top().?;
-    var palette = current.*;
+pub inline fn pushOnceTextColor(color: cu.Color) void {
+    var palette = cu.state.palette_stack.topNoPop().?;
+    palette.text = color;
+    pushOncePalette(palette);
+}
+
+pub inline fn pushBackgroundColor(color: cu.Color) void {
+    var palette = cu.state.palette_stack.topNoPop().?;
     palette.background = color;
     pushPalette(palette);
+}
+
+pub inline fn pushOnceBackgroundColor(color: cu.Color) void {
+    var palette = cu.state.palette_stack.topNoPop().?;
+    palette.background = color;
+    pushOncePalette(palette);
 }

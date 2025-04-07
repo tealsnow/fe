@@ -31,8 +31,8 @@ layout_axis: cu.Axis2(void).Kind = .none, // ensure this is set if children are 
 
 // @FIXME: these could be scope locals, its worth looking into performance implications first though
 text_align: cu.Axis2(TextAlignment) = .square(.center),
-palette: *Palette = undefined,
-font: cu.FontId = undefined,
+palette: Palette = undefined,
+font: cu.State.FontId = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
 
@@ -49,8 +49,8 @@ build_index_touched_last: u64,
 // build_index_first_disabled: u64,
 view_bounds: cu.Axis2(f32) = .zero,
 
-pub inline fn interation(self: *Atom) cu.Interation {
-    return cu.interationFromAtom(self);
+pub inline fn interaction(atom: *Atom) cu.Interation {
+    return cu.interactionFromAtom(atom);
 }
 
 pub fn format(self: *const Atom, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -403,6 +403,8 @@ pub const Palette = struct {
     text: Color,
     text_weak: Color,
     border: Color,
+    hot: Color,
+    active: Color,
     // overlay: Color,
     // cursor: Color,
     // selection: Color,

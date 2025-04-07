@@ -127,7 +127,7 @@ fn renderText(self: *Renderer, atom: *cu.Atom) !void {
         else
             unreachable;
 
-    const fonthandle = cu.state.font_manager.getFont(atom.font);
+    const fonthandle = cu.state.getFont(atom.font);
     const font: *sdl.ttf.Font = @alignCast(@ptrCast(fonthandle));
 
     const surface = try font.renderTextLCD(
@@ -186,14 +186,14 @@ pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const
 }
 
 pub const Callbacks = struct {
-    fn measureText(context: *anyopaque, text: []const u8, font_handle: cu.FontHandle) cu.Axis2(f32) {
+    fn measureText(context: *anyopaque, text: []const u8, font_handle: cu.State.FontHandle) cu.Axis2(f32) {
         _ = context;
         const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
         const w, const h = font.getStringSize(text) catch @panic("failed to measure text");
         return .axis(@floatFromInt(w), @floatFromInt(h));
     }
 
-    fn fontSize(context: *anyopaque, font_handle: cu.FontHandle) f32 {
+    fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
         const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
         return font.getSize() catch @panic("failed to get font size");

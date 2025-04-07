@@ -9,6 +9,10 @@ pub const Color = extern struct {
     b: u8,
     a: u8,
 
+    comptime {
+        std.debug.assert(@sizeOf(Color) == @sizeOf(u32));
+    }
+
     /// 0xRRGGBBAA
     pub fn asHex(self: Color) u32 {
         return std.mem.nativeToBig(u32, @bitCast(self));

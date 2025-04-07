@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub const PluginSchema = struct {
+    /// Version of the schema used, currently unused
+    schema_version: usize,
+
     /// Id of plugin, must be unique, must be the same as the wasm filename (without the .wasm)
     id: []const u8,
 

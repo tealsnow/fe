@@ -23,6 +23,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        stable-pkgs = nixpkgs-stable.legacyPackages.${system};
       in
       rec {
         devShells.default = pkgs.mkShell {
@@ -34,6 +35,7 @@
             valgrind
             wabt
             tracy
+            renderdoc
 
             # libs
             sdl3
@@ -46,7 +48,7 @@
           ];
 
           env = {
-            "SDL_VIDEODRIVER" = "wayland";
+            # "SDL_VIDEODRIVER" = "wayland";
           };
 
           shellHook = '''';
