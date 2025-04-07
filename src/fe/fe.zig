@@ -1,7 +1,5 @@
 // @TODO:
-//   @[ ]: toggle box component
 //   @[ ]: pre-reserve mmaped memory for allocators
-//   @[ ]: animations
 //   @[ ]: Migrate to github issue tracker for all of these
 //   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
@@ -29,6 +27,8 @@
 //     this is aligned with zig's std and is more convienient
 //   @[x]: plugins: pass guest function to host to call
 //   @[x]: Intergrate tracing with tracy
+//   @[x]: toggle switch component
+//   @[x]: animations
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -36,6 +36,7 @@ const assert = std.debug.assert;
 const log = std.log;
 
 const cu = @import("cu");
+const AtomFlags = cu.AtomFlags;
 
 const sdl = @import("sdl3");
 const fc = @import("fontconfig.zig");
@@ -73,8 +74,8 @@ pub fn main() !void {
 }
 
 var debug_allocator = std.heap.DebugAllocator(.{
-    .never_unmap = true,
-    .retain_metadata = true,
+    // .never_unmap = true,
+    // .retain_metadata = true,
     // .verbose_log = true,
     // .backing_allocator_zeroes = false,
 }).init;
@@ -188,9 +189,12 @@ pub const AppState = struct {
     fps_buffer: FpsCircleBuffer(100) = .{},
     app_start_time: std.time.Instant,
     previous_time: std.time.Instant,
-    delta_time_ms: u64 = 0,
+    delta_time_ms: f32 = 0,
+    delta_time_s: f32 = 0,
     uptime_s: u64 = 0,
     fps: f32 = 0,
+
+    test_toggle: bool = false,
 
     pub fn init(gpa: std.mem.Allocator) !AppState {
         const main_window = try Window.init(gpa, "fe", true, .axis(800, 600));
@@ -226,7 +230,9 @@ pub const AppState = struct {
 
         const delta_time_ns = current_time.since(app.previous_time);
         app.previous_time = current_time;
-        app.delta_time_ms = delta_time_ns / std.time.ns_per_ms;
+
+        app.delta_time_ms = @as(f32, @floatFromInt(delta_time_ns)) / @as(f32, std.time.ns_per_ms);
+        app.delta_time_s = @as(f32, @floatFromInt(delta_time_ns)) / @as(f32, std.time.ns_per_s);
 
         app.fps = @as(f32, std.time.ns_per_s) / @as(f32, @floatFromInt(delta_time_ns));
         app.fps_buffer.push(app.fps);
@@ -252,8 +258,8 @@ pub fn run() !void {
             .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
         };
     };
-    if (is_debug and builtin.link_libc)
-        debug_allocator.backing_allocator = std.heap.c_allocator;
+    // if (is_debug and builtin.link_libc)
+    //     debug_allocator.backing_allocator = std.heap.c_allocator;
     defer if (is_debug) {
         _ = debug_allocator.deinit();
     };
@@ -294,6 +300,20 @@ pub fn run() !void {
 
     while (if (builtin.mode == .Debug) state.dbg_running else true) {
         tracy.frameMark();
+
+        cu.state = state.main_window.ui_state;
+        cu.startFrame();
+        defer {
+            cu.state = state.main_window.ui_state;
+            cu.endFrame();
+        }
+
+        cu.state = state.dbg_window.ui_state;
+        cu.startFrame();
+        defer {
+            cu.state = state.dbg_window.ui_state;
+            cu.endFrame();
+        }
 
         try state.frameStart();
 
@@ -432,11 +452,12 @@ fn processEvents() !void {
             .window_exposed => {
                 tracy.message("window expose");
 
-                const exposed = event.window;
-                const window = state.windowFromId(exposed.window_id) orelse break :ev;
+                // const exposed = event.window;
+                // const window = state.windowFromId(exposed.window_id) orelse break :ev;
+                // cu.state = window.ui_state;
+                // try window.render_handle.render();
 
-                cu.state = window.ui_state;
-                try window.render_handle.render();
+                try update();
             },
 
             .window_close_requested => {
@@ -468,11 +489,11 @@ fn update() !void {
             true;
 
     { // topbar
+        cu.pushFlags(.once(AtomFlags.none.drawSideBottom()));
+        cu.pushLayoutAxis(.once(.x));
+        cu.pushPrefSize(.once(.axis(.fill, .px(24))));
         const topbar = cu.open("topbar");
         defer cu.close(topbar);
-        topbar.flags = topbar.flags.drawSideBottom();
-        topbar.layout_axis = .x;
-        topbar.pref_size = .{ .w = .fill, .h = .px(24) };
 
         const menu_items = [_][]const u8{
             "Fe",
@@ -482,9 +503,9 @@ fn update() !void {
         };
 
         for (menu_items) |item_str| {
-            cu.pushOncePrefSize(.square(.text_pad(8)));
+            cu.pushFlags(.once(AtomFlags.none.clickable().drawText()));
+            cu.pushPrefSize(.once(.square(.text_pad(8))));
             const item = cu.build(item_str);
-            item.flags = item.flags.clickable().drawText();
 
             const inter = item.interaction();
             if (inter.f.hovering) {
@@ -498,9 +519,9 @@ fn update() !void {
         }
 
         {
+            cu.pushFlags(.once(AtomFlags.none.clickable()));
+            cu.pushPrefSize(.once(.square(.grow)));
             const topbar_space = cu.build("topbar spacer");
-            topbar_space.pref_size = .square(.grow);
-            topbar_space.flags = topbar_space.flags.clickable();
 
             const inter = topbar_space.interaction();
             if (inter.f.left_double_clicked) {
@@ -513,10 +534,10 @@ fn update() !void {
         }
 
         for (0..3) |i| {
+            cu.pushFlags(.once(AtomFlags.none.clickable().drawBorder()));
+            cu.pushPrefSize(.once(.square(.px(24))));
             const button = cu.openf("top bar button {d}", .{i});
             defer cu.close(button);
-            button.flags = button.flags.clickable().drawBorder();
-            button.pref_size = .square(.px(24));
 
             const int = button.interaction();
             if (int.f.hovering) {
@@ -539,34 +560,34 @@ fn update() !void {
     }
 
     { // main pane
+        cu.pushLayoutAxis(.once(.x));
+        cu.pushPrefSize(.once(.square(.grow)));
         const main_pane = cu.open("main pain");
         defer cu.close(main_pane);
-        main_pane.layout_axis = .x;
-        main_pane.pref_size = .square(.grow);
 
         { // left pane
+            cu.pushFlags(.once(AtomFlags.none.drawSideRight()));
+            cu.pushLayoutAxis(.once(.y));
+            cu.pushPrefSize(.once(.axis(.percent(0.4), .fill)));
             const pane = cu.open("left pane");
             defer cu.close(pane);
-            pane.flags = pane.flags.drawSideRight();
-            pane.layout_axis = .y;
-            pane.pref_size = .{ .w = .percent(0.4), .h = .fill };
 
             { // header
+                cu.pushFlags(.once(AtomFlags.none.drawSideBottom().drawText()));
+                cu.pushTextAlignment(.once(.axis(.end, .center)));
+                cu.pushPrefSize(.once(.axis(.grow, .text)));
                 const header = cu.build("left header");
-                header.flags = header.flags.drawSideBottom().drawText();
                 header.display_string = "Left Header gylp";
-                header.pref_size = .{ .w = .grow, .h = .text };
-                header.text_align = .{ .w = .end, .h = .center };
             }
 
             { // content
+                cu.pushFlags(.once(AtomFlags.none.clipRect().allowOverflow()));
+                cu.pushLayoutAxis(.once(.y));
+                cu.pushPrefSize(.once(.square(.grow)));
                 const content = cu.open("left content");
                 defer cu.close(content);
-                content.flags = content.flags.clipRect().allowOverflow();
-                content.layout_axis = .y;
-                content.pref_size = .square(.grow);
 
-                cu.pushFont(window.monospace_font);
+                cu.pushFont(.keep(window.monospace_font));
                 defer cu.popFont();
 
                 _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
@@ -576,31 +597,29 @@ fn update() !void {
         }
 
         { // right pane
+            cu.pushLayoutAxis(.once(.y));
+            cu.pushPrefSize(.once(.axis(.grow, .fill)));
             const pane = cu.open("right pane");
             defer cu.close(pane);
-            pane.layout_axis = .y;
-            // pane.pref_size = .{ .w = .percent(0.6), .h = .fill };
-            pane.pref_size = .{ .w = .grow, .h = .fill };
 
             { // header
+                cu.pushFlags(.once(AtomFlags.none.drawSideBottom().drawText()));
+                cu.pushLayoutAxis(.once(.x));
+                cu.pushTextAlignment(.once(.square(.center)));
+                cu.pushPrefSize(.once(.axis(.grow, .text)));
                 const header = cu.open("right header");
                 defer cu.close(header);
-                header.flags = header.flags.drawSideBottom().drawText();
                 header.display_string = "Right Header";
-                header.pref_size = .{ .w = .grow, .h = .text };
-                header.text_align = .square(.center);
-                header.layout_axis = .x;
 
                 if (header.interaction().f.mouse_over) {
-                    cu.pushBackgroundColor(.hexRgb(0x001800));
+                    cu.pushBackgroundColor(.keep(.hexRgb(0x001800)));
                     defer cu.popPalette();
 
+                    cu.pushFlags(.once(AtomFlags.none.floating().drawBackground()));
+                    cu.pushLayoutAxis(.once(.y));
+                    cu.pushPrefSize(.once(.square(.fit)));
                     const float = cu.open("floating");
                     defer cu.close(float);
-                    float.flags = float.flags.floating().drawBackground();
-                    float.layout_axis = .y;
-                    float.pref_size = .square(.fit);
-
                     float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).intoAxis();
 
                     _ = cu.label("tool tip!");
@@ -609,43 +628,49 @@ fn update() !void {
             }
 
             { // content
+                cu.pushLayoutAxis(.once(.y));
+                cu.pushPrefSize(.once(.square(.grow)));
                 const content = cu.open("right content");
                 defer cu.close(content);
-                content.layout_axis = .y;
-                content.pref_size = .square(.grow);
 
-                cu.pushOncePrefSize(.square(.text_pad(8)));
+                cu.pushPrefSize(.once(.square(.text_pad(8))));
                 if (cu.button("foo bar").f.isClicked()) {
                     log.debug("foo bar clicked", .{});
                 }
+
+                _ = cu.lineSpacer();
+
+                cu.pushPrefSize(.once(.axis(.px(40), .px(20))));
+                _ = cu.toggleSwitch(&state.test_toggle);
             }
         }
 
         { // right bar
-            // const bar = cu.open("right bar");
-            // defer cu.close(bar);
-            // bar.flags = bar.flags.drawSideLeft();
-            // bar.layout_axis = .y;
+            cu.pushFlags(.once(AtomFlags.none.drawSideLeft()));
+            cu.pushLayoutAxis(.once(.y));
+            const bar = cu.open("right bar");
+            defer cu.close(bar);
 
-            // const icon_size = cu.Atom.PrefSize.px(24);
-            // bar.pref_size = .{ .w = icon_size, .h = .grow };
+            const icon_size = cu.Atom.PrefSize.px(24);
+            bar.pref_size = .{ .w = icon_size, .h = .grow };
 
-            // { // inner
-            //     const inner = cu.open("right bar inner");
-            //     defer cu.close(inner);
-            //     inner.layout_axis = .y;
-            //     inner.pref_size = .{ .w = icon_size, .h = .fit };
+            { // inner
+                cu.pushLayoutAxis(.once(.y));
+                cu.pushPrefSize(.once(.axis(icon_size, .fit)));
+                const inner = cu.open("right bar inner");
+                defer cu.close(inner);
 
-            //     for (0..5) |i| {
-            //         {
-            //             const icon = cu.buildf("right bar icon {d}", .{i});
-            //             icon.flags.draw_border = true;
-            //             icon.pref_size = .square(icon_size);
-            //         }
+                for (0..5) |i| {
+                    {
+                        cu.pushFlags(.once(AtomFlags.none.drawBorder()));
+                        cu.pushPrefSize(.once(.square(icon_size)));
+                        _ = cu.buildf("right bar icon {d}", .{i});
+                    }
 
-            //         _ = cu.spacer(.{ .w = icon_size, .h = .px(4) });
-            //     }
-            // }
+                    cu.pushPrefSize(.once(.axis(icon_size, .px(4))));
+                    _ = cu.spacer();
+                }
+            }
         }
     }
 
@@ -663,10 +688,10 @@ pub fn updateDbgWindow() !void {
 
     cu.startBuild(@intFromEnum(window.window_handle.getID()));
     cu.state.ui_root.layout_axis = .y;
-    cu.state.ui_root.flags.draw_background = true;
+    cu.state.ui_root.flags = cu.state.ui_root.flags.drawBackground().allowOverflow();
 
     {
-        cu.pushTextColor(.hexRgb(0xff0000));
+        cu.pushTextColor(.keep(.hexRgb(0xff0000)));
         defer cu.popPalette();
 
         _ = cu.labelf("fps: {d:.2}", .{state.fps});
@@ -685,7 +710,7 @@ pub fn updateDbgWindow() !void {
     _ = cu.lineSpacer();
 
     _ = cu.labelf("current atom count: {d}", .{main_state.atom_map.count()});
-    // _ = cu.labelf("event count: {d}", .{main_state.event_list.items.len});
+    _ = cu.labelf("event count: {d}", .{main_state.event_list.len});
 
     _ = cu.lineSpacer();
 
@@ -703,8 +728,8 @@ pub fn updateDbgWindow() !void {
         _ = cu.label("active atom: none");
 
     const hot = main_state.atom_map.get(main_state.hot_atom_key);
-    const hot_lbl = cu.labelf("hot atom: {?}", .{hot});
-    hot_lbl.flags.draw_text_weak = true;
+    cu.pushFlags(.once(AtomFlags.none.drawTextWeak()));
+    _ = cu.labelf("hot atom: {?}", .{hot});
 
     cu.endBuild();
     try window.render_handle.render();

@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const cu = @import("cu.zig");
+
 pub fn Vec2(comptime T: type) type {
     return extern struct {
         x: T,
@@ -36,6 +38,20 @@ pub fn Vec2(comptime T: type) type {
 
         pub inline fn sub(self: Self, other: Self) Self {
             return .{ .x = self.x - other.x, .y = self.y - other.y };
+        }
+
+        pub inline fn vecExpSmoothBare(value: Self, target: Self, speed: anytype, dt: anytype) Self {
+            return .{
+                .x = expSmoothBare(value.x, target.x, speed, dt),
+                .y = expSmoothBare(value.y, target.y, speed, dt),
+            };
+        }
+
+        pub inline fn vecExpSmooth(value: Self, target: Self) Self {
+            return .{
+                .x = expSmooth(value.x, target.x),
+                .y = expSmooth(value.y, target.y),
+            };
         }
 
         pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -254,4 +270,19 @@ pub inline fn range2pts(
     y1: @TypeOf(x0),
 ) Range2(@TypeOf(x0)) {
     return .rangepts(x0, y0, x1, y1);
+}
+
+/// usage (during frame): `value = expSmoothBare(value, target, speed, dt)`
+pub inline fn expSmoothBare(
+    value: anytype,
+    target: anytype,
+    speed: anytype,
+    dt: anytype,
+) @TypeOf(value, target, speed, dt) {
+    return value + (target - value) * (1 - @exp(-speed * dt));
+}
+
+/// usage (during frame): `value = expSmooth(value, target)`
+pub inline fn expSmooth(value: anytype, target: anytype) @TypeOf(value, target) {
+    return expSmoothBare(value, target, cu.state.animation_speed, cu.state.dt_s);
 }

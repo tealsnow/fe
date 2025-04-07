@@ -62,4 +62,17 @@ pub const Color = extern struct {
             @intFromFloat(vec4.w * 255),
         );
     }
+
+    pub fn lerp(self: Color, other: Color, t: f32) Color {
+        return .{
+            .r = lerpU8(self.r, other.r, t),
+            .g = lerpU8(self.g, other.g, t),
+            .b = lerpU8(self.b, other.b, t),
+            .a = lerpU8(self.a, other.a, t),
+        };
+    }
+
+    fn lerpU8(a: u8, b: u8, t: f32) u8 {
+        return @intFromFloat(std.math.lerp(@as(f32, @floatFromInt(a)), @as(f32, @floatFromInt(b)), t));
+    }
 };

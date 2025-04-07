@@ -23,7 +23,7 @@ string: []const u8 = "",
 display_string: []const u8 = "",
 flags: Flags = .{},
 pref_size: cu.Axis2(PrefSize) = .zero,
-layout_axis: cu.Axis2(void).Kind = .none, // ensure this is set if children are added, if not an assertion will fail
+layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
 // hover_cursor
 // group_key
 // custom_draw_func
@@ -48,6 +48,10 @@ build_index_touched_first: u64,
 build_index_touched_last: u64,
 // build_index_first_disabled: u64,
 view_bounds: cu.Axis2(f32) = .zero,
+hot_t: f32,
+active_t: f32,
+
+pub const LayoutAxis = cu.Axis2(void).Kind;
 
 pub inline fn interaction(atom: *Atom) cu.Interation {
     return cu.interactionFromAtom(atom);
@@ -138,7 +142,7 @@ pub const Key = enum(u32) {
 
 pub const Flags = packed struct(u32) {
     const Self = @This();
-    pub const init = Self{};
+    pub const none = Self{};
 
     // interation
     mouse_clickable: bool = false,
@@ -391,8 +395,8 @@ pub const PrefSize = extern struct {
     /// value(px): value * top font size,
     /// strictness: 1,
     pub fn em(value: f32) PrefSize {
-        const top_font = cu.state.font_stack.top().?;
-        const font_handle = cu.state.font_manager.getFont(top_font);
+        const top_font = cu.state.font_stack.topNoPop().?;
+        const font_handle = cu.state.getFont(top_font);
         const font_size = cu.state.callbacks.fontSize(font_handle);
         return .px(value * font_size);
     }

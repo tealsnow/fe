@@ -129,16 +129,18 @@ pub const InteractionFlags = packed struct(u32) {
         .keyboard_pressed = true,
     };
 
-    pub const double_clicked = InteractionFlags{
-        .left_double_clicked = true,
+    pub const any_clicked = InteractionFlags{
+        .left_clicked = true,
+        .middle_clicked = true,
+        .right_clicked = true,
+        .keyboard_pressed = true,
     };
 
-    pub const triple_clicked = InteractionFlags{
-        .left_triple_clicked = true,
-    };
-
-    pub const dragging = InteractionFlags{
+    pub const any_dragging = InteractionFlags{
         .left_dragging = true,
+        .middle_dragging = true,
+        .right_dragging = true,
+        .keyboard_pressed = true,
     };
 
     inline fn asInt(self: Self) u32 {

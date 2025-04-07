@@ -4,10 +4,24 @@ const log = std.log.scoped(.@"cu::builder");
 const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
+const AtomFlags = cu.AtomFlags;
 
 const tracy = @import("tracy");
 
 var trace_build: tracy.ZoneContext = undefined;
+
+pub fn startFrame() void {
+    const current_time = std.time.Instant.now() catch @panic("no std.time.Instant support");
+
+    const dt_ns = current_time.since(cu.state.frame_previous_time);
+    cu.state.frame_previous_time = current_time;
+
+    cu.state.dt_s = @as(f32, @floatFromInt(dt_ns)) / @as(f32, std.time.ns_per_s);
+}
+
+pub fn endFrame() void {
+    //
+}
 
 pub fn startBuild(window_id: u32) void {
     trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
@@ -17,15 +31,21 @@ pub fn startBuild(window_id: u32) void {
     cu.state.scope_locals.clearAndFree(cu.state.arena);
 
     { // clear stacks
-        cu.state.palette_stack.clearAndFree(cu.state.arena);
-        cu.state.font_stack.clearAndFree(cu.state.arena);
-        cu.state.pref_size_stack.clearAndFree(cu.state.arena);
+        cu.state.stack_pref_size = .empty;
+        cu.state.stack_font = .empty;
+        cu.state.stack_palette = .empty;
+        cu.state.stack_layout_axis = .empty;
+        cu.state.stack_flags = .empty;
+        cu.state.stack_text_align = .empty;
     }
 
     { // setup stacks
-        cu.state.palette_stack.push(cu.state.arena, cu.state.default_palette, false);
-        cu.state.font_stack.push(cu.state.arena, cu.state.default_font, false);
-        cu.state.pref_size_stack.push(cu.state.arena, .axis(.fill, .fill), false);
+        cu.state.stack_pref_size.push(cu.state.arena, .axis(.fill, .fill), false);
+        cu.state.stack_font.push(cu.state.arena, cu.state.default_font, false);
+        cu.state.stack_palette.push(cu.state.arena, cu.state.default_palette, false);
+        cu.state.stack_layout_axis.push(cu.state.arena, .none, false);
+        cu.state.stack_flags.push(cu.state.arena, .{}, false);
+        cu.state.stack_text_align.push(cu.state.arena, .square(.center), false);
     }
 
     { // setup ui roots
@@ -180,17 +200,14 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
 
     atom.string = "";
     atom.display_string = "";
-    atom.flags = .{};
-    atom.pref_size = .zero;
-    atom.layout_axis = .none;
-    atom.text_align = .square(.center);
 
     // per build info
-    atom.font = cu.state.font_stack.top().?;
-    atom.palette = cu.state.palette_stack.top().?;
-
-    if (cu.state.pref_size_stack.top()) |pref_size|
-        atom.pref_size = pref_size;
+    atom.pref_size = cu.state.stack_pref_size.top().?;
+    atom.font = cu.state.stack_font.top().?;
+    atom.palette = cu.state.stack_palette.top().?;
+    atom.layout_axis = cu.state.stack_layout_axis.top().?;
+    atom.flags = cu.state.stack_flags.top().?;
+    atom.text_align = cu.state.stack_text_align.top().?;
 
     // add to parent
     if (cu.state.atom_parent_stack.top()) |parent| {
@@ -314,17 +331,33 @@ pub fn labelf(comptime fmt: []const u8, args: anytype) *Atom {
     return label(string);
 }
 
-pub fn spacer(pref_size: ?cu.Axis2(Atom.PrefSize)) *Atom {
-    const atom = buildFromKey(.nil);
-    if (pref_size) |size|
-        atom.pref_size = size;
-    return atom;
+pub fn spacer() *Atom {
+    return buildFromKey(.nil);
 }
 
 pub fn lineSpacer() *Atom {
-    const line_spacer = spacer(.axis(.grow, .text));
+    pushPrefSize(.once(.axis(.grow, .text)));
+    const line_spacer = spacer();
     line_spacer.display_string = " ";
     return line_spacer;
+}
+
+pub fn baseClickableInteractionStyles(inter: cu.Interation) void {
+    // @FIXME: the tranitions to and from no interation and hovering work,
+    //  and from hovering to clicking, but not from clicking back to hovering
+
+    const atom = inter.atom;
+    atom.hot_t = cu.expSmooth(atom.hot_t, @as(f32, if (inter.f.hovering) 1 else 0));
+    atom.active_t = cu.expSmooth(atom.active_t, @as(f32, if (inter.f.containsAny(.any_dragging)) 1 else 0));
+
+    const palette = atom.palette;
+    const from, const to, const lerp_t =
+        if (inter.f.containsAny(.any_dragging))
+            .{ palette.hot, palette.active, atom.active_t }
+        else
+            .{ palette.border, palette.hot, atom.hot_t };
+
+    atom.palette.border = from.lerp(to, lerp_t);
 }
 
 pub fn button(string: []const u8) cu.Interation {
@@ -332,10 +365,7 @@ pub fn button(string: []const u8) cu.Interation {
     atom.flags = atom.flags.clickable().drawText().drawBorder();
 
     const interaction = atom.interaction();
-    if (interaction.f.hovering)
-        atom.palette.border = atom.palette.hot;
-    if (interaction.f.left_dragging)
-        atom.palette.border = atom.palette.active;
+    baseClickableInteractionStyles(interaction);
 
     return interaction;
 }
@@ -345,73 +375,159 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
     return button(string);
 }
 
+pub fn toggleSwitch(toggled: *bool) cu.Interation {
+    cu.pushFlags(.once(AtomFlags.none.drawBorder().clickable()));
+    cu.pushLayoutAxis(.once(.y));
+    const toggle = cu.open("toggle box");
+    defer cu.close(toggle);
+
+    const size = toggle.fixed_size;
+    const padding: f32 = size.h / 5;
+    const middle_size: f32 = size.h - (2 * padding);
+
+    cu.pushPrefSize(.once(.axis(.grow, .px(padding))));
+    _ = cu.spacer();
+
+    {
+        cu.pushLayoutAxis(.once(.x));
+        cu.pushPrefSize(.once(.axis(.grow, .grow)));
+        const track = cu.open("track");
+        defer cu.close(track);
+
+        track.active_t = cu.expSmooth(
+            track.active_t,
+            if (toggled.*) size.w - middle_size - padding else padding,
+        );
+
+        cu.pushPrefSize(.once(.axis(.px(track.active_t), .grow)));
+        _ = cu.spacer();
+
+        cu.pushFlags(.once(AtomFlags.none.drawBackground()));
+        cu.pushBackgroundColor(.once(cu.topPalette().text));
+        cu.pushPrefSize(.once(.square(.px(middle_size))));
+        _ = cu.build("toggle middle");
+    }
+
+    const inter = toggle.interaction();
+    cu.baseClickableInteractionStyles(inter);
+
+    if (inter.f.isClicked())
+        toggled.* = !toggled.*;
+
+    return inter;
+}
+
 // =-=-=-=-=-=-=
 // =-= stacks
 
+pub fn StackPushType(comptime T: type) type {
+    return union(enum) {
+        transient: T,
+        persistent: T,
+
+        pub const Self = @This();
+
+        pub fn once(item: T) Self {
+            return .{ .transient = item };
+        }
+
+        pub fn keep(item: T) Self {
+            return .{ .persistent = item };
+        }
+
+        fn destructure(self: Self) struct { T, bool } {
+            return switch (self) {
+                .transient => |item| .{ item, true },
+                .persistent => |item| .{ item, false },
+            };
+        }
+    };
+}
+
+inline fn genericOnceStackPush(comptime T: type, stack: *cu.State.OnceStack(T), push_type: StackPushType(T)) void {
+    const item, const once = push_type.destructure();
+    stack.push(cu.state.arena, item, once);
+}
+
 // =-= prefSize
 
-pub inline fn pushPrefSize(pref_size: cu.Axis2(Atom.PrefSize)) void {
-    cu.state.pref_size_stack.push(cu.state.arena, pref_size, false);
+pub inline fn pushPrefSize(pref_size: StackPushType(cu.Axis2(Atom.PrefSize))) void {
+    genericOnceStackPush(cu.Axis2(Atom.PrefSize), &cu.state.stack_pref_size, pref_size);
 }
 
 pub inline fn popPrefSize() void {
-    _ = cu.state.pref_size_stack.pop();
-}
-
-pub inline fn pushOncePrefSize(pref_size: cu.Axis2(Atom.PrefSize)) void {
-    cu.state.pref_size_stack.push(cu.state.arena, pref_size, true);
+    _ = cu.state.stack_pref_size.pop();
 }
 
 // =-= Font
 
-pub inline fn pushFont(fontid: cu.State.FontId) void {
-    cu.state.font_stack.push(cu.state.arena, fontid, false);
+pub inline fn pushFont(fontid: StackPushType(cu.State.FontId)) void {
+    genericOnceStackPush(cu.State.FontId, &cu.state.stack_font, fontid);
 }
 
 pub inline fn popFont() void {
-    _ = cu.state.font_stack.pop().?;
-}
-
-pub inline fn pushOnceFont(fontid: cu.State.FontId) void {
-    cu.state.font_stack.push(cu.state.arena, fontid, true);
+    _ = cu.state.stack_font.pop().?;
 }
 
 // =-= palette
 
-pub inline fn pushPalette(palette: Atom.Palette) void {
-    cu.state.palette_stack.push(cu.state.arena, palette, false);
+pub inline fn pushPalette(palette: StackPushType(Atom.Palette)) void {
+    genericOnceStackPush(Atom.Palette, &cu.state.stack_palette, palette);
 }
 
 pub inline fn popPalette() void {
-    _ = cu.state.palette_stack.pop().?;
+    _ = cu.state.stack_palette.pop().?;
 }
 
-pub inline fn pushOncePalette(palette: Atom.Palette) void {
-    cu.state.palette_stack.push(cu.state.arena, palette, true);
+pub inline fn topPalette() Atom.Palette {
+    return cu.state.stack_palette.topNoPop().?;
 }
 
 // =-= textColor
 
-pub inline fn pushTextColor(color: cu.Color) void {
-    var palette = cu.state.palette_stack.topNoPop().?;
-    palette.text = color;
-    pushPalette(palette);
+pub inline fn pushTextColor(color: StackPushType(cu.Color)) void {
+    const item, const once = color.destructure();
+    var palette = topPalette();
+    palette.text = item;
+    pushPalette(if (once) .once(palette) else .keep(palette));
 }
 
-pub inline fn pushOnceTextColor(color: cu.Color) void {
-    var palette = cu.state.palette_stack.topNoPop().?;
-    palette.text = color;
-    pushOncePalette(palette);
+// =-= backgroundColor
+
+pub inline fn pushBackgroundColor(color: StackPushType(cu.Color)) void {
+    const item, const once = color.destructure();
+    var palette = topPalette();
+    palette.background = item;
+    pushPalette(if (once) .once(palette) else .keep(palette));
 }
 
-pub inline fn pushBackgroundColor(color: cu.Color) void {
-    var palette = cu.state.palette_stack.topNoPop().?;
-    palette.background = color;
-    pushPalette(palette);
+// =-= layoutAxis
+
+pub inline fn pushLayoutAxis(axis: StackPushType(Atom.LayoutAxis)) void {
+    genericOnceStackPush(Atom.LayoutAxis, &cu.state.stack_layout_axis, axis);
 }
 
-pub inline fn pushOnceBackgroundColor(color: cu.Color) void {
-    var palette = cu.state.palette_stack.topNoPop().?;
-    palette.background = color;
-    pushOncePalette(palette);
+pub inline fn popLayoutAxis() void {
+    _ = cu.state.stack_layout_axis.pop().?;
+}
+
+// =-= flags
+
+pub inline fn pushFlags(flags: StackPushType(Atom.Flags)) void {
+    const item, const once = flags.destructure();
+    cu.state.stack_flags.push(cu.state.arena, item, once);
+}
+
+pub inline fn popFlags() void {
+    _ = cu.state.stack_flags.pop().?;
+}
+
+// =-= textAlignment
+
+pub inline fn pushTextAlignment(text_alignment: StackPushType(cu.Axis2(Atom.TextAlignment))) void {
+    genericOnceStackPush(cu.Axis2(Atom.TextAlignment), &cu.state.stack_text_align, text_alignment);
+}
+
+pub inline fn popTextAlignment() void {
+    _ = cu.state.stack_text_align.pop().?;
 }

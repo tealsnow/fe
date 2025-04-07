@@ -14,6 +14,11 @@ const MouseButton = cu.MouseButton;
 current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
 
+frame_previous_time: std.time.Instant,
+dt_s: f32 = 0,
+
+animation_speed: f32 = 40,
+
 callbacks: Callbacks,
 
 arena_allocator: std.heap.ArenaAllocator,
@@ -27,9 +32,12 @@ atom_parent_stack: Stack(*Atom) = .empty,
 default_palette: Atom.Palette = undefined,
 default_font: FontId = undefined,
 
-palette_stack: OnceStack(Atom.Palette) = .empty,
-font_stack: OnceStack(FontId) = .empty,
-pref_size_stack: OnceStack(cu.Axis2(Atom.PrefSize)) = .empty,
+stack_pref_size: OnceStack(cu.Axis2(Atom.PrefSize)) = .empty,
+stack_font: OnceStack(FontId) = .empty,
+stack_palette: OnceStack(Atom.Palette) = .empty,
+stack_layout_axis: OnceStack(Atom.LayoutAxis) = .empty,
+stack_flags: OnceStack(Atom.Flags) = .empty,
+stack_text_align: OnceStack(cu.Axis2(Atom.TextAlignment)) = .empty,
 
 scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -81,6 +89,8 @@ pub fn init(gpa: Allocator, callbacks: Callbacks) !*State {
     const state = try gpa.create(State);
     state.* = .{
         .callbacks = callbacks,
+
+        .frame_previous_time = std.time.Instant.now() catch @panic("no std.time.Instant support"),
 
         .arena_allocator = std.heap.ArenaAllocator.init(gpa),
         .arena = undefined,
@@ -156,7 +166,7 @@ pub const Callbacks = struct {
         return self.vtable.measureText(self.context, text, font);
     }
 
-    pub fn fontSize(self: *Callbacks, font: cu.FontHandle) f32 {
+    pub fn fontSize(self: *Callbacks, font: FontHandle) f32 {
         return self.vtable.fontSize(self.context, font);
     }
 
@@ -165,7 +175,7 @@ pub const Callbacks = struct {
     }
 };
 
-fn Stack(comptime T: type) type {
+pub fn Stack(comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -192,7 +202,7 @@ fn Stack(comptime T: type) type {
 }
 
 /// Allows items to put onto the stack that will be removed once they are read
-fn OnceStack(comptime T: type) type {
+pub fn OnceStack(comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -210,7 +220,10 @@ fn OnceStack(comptime T: type) type {
         }
 
         pub fn top(self: *Self) ?T {
-            if (self.stack.len == 0) return null;
+            if (self.stack.len == 0) {
+                @branchHint(.unlikely);
+                return null;
+            }
             const elem = self.stack.get(self.stack.len - 1);
             if (elem.once)
                 self.stack.len -= 1;
@@ -218,16 +231,22 @@ fn OnceStack(comptime T: type) type {
         }
 
         pub fn topNoPop(self: *Self) ?T {
-            if (self.stack.len == 0) return null;
+            if (self.stack.len == 0) {
+                @branchHint(.unlikely);
+                return null;
+            }
             const elem = self.stack.get(self.stack.len - 1);
             return elem.item;
         }
 
         pub fn pop(self: *Self) ?T {
-            return if (self.stack.pop()) |elem|
-                elem.item
-            else
-                null;
+            if (self.stack.pop()) |elem| {
+                @branchHint(.likely);
+                return elem.item;
+            } else {
+                @branchHint(.unlikely);
+                return null;
+            }
         }
 
         pub fn clearAndFree(self: *Self, allocator: Allocator) void {
@@ -262,7 +281,10 @@ pub fn HistoryRingBuffer(
         }
 
         pub fn indexBack(self: Self, idx: usize) ?Elem {
-            if (idx >= self.count) return null;
+            if (idx >= self.count) {
+                @branchHint(.unlikely);
+                return null;
+            }
 
             const pos = (self.head + Size - 1 - idx) % Size;
             return self.buffer[pos];
