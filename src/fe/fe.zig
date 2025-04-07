@@ -1,4 +1,5 @@
 // @TODO:
+//   @[ ]: disabled state for atoms
 //   @[ ]: pre-reserve mmaped memory for allocators
 //   @[ ]: Migrate to github issue tracker for all of these
 //   @[ ]: investigate using gtk for windowing and events

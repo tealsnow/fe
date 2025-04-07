@@ -53,8 +53,11 @@ ui_ctx_menu_root: *Atom = undefined,
 ctx_menu_open: bool = false,
 next_ctx_menu_open: bool = false,
 
-active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil), // currently interacting atom for mouse button
-hot_atom_key: Atom.Key = .nil, // currenly over (event consuming) atom
+// currenly over (event consuming) atom
+// (about to be interacting with this item)
+hot_atom_key: Atom.Key = .nil,
+// currently interacting atom for mouse button
+active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil),
 
 event_pool: EventPool,
 event_node_pool: EventNodePool,

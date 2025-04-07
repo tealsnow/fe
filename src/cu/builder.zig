@@ -347,12 +347,18 @@ pub fn baseClickableInteractionStyles(inter: cu.Interation) void {
     //  and from hovering to clicking, but not from clicking back to hovering
 
     const atom = inter.atom;
-    atom.hot_t = cu.expSmooth(atom.hot_t, @as(f32, if (inter.f.hovering) 1 else 0));
-    atom.active_t = cu.expSmooth(atom.active_t, @as(f32, if (inter.f.containsAny(.any_dragging)) 1 else 0));
+
+    const is_hot = cu.state.hot_atom_key.eql(atom.key);
+    const is_active = for (cu.state.active_atom_key) |key| {
+        if (key.eql(atom.key)) break true;
+    } else false;
+
+    atom.hot_t = cu.expSmooth(atom.hot_t, @as(f32, if (is_hot) 1 else 0));
+    atom.active_t = cu.expSmooth(atom.active_t, @as(f32, if (is_active) 1 else 0));
 
     const palette = atom.palette;
     const from, const to, const lerp_t =
-        if (inter.f.containsAny(.any_dragging))
+        if (is_active)
             .{ palette.hot, palette.active, atom.active_t }
         else
             .{ palette.border, palette.hot, atom.hot_t };
