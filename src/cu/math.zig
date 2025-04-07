@@ -185,6 +185,10 @@ pub fn Axis2(comptime T: type) type {
             return @bitCast(self);
         }
 
+        pub inline fn intoPxPrefSize(self: Self) Axis2(cu.Atom.PrefSize) {
+            return .axis(.px(self.w), .px(self.h));
+        }
+
         pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
             _ = options;
             try writer.print("Axis2({s}){{ .w = {" ++ fmt ++ "}, .h = {" ++ fmt ++ "} }}", .{ @typeName(T), self.w, self.h });

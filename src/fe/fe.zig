@@ -5,6 +5,7 @@
 //   @[ ]: investigate using gtk for windowing and events
 //   @[ ]: tooltips/dropdowns - general popups
 //   @[ ]: focus behaviour
+//   @[ ]: texture/image rendering
 //   @[ ]: migrate to wgpu rendering
 //     harfbuzz for shaping
 //     freetype(SDF?) for rastering, have to implement atlas packing
@@ -453,12 +454,10 @@ fn processEvents() !void {
             .window_exposed => {
                 tracy.message("window expose");
 
-                // const exposed = event.window;
-                // const window = state.windowFromId(exposed.window_id) orelse break :ev;
-                // cu.state = window.ui_state;
-                // try window.render_handle.render();
-
-                try update();
+                const exposed = event.window;
+                const window = state.windowFromId(exposed.window_id) orelse break :ev;
+                cu.state = window.ui_state;
+                try window.render_handle.render();
             },
 
             .window_close_requested => {

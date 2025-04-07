@@ -49,23 +49,22 @@ pub fn startBuild(window_id: u32) void {
     }
 
     { // setup ui roots
-
+        pushLayoutAxis(.once(.x));
+        pushPrefSize(.once(cu.state.window_size.intoPxPrefSize()));
         const root = buildFromStringF("###root window-id:{x}", .{window_id});
-        root.pref_size = .axis(.px(cu.state.window_size.w), .px(cu.state.window_size.h));
         root.rect = .range(.vec(0, 0), cu.state.window_size.intoVec());
-        root.layout_axis = .x;
         cu.state.ui_root = root;
 
+        pushLayoutAxis(.once(.x));
+        pushPrefSize(.once(.square(.fit)));
         const ctx_menu_root = buildFromStringF("###ctx_menu_root window-id:{x}", .{window_id});
-        ctx_menu_root.pref_size = .square(.fit);
         ctx_menu_root.rect = .zero;
-        ctx_menu_root.layout_axis = .x;
         cu.state.ui_ctx_menu_root = ctx_menu_root;
 
+        // pushLayoutAxis(.once(.x));
+        // pushPrefSize(.once(.square(.fit)));
         // const tooltip_root = buildFromStringF("###tooltip_root window-id:{x}", .{window_id});
-        // tooltip_root.pref_size = .square(.fit);
         // tooltip_root.rect = .zero;
-        // tooltip_root.layout_axis = .x;
         // cu.state.ui_tooltip_root = tooltip_root;
     }
 
@@ -88,6 +87,7 @@ pub fn endBuild() void {
         defer trace.end();
 
         var to_remove = std.ArrayList(Atom.Key)
+            // we would hope no more than a 1/4 of the total atoms are removed in a given frame
             .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch @panic("oom");
 
         for (cu.state.atom_map.values()) |atom| {
