@@ -429,25 +429,31 @@ fn queueWorkDoneCallback(status: wgpu.WorkDoneStatus, userdata: ?*anyopaque) cal
 }
 
 fn createGlfwWindowWgpuSurface(window: glfw.Window, instance: *wgpu.Instance) ?*wgpu.Surface {
-    const native = glfw.Native(.{
-        .win32 = true,
-        .cocoa = true,
-        .wayland = true,
-        .x11 = true,
-    });
-
-    switch (glfw.getPlatform()) {
-        .win32 => {
-            @panic("windows support is TODO");
+    switch (builtin.os.tag) {
+        .windows => {
+            const native = glfw.Native(.{
+                .win32 = true,
+            });
+            _ = native;
+            @compileError("windowos support is TODO");
         },
-        .cocoa => {
+        .macos => {
+            const native = glfw.Native(.{
+                .cocoa = true,
+            });
+            _ = native;
             @panic("apple cocoa support is TODO");
         },
-        .wayland => {
-            switch (builtin.os.tag) {
-                .linux => {
+        .linux => {
+            const native = glfw.Native(.{
+                .wayland = true,
+                .x11 = true,
+            });
+
+            switch (glfw.getPlatform()) {
+                .wayland => {
                     const wl_display = native.getWaylandDisplay();
-                    const wl_surface = native.getWaylandWindow(window.handle);
+                    const wl_surface = native.getWaylandWindow(window);
                     const from_wl_surface = wgpu.SurfaceDescriptorFromWaylandSurface{
                         .display = wl_display,
                         .surface = wl_surface,
@@ -459,14 +465,9 @@ fn createGlfwWindowWgpuSurface(window: glfw.Window, instance: *wgpu.Instance) ?*
                     };
                     return instance.createSurface(&surface_desc);
                 },
-                else => @panic("non-linux wayland support not implemented"),
-            }
-        },
-        .x11 => {
-            switch (builtin.os.tag) {
-                .linux => {
+                .x11 => {
                     const x11_display = native.getX11Display();
-                    const x11_window = native.getX11Window(window.handle);
+                    const x11_window = native.getX11Window(window);
                     const from_xlib_window = wgpu.SurfaceDescriptorFromXlibWindow{
                         .display = x11_display,
                         .window = @intCast(x11_window),
@@ -478,9 +479,9 @@ fn createGlfwWindowWgpuSurface(window: glfw.Window, instance: *wgpu.Instance) ?*
                     };
                     return instance.createSurface(&surface_desc);
                 },
-                else => @panic("non-linux x11 support not implemented"),
+                else => unreachable,
             }
         },
-        .any, .null => @panic("unknown platform"),
+        else => @compileError("unsupported platform"),
     }
 }
