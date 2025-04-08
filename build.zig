@@ -50,6 +50,16 @@ pub fn build(b: *std.Build) void {
         .shared = false,
     });
 
+    const glfw = b.dependency("glfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const wgpu = b.dependency("wgpu", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const sdl3 = sdl3: {
         const mod = b.createModule(.{
             .root_source_file = b.path("src/sdl3/sdl3.zig"),
@@ -115,6 +125,11 @@ pub fn build(b: *std.Build) void {
 
         mod.addImport("sdl3", sdl3.root_module);
         mod.linkLibrary(sdl3);
+
+        mod.addImport("glfw", glfw.module("glfw"));
+        mod.linkLibrary(glfw.artifact("glfw"));
+
+        mod.addImport("wgpu", wgpu.module("wgpu"));
 
         mod.addImport("cu", cu.root_module);
         mod.linkLibrary(cu);

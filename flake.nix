@@ -44,6 +44,15 @@
 
             fontconfig
 
+            glfw
+            glfw-wayland
+            wayland
+            libxkbcommon
+            xorg.libXcursor.dev
+            xorg.libXrandr.dev
+            xorg.libXinerama.dev
+            xorg.libXi.dev
+
             wasmtime-c-api
           ];
 

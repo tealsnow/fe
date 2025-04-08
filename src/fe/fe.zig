@@ -54,7 +54,13 @@ const build_options = @import("build_options");
 pub const std_options = std.Options{
     .logFn = logFn.logFn,
     .log_level = @enumFromInt(@intFromEnum(build_options.log_level)),
+    .log_scope_levels = &.{
+        // .{ .scope = .@"wgpu renderer", .level = .debug },
+        .{ .scope = .@"wgpu renderer", .level = .warn },
+    },
 };
+
+const glfw_test = @import("glfw_test.zig");
 
 pub fn main() !void {
     log.info("starting fe", .{});
@@ -268,6 +274,9 @@ pub fn run() !void {
 
     var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
     const gpa = tracing_allocator.allocator();
+
+    try glfw_test.entry(gpa);
+    if (true) return;
 
     // =-= plugin setup =-=
     log.info("setting up plugins", .{});

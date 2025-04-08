@@ -8,6 +8,11 @@
             .url = "https://github.com/tealsnow/zig-tracy/archive/refs/tags/v0.0.9.zip",
             .hash = "tracy-0.0.9-Dn49mw9SAACCtNBeyyb3EOipVIAhYuoDI9bLBi3LDJh6",
         },
+        .glfw = .{ .path = "./pkg/glfw" },
+        .wgpu = .{
+            .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.0.0.tar.gz",
+            .hash = "wgpu_native_zig-5.0.0-B9jeDOGZAgAkyePsJjgwsgHgo0guYS7S9cQqDcZx9kXL",
+        },
     },
     .paths = .{
         "build.zig",
