@@ -1,8 +1,21 @@
 const std = @import("std");
 
+pub const EntryPoint = enum {
+    sdl,
+    glfw,
+    wayland,
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const entry_point =
+        b.option(
+            EntryPoint,
+            "entry_point",
+            "specify entry point to use",
+        ) orelse .wayland;
 
     const profile =
         b.option(
@@ -119,17 +132,63 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
+        const fe = b.addExecutable(.{
+            .name = "fe",
+            .root_module = mod,
+
+            .use_llvm = use_llvm,
+            .use_lld = use_llvm,
+            // .use_lld = false,
+        });
+        b.installArtifact(fe);
+
         mod.link_libc = true;
         mod.linkSystemLibrary("fontconfig", .{ .needed = true });
         mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
-        mod.addImport("sdl3", sdl3.root_module);
-        mod.linkLibrary(sdl3);
+        switch (entry_point) {
+            .sdl => {
+                mod.addImport("sdl3", sdl3.root_module);
+                mod.linkLibrary(sdl3);
+            },
+            .glfw => {
+                mod.addImport("glfw", glfw.module("glfw"));
+                mod.linkLibrary(glfw.artifact("glfw"));
 
-        mod.addImport("glfw", glfw.module("glfw"));
-        mod.linkLibrary(glfw.artifact("glfw"));
+                mod.addImport("wgpu", wgpu.module("wgpu"));
+            },
+            .wayland => {
+                mod.linkSystemLibrary("wayland-client", .{ .needed = true });
 
-        mod.addImport("wgpu", wgpu.module("wgpu"));
+                const xdg_shell_share_path = "wayland-protocols/stable/xdg-shell/xdg-shell.xml";
+                const xdg_shell_generated_root = "src/fe/wayland/";
+                const xdg_shell_generated_code_path = "xdg-shell-protocal.c";
+                const xdg_shell_generated_header_path = "xdg-shell-client-protocal.h";
+
+                const xdg_shell_path = findPathInXdgDataDirs(b, xdg_shell_share_path).?;
+                const get_xdg_shell_code = b.addSystemCommand(&.{
+                    "wayland-scanner",
+                    "private-code",
+                    xdg_shell_path,
+                    xdg_shell_generated_root ++ xdg_shell_generated_code_path,
+                });
+                const get_xdg_shell_header = b.addSystemCommand(&.{
+                    "wayland-scanner",
+                    "client-header",
+                    xdg_shell_path,
+                    xdg_shell_generated_root ++ xdg_shell_generated_header_path,
+                });
+
+                fe.step.dependOn(&get_xdg_shell_code.step);
+                fe.step.dependOn(&get_xdg_shell_header.step);
+
+                mod.addCSourceFiles(.{
+                    .root = b.path(xdg_shell_generated_root),
+                    .files = &.{xdg_shell_generated_code_path},
+                });
+                mod.addIncludePath(b.path(xdg_shell_generated_root));
+            },
+        }
 
         mod.addImport("cu", cu.root_module);
         mod.linkLibrary(cu);
@@ -146,17 +205,8 @@ pub fn build(b: *std.Build) void {
         const options = b.addOptions();
         options.addOption(std.log.Level, "log_level", log_level);
         options.addOption(bool, "poll_event_loop", poll_event_loop);
+        options.addOption(EntryPoint, "entry_point", entry_point);
         mod.addOptions("build_options", options);
-
-        const fe = b.addExecutable(.{
-            .name = "fe",
-            .root_module = mod,
-
-            .use_llvm = use_llvm,
-            .use_lld = use_llvm,
-            // .use_lld = false,
-        });
-        b.installArtifact(fe);
 
         break :fe fe;
     };
@@ -450,4 +500,28 @@ pub fn getPluginSchema(b: *std.Build) *std.Build.Module {
     return b.createModule(.{
         .root_source_file = b.path("src/plugin-schema/schema.zig"),
     });
+}
+
+fn findPathInXdgDataDirs(b: *std.Build, path: []const u8) ?[]const u8 {
+    const env = std.process.getEnvMap(b.allocator) catch @panic("oom");
+    // defer env.deinit(); // no need to wait time deinit thing
+
+    const data_dirs = env.get("XDG_DATA_DIRS") orelse {
+        // if no XDG_DATA_DIRS env we just check the default path
+        const dir = std.fs.openDirAbsolute("/usr/share/", .{}) catch return null;
+        dir.access(path, .{}) catch return null;
+        return b.pathJoin(&.{ "/usr/share/", path });
+    };
+
+    var iter = std.mem.splitScalar(u8, data_dirs, ':');
+    while (iter.next()) |dir_path| {
+        // open dir - if not try next
+        const dir = std.fs.openDirAbsolute(dir_path, .{}) catch continue;
+        // check if exists and we have access - otherwise try next
+        dir.access(path, .{}) catch continue;
+
+        return b.pathJoin(&.{ dir_path, path });
+    }
+
+    return null;
 }

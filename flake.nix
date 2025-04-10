@@ -31,6 +31,7 @@
             zig
             zls
             lldb
+            gdb
             pkg-config
             valgrind
             wabt
@@ -44,7 +45,9 @@
 
             fontconfig
 
-            glfw
+            wasmtime-c-api
+
+            # glfw
             glfw-wayland
             wayland
             libxkbcommon
@@ -53,7 +56,10 @@
             xorg.libXinerama.dev
             xorg.libXi.dev
 
-            wasmtime-c-api
+            # wayland
+            wayland
+            wayland-protocols
+            wayland-scanner
           ];
 
           env = {

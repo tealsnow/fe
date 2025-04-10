@@ -10,10 +10,21 @@ const wgpu = @import("wgpu");
 
 const cu = @import("cu");
 
+// const xdg_decoration = @cImport({
+//     @cInclude("xdg-decoration-unstable-v1-client-protocol.h");
+//     // @cInclude("xdg-decoration-unstable-v1-client-protocol-code.h");
+// });
+
+const wp_viewporter = @cImport({
+    @cInclude("viewporter-client-protocol.h");
+    // @cInclude("viewporter-client-protocol-code.h");
+});
+
 pub const Application = struct {
     window: glfw.Window,
 
     surface: *wgpu.Surface,
+    surface_format: wgpu.TextureFormat,
     device: *wgpu.Device,
     queue: *wgpu.Queue,
 
@@ -52,10 +63,10 @@ pub const Application = struct {
             null,
             null,
             .{
-                .decorated = false,
+                .decorated = true,
                 .center_cursor = false,
-                .scale_to_monitor = true,
-                .resizable = false,
+                .scale_to_monitor = false,
+                .resizable = true,
                 .client_api = .no_api,
             },
         ) orelse {
@@ -65,7 +76,14 @@ pub const Application = struct {
         window.setKeyCallback(keyCallback);
         window.setCursorPosCallback(cursorPosCallback);
 
-        const surface, const device, const queue = surface_device_queue: {
+        // if (glfw.getPlatform() == .wayland) {
+        //     const native = glfw.Native(.{ .wayland = true });
+        //     _ = native; // autofix
+
+        //     wp_viewporter.wp_viewporter
+        // }
+
+        const surface, const surface_format, const device, const queue = blk: {
             const adapter, const surface = adapter_surface: {
                 //- instance creation
                 log.debug("creating instance", .{});
@@ -146,28 +164,42 @@ pub const Application = struct {
             log.debug("configuring surface", .{});
 
             var surface_caps: wgpu.SurfaceCapabilities = undefined;
+            defer surface_caps.freeMembers();
             surface.getCapabilities(adapter, &surface_caps);
             assert(surface_caps.format_count >= 1);
 
+            {
+                //- Inspect surface
+                log.debug("inspecting surface", .{});
+
+                log.debug("Available surface texture formats:", .{});
+                for (surface_caps.formats[0..surface_caps.format_count]) |format| {
+                    log.debug("- {s}", .{@tagName(format)});
+                }
+
+                log.debug("Available surface present modes:", .{});
+                for (surface_caps.present_modes[0..surface_caps.present_mode_count]) |present_mode| {
+                    log.debug("- {s}", .{@tagName(present_mode)});
+                }
+
+                log.debug("Available surface alpha modes:", .{});
+                for (surface_caps.alpha_modes[0..surface_caps.alpha_mode_count]) |alpha_mode| {
+                    log.debug("- {s}", .{@tagName(alpha_mode)});
+                }
+            }
+
             const surface_format = surface_caps.formats[0];
+            log.debug("preffered surface format: {s}", .{@tagName(surface_format)});
 
-            const surface_config = wgpu.SurfaceConfiguration{
-                .device = device,
-                .width = init_window_size.w,
-                .height = init_window_size.h,
-                .format = surface_format,
-                .usage = wgpu.TextureUsage.render_attachment,
-                .present_mode = .fifo,
-                .alpha_mode = .auto,
-            };
-            surface.configure(&surface_config);
+            configureSurfaceBare(init_window_size, device, surface, surface_format);
 
-            break :surface_device_queue .{ surface, device, queue };
+            break :blk .{ surface, surface_format, device, queue };
         };
 
         return .{
             .window = window,
             .surface = surface,
+            .surface_format = surface_format,
             .device = device,
             .queue = queue,
         };
@@ -176,7 +208,7 @@ pub const Application = struct {
     pub fn deinit(app: *Application) void {
         log.debug("app deinit", .{});
 
-        log.debug("unconfigure surface", .{});
+        log.debug("unconfiguring surface", .{});
         app.surface.unconfigure();
 
         log.debug("releasing queue", .{});
@@ -196,10 +228,17 @@ pub const Application = struct {
     }
 
     pub fn runLoop(app: *Application) !void {
+        const render_log = std.log.scoped(.@"wgpu renderer");
+
         glfw.pollEvents();
 
-        const render_log = std.log.scoped(.@"wgpu renderer");
         {
+            //- configure surface
+            render_log.debug("configuring surface", .{});
+
+            // @FIXME: Not sure if it is ideal to do this every frame
+            app.configureSurface();
+
             //- next surface texture
             render_log.debug("getting next target surface texture view", .{});
 
@@ -289,7 +328,7 @@ pub const Application = struct {
             app.queue.submit(&.{command_buffer});
         }
 
-        //- submit command
+        //- presenting surface
         render_log.debug("presenting surface", .{});
 
         app.surface.present();
@@ -299,7 +338,7 @@ pub const Application = struct {
         return !app.window.shouldClose();
     }
 
-    pub fn getNextSurfaceTextureView(app: *const Application) ?*wgpu.TextureView {
+    fn getNextSurfaceTextureView(app: *const Application) ?*wgpu.TextureView {
         var surface_texture: wgpu.SurfaceTexture = undefined;
         app.surface.getCurrentTexture(&surface_texture);
         // defer surface_texture.texture.release(); // not with wgpu-native
@@ -322,6 +361,31 @@ pub const Application = struct {
         const target_view = surface_texture.texture.createView(&view_desc) orelse return null;
 
         return target_view;
+    }
+
+    fn configureSurface(app: *const Application) void {
+        const size = app.window.getSize();
+        configureSurfaceBare(.axis(size.width, size.height), app.device, app.surface, app.surface_format);
+    }
+
+    fn configureSurfaceBare(
+        size: cu.Axis2(u32),
+        device: *wgpu.Device,
+        surface: *wgpu.Surface,
+        format: wgpu.TextureFormat,
+    ) void {
+        const surface_config = wgpu.SurfaceConfiguration{
+            .next_in_chain = null,
+            .device = device,
+            .usage = wgpu.TextureUsage.render_attachment,
+            .format = format,
+            .view_format_count = 0,
+            .alpha_mode = .auto,
+            .width = size.w,
+            .height = size.h,
+            .present_mode = .fifo,
+        };
+        surface.configure(&surface_config);
     }
 };
 

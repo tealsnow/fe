@@ -111,6 +111,8 @@ pub inline fn init(hints: InitHints) bool {
         const init_value = @field(hints, field_name);
         if (@TypeOf(init_value) == PlatformType) {
             initHint(init_hint, @intFromEnum(init_value));
+        } else if (@TypeOf(init_value) == WaylandLibdecorInitHint) {
+            initHint(init_hint, @intFromEnum(init_value));
         } else {
             initHint(init_hint, init_value);
         }
@@ -196,6 +198,11 @@ pub const InitHints = struct {
     ///
     /// Possible values are `PlatformType` enums.
     platform: PlatformType = .any,
+
+    /// Wayland specific init hint.
+    ///
+    /// Possible values are `WaylandLibdecorInitHint` enums.
+    wayland_libdecor: WaylandLibdecorInitHint = .prefer,
 };
 
 /// Initialization hints for passing into glfw.initHint
@@ -258,8 +265,8 @@ pub const AnglePlatformType = enum(c_int) {
 /// wayland. libdecor is loaded dynamically at runtime, so in general enabling it is always
 /// safe to do. It is enabled by default.
 pub const WaylandLibdecorInitHint = enum(c_int) {
-    wayland_prefer_libdecor = c.GLFW_WAYLAND_PREFER_LIBDECOR,
-    wayland_disable_libdecor = c.GLFW_WAYLAND_DISABLE_LIBDECOR,
+    prefer = c.GLFW_WAYLAND_PREFER_LIBDECOR,
+    disable = c.GLFW_WAYLAND_DISABLE_LIBDECOR,
 };
 
 /// Platform type hints for glfw.InitHint.platform
