@@ -6,9 +6,14 @@ pub const EntryPoint = enum {
     wayland,
 };
 
+const Scanner = @import("wayland").Scanner;
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // -------------------------------------------------------------------------
+    // - options
 
     const entry_point =
         b.option(
@@ -50,11 +55,17 @@ pub fn build(b: *std.Build) void {
             "Whether to poll for events or have a timeout (default: false)",
         ) orelse false;
 
+    // -------------------------------------------------------------------------
+    // - fmt
+
     const fmt_step = b.addFmt(.{
         .check = true,
         .paths = &.{"src/"},
     });
     b.getInstallStep().dependOn(&fmt_step.step);
+
+    // -------------------------------------------------------------------------
+    // - dependencies
 
     const tracy = b.dependency("tracy", .{
         .target = target,
@@ -72,6 +83,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    // -------------------------------------------------------------------------
+    // - sdl3
 
     const sdl3 = sdl3: {
         const mod = b.createModule(.{
@@ -95,6 +109,9 @@ pub fn build(b: *std.Build) void {
 
         break :sdl3 sdl3;
     };
+
+    // -------------------------------------------------------------------------
+    // - cu
 
     const cu = cu: {
         const mod = b.createModule(.{
@@ -124,6 +141,9 @@ pub fn build(b: *std.Build) void {
 
         break :cu cu;
     };
+
+    // -------------------------------------------------------------------------
+    // - fe
 
     const fe = fe: {
         const mod = b.createModule(.{
@@ -158,35 +178,21 @@ pub fn build(b: *std.Build) void {
                 mod.addImport("wgpu", wgpu.module("wgpu"));
             },
             .wayland => {
+                const scanner = Scanner.create(b, .{});
+
+                const wayland = b.createModule(.{
+                    .root_source_file = scanner.result,
+                });
+
+                scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+
+                scanner.generate("wl_compositor", 6);
+                scanner.generate("wl_shm", 2);
+                scanner.generate("xdg_wm_base", 6);
+                scanner.generate("wl_seat", 8);
+
+                mod.addImport("wayland2", wayland);
                 mod.linkSystemLibrary("wayland-client", .{ .needed = true });
-
-                const xdg_shell_share_path = "wayland-protocols/stable/xdg-shell/xdg-shell.xml";
-                const xdg_shell_generated_root = "src/fe/wayland/";
-                const xdg_shell_generated_code_path = "xdg-shell-protocal.c";
-                const xdg_shell_generated_header_path = "xdg-shell-client-protocal.h";
-
-                const xdg_shell_path = findPathInXdgDataDirs(b, xdg_shell_share_path).?;
-                const get_xdg_shell_code = b.addSystemCommand(&.{
-                    "wayland-scanner",
-                    "private-code",
-                    xdg_shell_path,
-                    xdg_shell_generated_root ++ xdg_shell_generated_code_path,
-                });
-                const get_xdg_shell_header = b.addSystemCommand(&.{
-                    "wayland-scanner",
-                    "client-header",
-                    xdg_shell_path,
-                    xdg_shell_generated_root ++ xdg_shell_generated_header_path,
-                });
-
-                fe.step.dependOn(&get_xdg_shell_code.step);
-                fe.step.dependOn(&get_xdg_shell_header.step);
-
-                mod.addCSourceFiles(.{
-                    .root = b.path(xdg_shell_generated_root),
-                    .files = &.{xdg_shell_generated_code_path},
-                });
-                mod.addIncludePath(b.path(xdg_shell_generated_root));
             },
         }
 
@@ -211,7 +217,9 @@ pub fn build(b: *std.Build) void {
         break :fe fe;
     };
 
-    // test plugin
+    // -------------------------------------------------------------------------
+    // - test plugin
+
     {
         const mod = createPluginModule(b, .{
             .root_source_file = b.path("src/plugins/test/test.zig"),
@@ -240,7 +248,9 @@ pub fn build(b: *std.Build) void {
         fe.step.dependOn(&install.step);
     }
 
-    // run
+    // -------------------------------------------------------------------------
+    // - run
+
     {
         const run_cmd = b.addRunArtifact(fe);
         run_cmd.step.dependOn(b.getInstallStep());
@@ -259,13 +269,17 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // check
+    // -------------------------------------------------------------------------
+    // - check
+
     {
         const check_step = b.step("check", "check");
         check_step.dependOn(&fe.step);
     }
 
-    // test
+    // -------------------------------------------------------------------------
+    // - test
+
     {
         const exe_unit_tests = b.addTest(.{
             .root_source_file = b.path("src/main.zig"),
@@ -279,6 +293,9 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_exe_unit_tests.step);
     }
 }
+
+// =============================================================================
+// = Plugin build helpers
 
 /// This should mostly mirror `std.Build.Module.CreateOptions`
 /// and thus its documentation applies
@@ -500,28 +517,4 @@ pub fn getPluginSchema(b: *std.Build) *std.Build.Module {
     return b.createModule(.{
         .root_source_file = b.path("src/plugin-schema/schema.zig"),
     });
-}
-
-fn findPathInXdgDataDirs(b: *std.Build, path: []const u8) ?[]const u8 {
-    const env = std.process.getEnvMap(b.allocator) catch @panic("oom");
-    // defer env.deinit(); // no need to wait time deinit thing
-
-    const data_dirs = env.get("XDG_DATA_DIRS") orelse {
-        // if no XDG_DATA_DIRS env we just check the default path
-        const dir = std.fs.openDirAbsolute("/usr/share/", .{}) catch return null;
-        dir.access(path, .{}) catch return null;
-        return b.pathJoin(&.{ "/usr/share/", path });
-    };
-
-    var iter = std.mem.splitScalar(u8, data_dirs, ':');
-    while (iter.next()) |dir_path| {
-        // open dir - if not try next
-        const dir = std.fs.openDirAbsolute(dir_path, .{}) catch continue;
-        // check if exists and we have access - otherwise try next
-        dir.access(path, .{}) catch continue;
-
-        return b.pathJoin(&.{ dir_path, path });
-    }
-
-    return null;
 }

@@ -5,397 +5,323 @@ const Allocator = mem.Allocator;
 
 const log = std.log.scoped(.@"fe[wl]");
 
-const wl = @import("wayland.zig");
+const wayland = @import("wayland2");
+const wl = wayland.client.wl;
+const xdg = wayland.client.xdg;
 
 pub fn entry(gpa: Allocator) !void {
-    run(gpa) catch |err| {
-        switch (err) {
-            error.wl => {
-                log.err("got wayland error", .{});
-            },
-            else => {},
-        }
-        return err;
-    };
+    try run(gpa);
 
     std.process.cleanExit();
 }
 
-pub fn run(gpa: Allocator) !void {
+fn run(gpa: Allocator) !void {
     _ = gpa;
 
-    // -------------------------------------------------------------------------
-    // - connect to wl display
-    log.debug("connecting to wl display", .{});
+    const wl_display = try wl.Display.connect(null);
+    defer wl_display.disconnect();
 
-    const wl_display = wl.wl_display_connect(null) orelse return error.wl;
-    defer wl.wl_display_disconnect(wl_display);
+    const wl_registry = try wl_display.getRegistry();
+    defer wl_registry.destroy();
 
-    // -------------------------------------------------------------------------
-    // - get wl registry
-    log.debug("getting wl registry", .{});
-
-    const wl_registry =
-        wl.wl_display_get_registry(wl_display) orelse return error.wl;
-    defer wl.wl_registry_destroy(wl_registry);
-
-    // -------------------------------------------------------------------------
-    // - add wl registry listner
-    log.debug("adding wl registry listener", .{});
-
-    var globals = WlGlobals.none;
-    if (wl.wl_registry_add_listener(
-        wl_registry,
-        &wl_registry_listener,
-        &globals,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - inform display manager that we are ready to get globals
-    {
-        log.debug("getting globals", .{});
-
-        const num_events = wl.wl_display_roundtrip(wl_display);
-        if (num_events == -1) return error.wl;
-        log.debug("number events recieved: {d}", .{num_events});
-    }
-
-    // -------------------------------------------------------------------------
-    // - check globals
-    {
-        log.debug("checking globals", .{});
-
-        const globals_filled = globals.filled();
-        assert(globals_filled);
-        log.debug("all globals filled", .{});
-    }
-
-    const wl_compositor = globals.wl_compositor.?;
-    defer wl.wl_compositor_destroy(wl_compositor);
-
-    const wl_shared_memory = globals.wl_shared_memory.?;
-    defer {
-        wl.wl_shm_release(wl_shared_memory);
-        // wl.wl_shm_destroy(wl_shared_memory); // @FIXME: wl assertion failure
-    }
-
-    const xdg_wm_base = globals.xdg_wm_base.?;
-    defer wl.xdg_wm_base_destroy(xdg_wm_base);
-
-    const wl_seat = globals.wl_seat.?;
-    defer wl.wl_seat_destroy(wl_seat);
-
-    // -------------------------------------------------------------------------
-    // - add xdg wm base listener
-    log.debug("adding xdg wm base listener", .{});
-
-    if (wl.xdg_wm_base_add_listener(
-        xdg_wm_base,
-        &xdg_wm_base_listener,
-        null,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - add wl seat listener
-    log.debug("adding wl seat listener", .{});
-
-    var wl_seat_listener_data = WlSeatListenerData.none;
-    defer wl.wl_keyboard_destroy(wl_seat_listener_data.wl_keyboard);
-
-    if (wl.wl_seat_add_listener(
-        wl_seat,
-        &wl_seat_listener,
-        &wl_seat_listener_data,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - create wl surface
-    log.debug("creating wl surface", .{});
-
-    const wl_surface =
-        wl.wl_compositor_create_surface(wl_compositor) orelse return error.wl;
-    defer wl.wl_surface_destroy(wl_surface);
-
-    // -------------------------------------------------------------------------
-    // - get xdg surface
-    log.debug("getting xdg surface", .{});
-
-    const xdg_surface = wl.xdg_wm_base_get_xdg_surface(
-        xdg_wm_base,
-        wl_surface,
-    ) orelse return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - get xdg toplevel
-    log.debug("getting xdg toplevel", .{});
-
-    const xdg_toplevel =
-        wl.xdg_surface_get_toplevel(xdg_surface) orelse return error.wl;
-
-    wl.xdg_toplevel_set_title(xdg_toplevel, "fe! wayland!");
-
-    // -------------------------------------------------------------------------
-    // - add xdg toplevel listener
-    log.debug("adding xdg toplevel listener", .{});
-
-    var xdg_toplevel_listener_data = XdgToplevelListenerData{
-        .initial_width = 800,
-        .initial_height = 600,
-
-        .configure_request = null,
-        .close_request = false,
-    };
-
-    if (wl.xdg_toplevel_add_listener(
-        xdg_toplevel,
-        &xdg_toplevel_listener,
-        &xdg_toplevel_listener_data,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - add xdg surface listener
-    log.debug("adding xdg surface listener", .{});
-
-    var xdg_surface_configure_data = XdgSurfaceListenerData{
-        .configure_request = false,
-    };
-    if (wl.xdg_surface_add_listener(
-        xdg_surface,
-        &xdg_surface_listener,
-        &xdg_surface_configure_data,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - add surface frame callback
-    log.debug("adding surface frame callback", .{});
-
-    var frame_callback_listener = wl.wl_callback_listener{
-        .done = frameCallback,
-    };
-    var frame_callback_listener_data = FrameCallbackListenerData{
-        .frame_request = false,
-    };
-    const wl_frame_callback =
-        wl.wl_surface_frame(wl_surface) orelse return error.wl;
-    if (wl.wl_callback_add_listener(
-        wl_frame_callback,
-        &frame_callback_listener,
-        &frame_callback_listener_data,
-    ) != 0) return error.wl;
-
-    // -------------------------------------------------------------------------
-    // - commit surface
-    log.debug("commiting surface", .{});
-
-    wl.wl_surface_commit(wl_surface);
-
-    // -------------------------------------------------------------------------
-    // - main loop
-
-    var maybe_buffer_data: ?BufferData = null;
-    defer if (maybe_buffer_data) |buffer_data| {
-        buffer_data.deinit();
-    };
-
-    log.debug("starting main loop", .{});
-
-    while (wl.wl_display_dispatch(wl_display) != 0) {
-        var do_draw = false;
-
-        //-
-        if (xdg_toplevel_listener_data.close_request) {
-            defer xdg_toplevel_listener_data.close_request = false;
-
-            log.debug("close request", .{});
-            break;
-        }
-
-        //-
-        if (xdg_toplevel_listener_data.configure_request) |configure_request| {
-            defer xdg_toplevel_listener_data.configure_request = null;
-
-            if (maybe_buffer_data) |*buffer_data| {
-                if (buffer_data.width != configure_request.width or
-                    buffer_data.height != configure_request.height)
-                {
-                    try buffer_data.reconfigure(
-                        configure_request.width,
-                        configure_request.height,
-                        wl_shared_memory,
-                    );
-                }
-            } else {
-                maybe_buffer_data = try BufferData.configure(
-                    configure_request.width,
-                    configure_request.height,
-                    wl_shared_memory,
-                );
-            }
-
-            do_draw = true;
-        }
-
-        //-
-        if (xdg_surface_configure_data.configure_request) {
-            xdg_surface_configure_data.configure_request = false;
-
-            do_draw = true;
-        }
-
-        //-
-        if (frame_callback_listener_data.frame_request) {
-            defer frame_callback_listener_data.frame_request = false;
-
-            const callback = wl.wl_surface_frame(wl_surface) orelse
-                @panic("could not create frame callback within callback");
-            if (wl.wl_callback_add_listener(
-                callback,
-                &frame_callback_listener,
-                &frame_callback_listener_data,
-            ) != 0)
-                @panic("could not add callback listener");
-
-            do_draw = true;
-        }
-
-        //-
-        if (do_draw) {
-            const buffer_data = maybe_buffer_data.?;
-
-            draw(&buffer_data, wl_surface);
-        }
-    }
-}
-
-// =============================================================================
-// = wl registry listener
-
-const WlGlobals = struct {
-    wl_compositor: ?*wl.wl_compositor,
-    wl_shared_memory: ?*wl.wl_shm,
-    xdg_wm_base: ?*wl.xdg_wm_base,
-    wl_seat: ?*wl.wl_seat,
-
-    pub const none = WlGlobals{
-        .wl_compositor = null,
-        .wl_shared_memory = null,
-        .xdg_wm_base = null,
-        .wl_seat = null,
-    };
-
-    pub fn filled(globals: *const WlGlobals) bool {
-        return globals.wl_compositor != null and
-            globals.wl_shared_memory != null and
-            globals.xdg_wm_base != null and
-            globals.wl_seat != null;
-    }
-};
-
-const wl_registry_listener = wl.wl_registry_listener{
-    .global = &wlRegistryGlobal,
-    .global_remove = &wlRegistryGlobalRemove,
-};
-
-fn wlRegistryGlobal(
-    data: ?*anyopaque,
-    wl_registry: ?*wl.wl_registry,
-    name: u32,
-    interface: ?[*:0]const u8,
-    version: u32,
-) callconv(.c) void {
-    const globals: *WlGlobals = @ptrCast(@alignCast(data.?));
-
-    log.debug(
-        "- global - name: {d}, interface: '{?s}', version: {d}",
-        .{ name, interface, version },
+    var wl_registry_listener_data = WlRegistryListenerData.empty;
+    wl_registry.setListener(
+        *WlRegistryListenerData,
+        &wlRegistryListener,
+        &wl_registry_listener_data,
     );
 
-    const interface_slice: [:0]const u8 = mem.span(interface.?);
+    if (wl_display.roundtrip() != .SUCCESS) return error.wl;
 
-    if (mem.eql(
-        u8,
-        interface_slice,
-        mem.span(wl.wl_compositor_interface.name),
-    )) {
-        log.debug("got wl_compositor", .{});
-        globals.wl_compositor = @ptrCast(wl.wl_registry_bind(
-            wl_registry,
-            name,
-            &wl.wl_compositor_interface,
-            6,
-        ));
-    } else if (mem.eql(
-        u8,
-        interface_slice,
-        mem.span(wl.wl_shm_interface.name),
-    )) {
-        log.debug("got wl_shared_memory", .{});
-        globals.wl_shared_memory = @ptrCast(wl.wl_registry_bind(
-            wl_registry,
-            name,
-            &wl.wl_shm_interface,
-            2,
-        ));
-    } else if (mem.eql(
-        u8,
-        interface_slice,
-        mem.span(wl.xdg_wm_base_interface.name),
-    )) {
-        log.debug("got xdg_wm_base", .{});
-        globals.xdg_wm_base = @ptrCast(wl.wl_registry_bind(
-            wl_registry,
-            name,
-            &wl.xdg_wm_base_interface,
-            6,
-        ));
-    } else if (mem.eql(
-        u8,
-        interface_slice,
-        mem.span(wl.wl_seat_interface.name),
-    )) {
-        log.debug("got wl_seat", .{});
-        globals.wl_seat = @ptrCast(wl.wl_registry_bind(
-            wl_registry,
-            name,
-            &wl.wl_seat_interface,
-            8,
-        ));
+    const wl_compositor = wl_registry_listener_data.wl_compositor.?;
+    defer wl_compositor.destroy();
+
+    const wl_shared_memory = wl_registry_listener_data.wl_shared_memory.?;
+    defer wl_shared_memory.destroy();
+
+    const wl_seat = wl_registry_listener_data.wl_seat.?;
+    defer wl_seat.destroy();
+
+    var wl_seat_listener_data = WlSeatListenerData.init;
+    wl_seat.setListener(*WlSeatListenerData, wlSeatListener, &wl_seat_listener_data);
+    defer if (wl_seat_listener_data.wl_keyboard) |wl_keyboard| {
+        wl_keyboard.destroy();
+    };
+
+    const xdg_wm_base = wl_registry_listener_data.xdg_wm_base.?;
+    defer xdg_wm_base.destroy();
+
+    xdg_wm_base.setListener(?*void, &xdgWmBaseListener, null);
+
+    const wl_surface = try wl_compositor.createSurface();
+    defer wl_surface.destroy();
+
+    const xdg_surface = try xdg_wm_base.getXdgSurface(wl_surface);
+    defer xdg_surface.destroy();
+
+    var xdg_surface_listener_data = XdgSurfaceListenerData{
+        .wl_surface = wl_surface,
+    };
+    xdg_surface.setListener(
+        *XdgSurfaceListenerData,
+        xdgSurfaceListener,
+        &xdg_surface_listener_data,
+    );
+
+    const xdg_toplevel = try xdg_surface.getToplevel();
+    defer xdg_toplevel.destroy();
+
+    xdg_toplevel.setTitle("fe wayland 2");
+
+    const initial_width = 800;
+    const initial_height = 600;
+
+    var xdg_toplevel_listener_data = XdgToplevelListenerData{
+        .initial_width = initial_width,
+        .initial_height = initial_height,
+    };
+    xdg_toplevel.setListener(
+        *XdgToplevelListenerData,
+        &xdgToplevelListener,
+        &xdg_toplevel_listener_data,
+    );
+
+    const wl_frame_callback = try wl_surface.frame();
+
+    var wl_frame_callback_listener_data = WlFrameCallbackListenerData.init;
+    wl_frame_callback.setListener(
+        *WlFrameCallbackListenerData,
+        &wlFrameCallbackListener,
+        &wl_frame_callback_listener_data,
+    );
+
+    var buffer_data = try BufferData.configure(
+        initial_width,
+        initial_height,
+        wl_shared_memory,
+    );
+    defer buffer_data.deinit();
+
+    wl_surface.commit();
+
+    var alpha: u8 = 0;
+
+    log.info("starting main loop", .{});
+
+    while (true) {
+        if (wl_display.dispatch() != .SUCCESS) break;
+
+        if (xdg_toplevel_listener_data.close_request) break;
+
+        var do_draw = false;
+
+        if (xdg_toplevel_listener_data.configure_request) |configure_request| {
+            xdg_toplevel_listener_data.configure_request = null;
+
+            try buffer_data.reconfigure(
+                configure_request.width,
+                configure_request.height,
+                wl_shared_memory,
+            );
+
+            do_draw = true;
+        }
+
+        if (wl_frame_callback_listener_data.frame_request) {
+            wl_frame_callback_listener_data.frame_request = false;
+
+            const callback = try wl_surface.frame();
+            callback.setListener(
+                *WlFrameCallbackListenerData,
+                wlFrameCallbackListener,
+                &wl_frame_callback_listener_data,
+            );
+
+            do_draw = true;
+        }
+
+        if (do_draw) {
+            const pixels_u32 = @as([*]u32, @ptrCast(@alignCast(buffer_data.pixels.ptr)))[0..(buffer_data.width * buffer_data.height)];
+            @memset(pixels_u32, 0x00f4597b | (@as(u32, @intCast(alpha)) << 24));
+            alpha +%= 1;
+
+            wl_surface.attach(buffer_data.wl_buffer, 0, 0);
+            wl_surface.damageBuffer(
+                0,
+                0,
+                @intCast(buffer_data.width),
+                @intCast(buffer_data.height),
+            );
+            wl_surface.commit();
+        }
     }
 }
 
-fn wlRegistryGlobalRemove(
-    data: ?*anyopaque,
-    wl_registry: ?*wl.wl_registry,
-    name: u32,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_registry;
+const WlRegistryListenerData = struct {
+    wl_compositor: ?*wl.Compositor,
+    wl_shared_memory: ?*wl.Shm,
+    wl_seat: ?*wl.Seat,
+    xdg_wm_base: ?*xdg.WmBase,
 
-    log.debug("- global remove - name: {d}", .{name});
-}
-
-// =============================================================================
-// = xdg wm base listener
-
-const xdg_wm_base_listener = wl.xdg_wm_base_listener{
-    .ping = &xdgWmBasePing,
+    pub const empty = WlRegistryListenerData{
+        .wl_compositor = null,
+        .wl_shared_memory = null,
+        .wl_seat = null,
+        .xdg_wm_base = null,
+    };
 };
 
-fn xdgWmBasePing(
-    data: ?*anyopaque,
-    xdg_wm_base: ?*wl.xdg_wm_base,
-    serial: u32,
-) callconv(.c) void {
-    _ = data;
+fn wlRegistryListener(
+    registry: *wl.Registry,
+    event: wl.Registry.Event,
+    data: *WlRegistryListenerData,
+) void {
+    const global = switch (event) {
+        .global => |global| global,
+        .global_remove => return,
+    };
 
-    wl.xdg_wm_base_pong(xdg_wm_base, serial);
+    if (mem.orderZ(
+        u8,
+        global.interface,
+        wl.Compositor.interface.name,
+    ) == .eq) {
+        data.wl_compositor = registry.bind(
+            global.name,
+            wl.Compositor,
+            6,
+        ) catch @panic("could not get wayland compositor");
+    } else if (mem.orderZ(
+        u8,
+        global.interface,
+        wl.Shm.interface.name,
+    ) == .eq) {
+        data.wl_shared_memory = registry.bind(
+            global.name,
+            wl.Shm,
+            2,
+        ) catch @panic("could not get wayland shared memory");
+    } else if (mem.orderZ(
+        u8,
+        global.interface,
+        wl.Seat.interface.name,
+    ) == .eq) {
+        data.wl_seat = registry.bind(
+            global.name,
+            wl.Seat,
+            8,
+        ) catch @panic("could not get wayland seat");
+    } else if (mem.orderZ(
+        u8,
+        global.interface,
+        xdg.WmBase.interface.name,
+    ) == .eq) {
+        data.xdg_wm_base = registry.bind(
+            global.name,
+            xdg.WmBase,
+            6,
+        ) catch @panic("could not get xdg wm_base");
+    }
 }
 
-// =============================================================================
-// = BufferData
+fn xdgWmBaseListener(
+    wm_base: *xdg.WmBase,
+    event: xdg.WmBase.Event,
+    data: ?*void,
+) void {
+    _ = data;
+
+    switch (event) {
+        .ping => |serial| {
+            wm_base.pong(serial.serial);
+        },
+    }
+}
+
+const XdgSurfaceListenerData = struct {
+    wl_surface: *wl.Surface,
+};
+
+fn xdgSurfaceListener(
+    xdg_surface: *xdg.Surface,
+    event: xdg.Surface.Event,
+    data: *XdgSurfaceListenerData,
+) void {
+    const configure = switch (event) {
+        .configure => |configure| configure,
+    };
+
+    xdg_surface.ackConfigure(configure.serial);
+    data.wl_surface.commit();
+}
+
+const XdgToplevelListenerData = struct {
+    initial_width: u32,
+    initial_height: u32,
+
+    configure_request: ?ConfigureRequest = null,
+    close_request: bool = false,
+};
+
+const ConfigureRequest = struct {
+    width: u32,
+    height: u32,
+};
+
+fn xdgToplevelListener(
+    toplevel: *xdg.Toplevel,
+    event: xdg.Toplevel.Event,
+    data: *XdgToplevelListenerData,
+) void {
+    _ = toplevel;
+
+    switch (event) {
+        .configure => |configure| {
+            const width: u32 = if (configure.width == 0)
+                data.initial_width
+            else
+                @intCast(configure.width);
+
+            const height: u32 = if (configure.height == 0)
+                data.initial_height
+            else
+                @intCast(configure.height);
+
+            data.configure_request = .{
+                .width = width,
+                .height = height,
+            };
+        },
+        .close => {
+            data.close_request = true;
+        },
+        .configure_bounds => {},
+        .wm_capabilities => {},
+    }
+}
+
+const WlFrameCallbackListenerData = struct {
+    frame_request: bool,
+
+    pub const init = WlFrameCallbackListenerData{
+        .frame_request = false,
+    };
+};
+
+fn wlFrameCallbackListener(
+    callback: *wl.Callback,
+    event: wl.Callback.Event,
+    data: *WlFrameCallbackListenerData,
+) void {
+    _ = event;
+
+    callback.destroy();
+
+    data.frame_request = true;
+}
 
 const BufferData = struct {
-    wl_buffer: *wl.wl_buffer,
+    wl_buffer: *wl.Buffer,
     pixels: []u8,
     width: u32,
     height: u32,
@@ -403,11 +329,10 @@ const BufferData = struct {
     pub fn configure(
         width: u32,
         height: u32,
-        wl_shared_memory: *wl.wl_shm,
+        wl_shared_memory: *wl.Shm,
     ) !BufferData {
         const size = width * height * 4;
 
-        // @FIXME: use random characters for name
         const fd = try std.posix.memfd_create("fe-shared-memory", 0);
         try std.posix.ftruncate(fd, size);
 
@@ -420,21 +345,16 @@ const BufferData = struct {
             0,
         );
 
-        const pool = wl.wl_shm_create_pool(
-            wl_shared_memory,
-            fd,
-            @intCast(size),
-        ) orelse return error.wl;
-        defer wl.wl_shm_pool_destroy(pool);
+        const pool = try wl_shared_memory.createPool(fd, @intCast(size));
+        defer pool.destroy();
 
-        const wl_buffer = wl.wl_shm_pool_create_buffer(
-            pool,
+        const wl_buffer = try pool.createBuffer(
             0,
             @intCast(width),
             @intCast(height),
             @intCast(width * 4),
-            wl.WL_SHM_FORMAT_ARGB8888,
-        ) orelse return error.wl;
+            .argb8888,
+        );
 
         return .{
             .wl_buffer = wl_buffer,
@@ -445,308 +365,59 @@ const BufferData = struct {
     }
 
     pub fn deinit(data: BufferData) void {
-        wl.wl_buffer_destroy(data.wl_buffer);
+        data.wl_buffer.destroy();
     }
 
     pub fn reconfigure(
         data: *BufferData,
         width: u32,
         height: u32,
-        wl_shared_memory: *wl.wl_shm,
+        wl_shared_memory: *wl.Shm,
     ) !void {
-        data.deinit();
-        data.* = try configure(width, height, wl_shared_memory);
+        if (data.width != width or data.height != height) {
+            data.deinit();
+            data.* = try configure(width, height, wl_shared_memory);
+        }
     }
-};
-
-// =============================================================================
-// = xdg toplevel listener
-
-const xdg_toplevel_listener = wl.xdg_toplevel_listener{
-    .configure = &xdgToplevelConfigure,
-    .close = &xdgToplevelClose,
-    .configure_bounds = &xdgToplevelConfigureBounds,
-    .wm_capabilities = &xdgToplevelWmCapabilities,
-};
-
-const XdgToplevelListenerData = struct {
-    initial_width: u32,
-    initial_height: u32,
-
-    configure_request: ?ConfigureRequest,
-    close_request: bool,
-};
-
-const ConfigureRequest = struct {
-    width: u32,
-    height: u32,
-};
-
-fn xdgToplevelConfigure(
-    data_ptr: ?*anyopaque,
-    xdg_toplevel: ?*wl.xdg_toplevel,
-    asking_width: i32,
-    asking_height: i32,
-    states: ?*wl.wl_array,
-) callconv(.c) void {
-    _ = xdg_toplevel;
-    _ = states;
-
-    const data: *XdgToplevelListenerData = @ptrCast(@alignCast(data_ptr.?));
-
-    const width: u32 = if (asking_width == 0) data.initial_width else @intCast(asking_width);
-    const height: u32 = if (asking_height == 0) data.initial_height else @intCast(asking_height);
-
-    data.configure_request = .{ .width = width, .height = height };
-}
-
-fn xdgToplevelClose(
-    data_ptr: ?*anyopaque,
-    xdg_toplevel: ?*wl.xdg_toplevel,
-) callconv(.c) void {
-    _ = xdg_toplevel;
-
-    log.debug("xdg_toplevel.close", .{});
-
-    const data: *XdgToplevelListenerData = @ptrCast(@alignCast(data_ptr.?));
-    data.close_request = true;
-}
-
-fn xdgToplevelConfigureBounds(
-    data: ?*anyopaque,
-    xdg_toplevel: ?*wl.xdg_toplevel,
-    width: i32,
-    height: i32,
-) callconv(.c) void {
-    _ = width;
-    _ = height;
-    _ = data;
-    _ = xdg_toplevel;
-}
-
-fn xdgToplevelWmCapabilities(
-    data: ?*anyopaque,
-    xdg_toplevel: ?*wl.xdg_toplevel,
-    capabilities: ?*wl.wl_array,
-) callconv(.c) void {
-    _ = data;
-    _ = xdg_toplevel;
-    _ = capabilities;
-
-    log.debug("xdg_toplevel.capabilities", .{});
-}
-
-// =============================================================================
-// = xdg surface listener
-
-const xdg_surface_listener = wl.xdg_surface_listener{
-    .configure = &xdgSurfaceConfigure,
-};
-
-const XdgSurfaceListenerData = struct {
-    configure_request: bool,
-};
-
-fn xdgSurfaceConfigure(
-    data_ptr: ?*anyopaque,
-    xdg_surface: ?*wl.xdg_surface,
-    serial: u32,
-) callconv(.c) void {
-    const data: *XdgSurfaceListenerData = @ptrCast(@alignCast(data_ptr));
-
-    wl.xdg_surface_ack_configure(xdg_surface, serial);
-
-    data.configure_request = true;
-}
-
-// =============================================================================
-// = wl seats
-
-const wl_seat_listener = wl.wl_seat_listener{
-    .capabilities = &wlSeatCapabilities,
-    .name = &slSeatName,
 };
 
 const WlSeatListenerData = struct {
-    wl_keyboard: ?*wl.wl_keyboard,
+    wl_keyboard: ?*wl.Keyboard,
 
-    pub const none = WlSeatListenerData{
-        .wl_keyboard = null,
-    };
+    pub const init = WlSeatListenerData{ .wl_keyboard = null };
 };
 
-fn wlSeatCapabilities(
-    data_ptr: ?*anyopaque,
-    wl_seat: ?*wl.wl_seat,
-    capabilities: u32,
-) callconv(.c) void {
-    const data: *WlSeatListenerData = @ptrCast(@alignCast(data_ptr));
+fn wlSeatListener(
+    wl_seat: *wl.Seat,
+    event: wl.Seat.Event,
+    data: *WlSeatListenerData,
+) void {
+    switch (event) {
+        .capabilities => |capabilities| {
+            const capability = capabilities.capabilities;
+            if (capability.keyboard) {
+                const wl_keyboard = wl_seat.getKeyboard() catch unreachable;
+                data.wl_keyboard = wl_keyboard;
 
-    log.debug("got seat capabilities: {b}", .{capabilities});
-
-    if (capabilities & wl.WL_SEAT_CAPABILITY_KEYBOARD != 0) {
-        log.debug("got keyboard", .{});
-
-        data.wl_keyboard = wl.wl_seat_get_keyboard(wl_seat);
-
-        // ---------------------------------------------------------------------
-        // - add wl keyboard listener
-        log.debug("adding wl keyboard listener", .{});
-
-        if (wl.wl_keyboard_add_listener(
-            data.wl_keyboard,
-            &wl_keyboard_listener,
-            null,
-        ) != 0) @panic("failed to set keyboard listener");
+                wl_keyboard.setListener(?*void, &wlKeyboardListener, null);
+            }
+        },
+        .name => {},
     }
 }
 
-fn slSeatName(
-    data: ?*anyopaque,
-    wl_seat: ?*wl.wl_seat,
-    name: [*c]const u8,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_seat;
-    _ = name;
-}
-
-// =============================================================================
-// = wl keyboard listener
-
-const wl_keyboard_listener = wl.wl_keyboard_listener{
-    .keymap = &wlKeyboardKeymap,
-    .enter = &wlKeyboardEnter,
-    .leave = &wlKeyboardLeave,
-    .key = &wlKeyboardKey,
-    .modifiers = &wlKeyboardModifiers,
-    .repeat_info = &wlKeyboardRepeatInfo,
-};
-
-fn wlKeyboardKeymap(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    format: u32,
-    fd: i32,
-    size: u32,
-) callconv(.c) void {
-    _ = data;
+fn wlKeyboardListener(
+    wl_keyboard: *wl.Keyboard,
+    event: wl.Keyboard.Event,
+    data: ?*void,
+) void {
     _ = wl_keyboard;
-    _ = format;
-    _ = fd;
-    _ = size;
-}
-
-fn wlKeyboardEnter(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    serial: u32,
-    surface: ?*wl.wl_surface,
-    keys: [*c]wl.wl_array,
-) callconv(.c) void {
     _ = data;
-    _ = wl_keyboard;
-    _ = serial;
-    _ = surface;
-    _ = keys;
-}
 
-fn wlKeyboardLeave(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    serial: u32,
-    wl_surface: ?*wl.wl_surface,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_keyboard;
-    _ = serial;
-    _ = wl_surface;
-}
-
-fn wlKeyboardKey(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    serial: u32,
-    time: u32,
-    key: u32,
-    state: u32,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_keyboard;
-    _ = serial;
-    _ = time;
-    _ = state;
-
-    log.debug("scancode: {d}", .{key});
-}
-
-fn wlKeyboardModifiers(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    serial: u32,
-    mods_depressed: u32,
-    mods_latched: u32,
-    mods_locked: u32,
-    group: u32,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_keyboard;
-    _ = serial;
-    _ = mods_depressed;
-    _ = mods_latched;
-    _ = mods_locked;
-    _ = group;
-}
-
-fn wlKeyboardRepeatInfo(
-    data: ?*anyopaque,
-    wl_keyboard: ?*wl.wl_keyboard,
-    rate: i32,
-    dely: i32,
-) callconv(.c) void {
-    _ = data;
-    _ = wl_keyboard;
-    _ = rate;
-    _ = dely;
-}
-
-// =============================================================================
-// = frame callback
-
-const FrameCallbackListenerData = struct {
-    frame_request: bool,
-};
-
-fn frameCallback(
-    data_ptr: ?*anyopaque,
-    old_callback: ?*wl.wl_callback,
-    callback_data: u32,
-) callconv(.c) void {
-    _ = callback_data;
-
-    wl.wl_callback_destroy(old_callback.?);
-
-    const data: *FrameCallbackListenerData = @ptrCast(@alignCast(data_ptr.?));
-    data.frame_request = true;
-}
-
-// =============================================================================
-// = draw
-
-var c: u8 = 0;
-
-fn draw(buffer_data: *const BufferData, wl_surface: *wl.wl_surface) void {
-    c +%= 1;
-
-    @memset(buffer_data.pixels, c);
-
-    wl.wl_surface_attach(wl_surface, buffer_data.wl_buffer, 0, 0);
-    wl.wl_surface_damage(
-        wl_surface,
-        0,
-        0,
-        @intCast(buffer_data.width),
-        @intCast(buffer_data.height),
-    );
-    wl.wl_surface_commit(wl_surface);
+    switch (event) {
+        .key => |key| {
+            log.debug("scancode: {d}", .{key.key});
+        },
+        else => {},
+    }
 }
