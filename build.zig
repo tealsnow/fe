@@ -84,6 +84,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const xkbcommon = b.dependency("xkbcommon", .{});
+
     // -------------------------------------------------------------------------
     // - sdl3
 
@@ -193,6 +195,9 @@ pub fn build(b: *std.Build) void {
 
                 mod.addImport("wayland2", wayland);
                 mod.linkSystemLibrary("wayland-client", .{ .needed = true });
+
+                mod.addImport("xkbcommon", xkbcommon.module("xkbcommon"));
+                mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
             },
         }
 
