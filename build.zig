@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
             EntryPoint,
             "entry_point",
             "specify entry point to use",
-        ) orelse .wayland;
+        ) orelse .sdl;
 
     const profile =
         b.option(
@@ -65,52 +65,14 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&fmt_step.step);
 
     // -------------------------------------------------------------------------
-    // - dependencies
+    // - tracy
 
-    const tracy = b.dependency("tracy", .{
+    const tracy = b.lazyDependency("tracy", .{
         .target = target,
         .optimize = optimize,
         .tracy_enable = profile,
         .shared = false,
     });
-
-    const glfw = b.dependency("glfw", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const wgpu = b.dependency("wgpu", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const xkbcommon = b.dependency("xkbcommon", .{});
-
-    // -------------------------------------------------------------------------
-    // - sdl3
-
-    const sdl3 = sdl3: {
-        const mod = b.createModule(.{
-            .root_source_file = b.path("src/sdl3/sdl3.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        mod.link_libc = true;
-        mod.linkSystemLibrary("sdl3", .{ .needed = true });
-        mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
-
-        const sdl3 = b.addLibrary(.{
-            .name = "sdl3",
-            .root_module = mod,
-
-            .use_llvm = use_llvm,
-            .use_lld = use_llvm,
-            // .use_lld = false,
-        });
-        b.installArtifact(sdl3);
-
-        break :sdl3 sdl3;
-    };
 
     // -------------------------------------------------------------------------
     // - cu
@@ -122,13 +84,12 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
-        mod.addImport("sdl3", sdl3.root_module);
-        mod.linkLibrary(sdl3);
-
-        mod.addImport("tracy", tracy.module("tracy"));
-        if (profile) {
-            mod.linkLibrary(tracy.artifact("tracy"));
-            mod.link_libcpp = true;
+        if (tracy) |m| {
+            mod.addImport("tracy", m.module("tracy"));
+            if (profile) {
+                mod.linkLibrary(m.artifact("tracy"));
+                mod.link_libcpp = true;
+            }
         }
 
         const cu = b.addLibrary(.{
@@ -170,16 +131,40 @@ pub fn build(b: *std.Build) void {
 
         switch (entry_point) {
             .sdl => {
-                mod.addImport("sdl3", sdl3.root_module);
-                mod.linkLibrary(sdl3);
+                const sdl3 = b.lazyDependency("sdl3", .{
+                    .target = target,
+                    .optimize = optimize,
+                });
+
+                if (sdl3) |m| {
+                    mod.addImport("sdl3", m.module("sdl3"));
+
+                    mod.linkSystemLibrary("sdl3", .{ .needed = true });
+                    mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
+                }
             },
             .glfw => {
-                mod.addImport("glfw", glfw.module("glfw"));
-                mod.linkLibrary(glfw.artifact("glfw"));
+                const glfw = b.lazyDependency("glfw", .{
+                    .target = target,
+                    .optimize = optimize,
+                });
 
-                mod.addImport("wgpu", wgpu.module("wgpu"));
+                const wgpu = b.lazyDependency("wgpu", .{
+                    .target = target,
+                    .optimize = optimize,
+                });
+
+                if (glfw) |m| {
+                    mod.addImport("glfw", m.module("glfw"));
+                    mod.linkLibrary(m.artifact("glfw"));
+                }
+
+                if (wgpu) |m|
+                    mod.addImport("wgpu", m.module("wgpu"));
             },
             .wayland => {
+                const xkbcommon = b.lazyDependency("xkbcommon", .{});
+
                 const scanner = Scanner.create(b, .{});
 
                 const wayland = b.createModule(.{
@@ -196,7 +181,8 @@ pub fn build(b: *std.Build) void {
                 mod.addImport("wayland2", wayland);
                 mod.linkSystemLibrary("wayland-client", .{ .needed = true });
 
-                mod.addImport("xkbcommon", xkbcommon.module("xkbcommon"));
+                if (xkbcommon) |m|
+                    mod.addImport("xkbcommon", m.module("xkbcommon"));
                 mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
             },
         }
@@ -204,10 +190,12 @@ pub fn build(b: *std.Build) void {
         mod.addImport("cu", cu.root_module);
         mod.linkLibrary(cu);
 
-        mod.addImport("tracy", tracy.module("tracy"));
-        if (profile) {
-            mod.linkLibrary(tracy.artifact("tracy"));
-            mod.link_libcpp = true;
+        if (tracy) |m| {
+            mod.addImport("tracy", m.module("tracy"));
+            if (profile) {
+                mod.linkLibrary(m.artifact("tracy"));
+                mod.link_libcpp = true;
+            }
         }
 
         const plugin_schema = getPluginSchema(b);

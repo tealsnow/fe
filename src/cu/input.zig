@@ -1,7 +1,6 @@
 const std = @import("std");
 const log = std.log.scoped(.@"cu::input");
 
-const sdl = @import("sdl3");
 const cu = @import("cu.zig");
 const Atom = cu.Atom;
 
@@ -20,9 +19,9 @@ pub const EventKind = union(enum) {
     text: TextEvent,
 
     pub const KeyEvent = struct {
-        scancode: sdl.Scancode,
-        keycode: sdl.Keycode,
-        mod: sdl.Keymod,
+        scancode: i32,
+        keycode: Keycode,
+        mod: Modifiers,
         state: PressState,
     };
 
@@ -208,7 +207,7 @@ pub const InteractionFlags = packed struct(u32) {
 pub const Interation = struct {
     atom: *Atom,
     scroll: cu.Vec2(f32) = .zero,
-    modifiers: sdl.Keymod = .{},
+    modifiers: Modifiers = .{},
     f: InteractionFlags = .{},
 };
 
@@ -380,3 +379,14 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
 
     return inter;
 }
+
+pub const Keycode = enum(u32) {
+    // @TODO
+    unknown,
+};
+
+pub const Modifiers = packed struct {
+    shift: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+};

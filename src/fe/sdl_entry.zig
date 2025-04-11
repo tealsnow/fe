@@ -295,9 +295,13 @@ fn processEvents() !void {
 
                 cu.state.pushEvent(.{
                     .key = .{
-                        .scancode = key.scancode,
-                        .keycode = key.key,
-                        .mod = key.mod,
+                        .scancode = @intFromEnum(key.scancode),
+                        .keycode = .unknown, // @TODO
+                        .mod = .{
+                            .shift = key.mod.shift(),
+                            .ctrl = key.mod.ctrl(),
+                            .alt = key.mod.alt(),
+                        },
                         .state = if (key.down) .pressed else .released,
                     },
                 });
