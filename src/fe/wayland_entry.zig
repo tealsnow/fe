@@ -59,7 +59,7 @@ fn run(gpa: Allocator) !void {
             xkb_keymap.unref();
     }
 
-    var event_queue = EventQueue.init;
+    var event_queue = EventQueue.empty;
 
     var wl_pointer_listener_data = WlPointerListenerData{
         .event_queue = &event_queue,
@@ -69,7 +69,11 @@ fn run(gpa: Allocator) !void {
         .wl_keyboard_listener_data = &wl_keyboard_listener_data,
         .wl_pointer_listener_data = &wl_pointer_listener_data,
     };
-    wl_seat.setListener(*WlSeatListenerData, wlSeatListener, &wl_seat_listener_data);
+    wl_seat.setListener(
+        *WlSeatListenerData,
+        wlSeatListener,
+        &wl_seat_listener_data,
+    );
     defer {
         if (wl_seat_listener_data.wl_keyboard) |wl_keyboard|
             wl_keyboard.destroy();
@@ -80,7 +84,15 @@ fn run(gpa: Allocator) !void {
     const xdg_wm_base = wl_registry_listener_data.xdg_wm_base.?;
     defer xdg_wm_base.destroy();
 
-    xdg_wm_base.setListener(?*void, &xdgWmBaseListener, null);
+    var xdg_wm_base_listener_data = XdgWmBaseListenerData{
+        .event_queue = &event_queue,
+    };
+
+    xdg_wm_base.setListener(
+        *XdgWmBaseListenerData,
+        &xdgWmBaseListener,
+        &xdg_wm_base_listener_data,
+    );
 
     const wl_surface = try wl_compositor.createSurface();
     defer wl_surface.destroy();
@@ -89,6 +101,8 @@ fn run(gpa: Allocator) !void {
     defer xdg_surface.destroy();
 
     var xdg_surface_listener_data = XdgSurfaceListenerData{
+        .event_queue = &event_queue,
+
         .wl_surface = wl_surface,
     };
     xdg_surface.setListener(
@@ -102,12 +116,8 @@ fn run(gpa: Allocator) !void {
 
     xdg_toplevel.setTitle("fe wayland 2");
 
-    const initial_width = 800;
-    const initial_height = 600;
-
     var xdg_toplevel_listener_data = XdgToplevelListenerData{
-        .initial_width = initial_width,
-        .initial_height = initial_height,
+        .event_queue = &event_queue,
     };
     xdg_toplevel.setListener(
         *XdgToplevelListenerData,
@@ -117,12 +127,19 @@ fn run(gpa: Allocator) !void {
 
     const wl_frame_callback = try wl_surface.frame();
 
-    var wl_frame_callback_listener_data = WlFrameCallbackListenerData.init;
+    var wl_frame_callback_listener_data = WlFrameCallbackListenerData{
+        .event_queue = &event_queue,
+
+        .wl_surface = wl_surface,
+    };
     wl_frame_callback.setListener(
         *WlFrameCallbackListenerData,
         &wlFrameCallbackListener,
         &wl_frame_callback_listener_data,
     );
+
+    const initial_width = 800;
+    const initial_height = 600;
 
     var buffer_data = try BufferData.configure(
         initial_width,
@@ -137,15 +154,60 @@ fn run(gpa: Allocator) !void {
 
     log.info("starting main loop", .{});
 
-    while (true) {
+    main_loop: while (true) {
         // run listeners
         if (wl_display.dispatch() != .SUCCESS) {
             log.err("wl_display.dispatch() failed", .{});
-            break;
+            break :main_loop;
         }
 
-        while (event_queue.poll()) |event| {
+        var do_render = false;
+
+        while (event_queue.dequeue()) |event| {
             switch (event.kind) {
+                .ping => |ping| {
+                    // inform the compositor that we are not blocked
+
+                    ping.xdg_wm_base.pong(ping.serial);
+                },
+
+                .surface_configure => |configure| {
+                    // surface requested a rerender
+                    // acknowledge configure and mark for render
+
+                    configure.xdg_surface.ackConfigure(configure.serial);
+                    do_render = true;
+                },
+
+                .toplevel_configure => |conf| {
+                    // mostly just a resize event
+
+                    const width = if (conf.width) |w| w else initial_width;
+                    const height = if (conf.height) |h| h else initial_height;
+
+                    try buffer_data.reconfigure(
+                        width,
+                        height,
+                        wl_shared_memory,
+                    );
+
+                    do_render = true;
+                },
+
+                .toplevel_close => {
+                    // window was requested to close
+
+                    log.debug("close request", .{});
+                    break :main_loop;
+                },
+
+                .frame => {
+                    // the compositor has told us this is a good time to render
+                    // useful for animations or just rendering every time
+
+                    do_render = true;
+                },
+
                 .pointer_focus => |focus| {
                     log.debug(
                         "pointer_focus: state: {s}, serial: {d}",
@@ -153,10 +215,11 @@ fn run(gpa: Allocator) !void {
                     );
                 },
                 .pointer_motion => |motion| {
-                    log.debug(
-                        "pointer_motion: {d}x{d}",
-                        .{ motion.x, motion.y },
-                    );
+                    _ = motion;
+                    // log.debug(
+                    //     "pointer_motion: {d}x{d}",
+                    //     .{ motion.x, motion.y },
+                    // );
                 },
                 .pointer_button => |button| {
                     log.debug(
@@ -182,38 +245,14 @@ fn run(gpa: Allocator) !void {
             }
         }
 
-        if (xdg_toplevel_listener_data.close_request) break;
-
-        var do_draw = false;
-
-        if (xdg_toplevel_listener_data.configure_request) |configure_request| {
-            xdg_toplevel_listener_data.configure_request = null;
-
-            try buffer_data.reconfigure(
-                configure_request.width,
-                configure_request.height,
-                wl_shared_memory,
+        if (do_render) {
+            const pixels_u32 =
+                @as([*]u32, @ptrCast(@alignCast(buffer_data.pixels.ptr))) //
+                [0..(buffer_data.width * buffer_data.height)];
+            @memset(
+                pixels_u32,
+                0x00f4597b | (@as(u32, @intCast(alpha)) << 24),
             );
-
-            do_draw = true;
-        }
-
-        if (wl_frame_callback_listener_data.frame_request) {
-            wl_frame_callback_listener_data.frame_request = false;
-
-            const callback = try wl_surface.frame();
-            callback.setListener(
-                *WlFrameCallbackListenerData,
-                wlFrameCallbackListener,
-                &wl_frame_callback_listener_data,
-            );
-
-            do_draw = true;
-        }
-
-        if (do_draw) {
-            const pixels_u32 = @as([*]u32, @ptrCast(@alignCast(buffer_data.pixels.ptr)))[0..(buffer_data.width * buffer_data.height)];
-            @memset(pixels_u32, 0x00f4597b | (@as(u32, @intCast(alpha)) << 24));
             alpha +%= 1;
 
             wl_surface.attach(buffer_data.wl_buffer, 0, 0);
@@ -301,16 +340,23 @@ fn wlRegistryListener(
 // =============================================================================
 // = xdg wm base
 
-fn xdgWmBaseListener(
-    wm_base: *xdg.WmBase,
-    event: xdg.WmBase.Event,
-    data: ?*void,
-) void {
-    _ = data;
+const XdgWmBaseListenerData = struct {
+    event_queue: *EventQueue,
+};
 
+fn xdgWmBaseListener(
+    xdg_wm_base: *xdg.WmBase,
+    event: xdg.WmBase.Event,
+    data: *XdgWmBaseListenerData,
+) void {
     switch (event) {
-        .ping => |serial| {
-            wm_base.pong(serial.serial);
+        .ping => |ping| {
+            data.event_queue.queue(.{ .kind = .{
+                .ping = .{
+                    .xdg_wm_base = xdg_wm_base,
+                    .serial = ping.serial,
+                },
+            } });
         },
     }
 }
@@ -319,6 +365,8 @@ fn xdgWmBaseListener(
 // = xdg surface
 
 const XdgSurfaceListenerData = struct {
+    event_queue: *EventQueue,
+
     wl_surface: *wl.Surface,
 };
 
@@ -331,30 +379,20 @@ fn xdgSurfaceListener(
         .configure => |configure| configure,
     };
 
-    xdg_surface.ackConfigure(configure.serial);
-
-    // not sure if this is the right thing to put here
-    // my undustanding is this is a 'render' event
-    // saying that the surface needs updating
-    //
-    // we could use this for optimiziation of not updating if not needed
-    data.wl_surface.commit();
+    data.event_queue.queue(.{ .kind = .{
+        .surface_configure = .{
+            .wl_surface = data.wl_surface,
+            .xdg_surface = xdg_surface,
+            .serial = configure.serial,
+        },
+    } });
 }
 
 // =============================================================================
 // = xdg toplevel
 
 const XdgToplevelListenerData = struct {
-    initial_width: u32,
-    initial_height: u32,
-
-    configure_request: ?ConfigureRequest = null,
-    close_request: bool = false,
-};
-
-const ConfigureRequest = struct {
-    width: u32,
-    height: u32,
+    event_queue: *EventQueue,
 };
 
 fn xdgToplevelListener(
@@ -366,23 +404,30 @@ fn xdgToplevelListener(
 
     switch (event) {
         .configure => |configure| {
-            const width: u32 = if (configure.width == 0)
-                data.initial_width
+            const states = configure.states.slice(xdg.Toplevel.State);
+
+            const width: ?u32 = if (configure.width == 0)
+                null
             else
                 @intCast(configure.width);
 
-            const height: u32 = if (configure.height == 0)
-                data.initial_height
+            const height: ?u32 = if (configure.height == 0)
+                null
             else
                 @intCast(configure.height);
 
-            data.configure_request = .{
-                .width = width,
-                .height = height,
-            };
+            data.event_queue.queue(.{ .kind = .{
+                .toplevel_configure = .{
+                    .width = width,
+                    .height = height,
+                    .states = states,
+                },
+            } });
         },
         .close => {
-            data.close_request = true;
+            data.event_queue.queue(.{ .kind = .{
+                .toplevel_close = void{},
+            } });
         },
         .configure_bounds => |configure_bounds| {
             // informs the client of the bounds we exist in
@@ -398,11 +443,9 @@ fn xdgToplevelListener(
 // = wl frame callback
 
 const WlFrameCallbackListenerData = struct {
-    frame_request: bool,
+    event_queue: *EventQueue,
 
-    pub const init = WlFrameCallbackListenerData{
-        .frame_request = false,
-    };
+    wl_surface: *wl.Surface,
 };
 
 fn wlFrameCallbackListener(
@@ -410,11 +453,20 @@ fn wlFrameCallbackListener(
     event: wl.Callback.Event,
     data: *WlFrameCallbackListenerData,
 ) void {
-    _ = event;
+    assert(event == .done);
 
+    data.event_queue.queue(.{ .kind = .{ .frame = void{} } });
+
+    // setup a new callback
+    // each callback is only valid once
     callback.destroy();
-
-    data.frame_request = true;
+    const new_callback = data.wl_surface.frame() catch
+        @panic("failed to contine frame callbacks");
+    new_callback.setListener(
+        *WlFrameCallbackListenerData,
+        wlFrameCallbackListener,
+        data,
+    );
 }
 
 // =============================================================================
@@ -547,7 +599,7 @@ const XkbModifierIndices = struct {
     caps_lock: u32,
     ctrl: u32,
     alt: u32,
-    gui: u32,
+    logo: u32,
 };
 
 fn wlKeyboardListener(
@@ -589,11 +641,11 @@ fn wlKeyboardListener(
                 @panic("failed to create xkb state");
 
             data.modifier_indices = .{
-                .shift = xkb_keymap.modGetIndex("Shift"),
-                .caps_lock = xkb_keymap.modGetIndex("Lock"),
-                .ctrl = xkb_keymap.modGetIndex("Control"),
-                .alt = xkb_keymap.modGetIndex("Mod1"),
-                .gui = xkb_keymap.modGetIndex("Super"),
+                .shift = xkb_keymap.modGetIndex(xkb.names.mod.shift),
+                .caps_lock = xkb_keymap.modGetIndex(xkb.names.mod.caps),
+                .ctrl = xkb_keymap.modGetIndex(xkb.names.mod.ctrl),
+                .alt = xkb_keymap.modGetIndex(xkb.names.mod.alt),
+                .logo = xkb_keymap.modGetIndex(xkb.names.mod.logo),
             };
         },
         .enter => |enter| {
@@ -614,9 +666,9 @@ fn wlKeyboardListener(
             const pressed = key.state == .pressed;
 
             const xkb_state = data.xkb_state.?;
-            const xkb_scancode = key.key + 8;
-            const keysym = xkb_state.keyGetOneSym(xkb_scancode);
-            const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(xkb_scancode));
+            const scancode = key.key + 8;
+            const keysym = xkb_state.keyGetOneSym(scancode);
+            const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(scancode));
 
             var buffer: [4]u8 = undefined;
             const len = std.unicode.utf8Encode(codepoint, &buffer) catch
@@ -644,10 +696,11 @@ fn wlKeyboardListener(
             //  utf8
 
             log.debug(
-                "pressed: {}, scancode: {d}, keysym: {}, codepoint: 0x{x}, utf8: '{?s}'",
+                "pressed: {}, scancode: {d}, keysym: {}," ++
+                    " codepoint: 0x{x}, utf8: '{?s}'",
                 .{
                     pressed,
-                    xkb_scancode,
+                    scancode,
                     keysym,
                     codepoint,
                     if (utf8) |s| std.fmt.fmtSliceEscapeLower(s) else null,
@@ -683,7 +736,7 @@ fn wlKeyboardListener(
                 component,
             ) == 1;
             const gui = xkb_state.modIndexIsActive(
-                data.modifier_indices.gui,
+                data.modifier_indices.logo,
                 component,
             ) == 1;
 
@@ -692,7 +745,7 @@ fn wlKeyboardListener(
                 .caps_lock = caps_lock,
                 .ctrl = ctrl,
                 .alt = alt,
-                .gui = gui,
+                .logo = gui,
             };
 
             log.debug(
@@ -702,7 +755,7 @@ fn wlKeyboardListener(
                     mod_state.caps_lock,
                     mod_state.ctrl,
                     mod_state.alt,
-                    mod_state.gui,
+                    mod_state.logo,
                 },
             );
         },
@@ -889,21 +942,21 @@ fn wlPointerListener(
 
             if (data.focus) |focus| {
                 data.focus = null;
-                data.event_queue.queue.queue(.{
+                data.event_queue.queue(.{
                     .kind = .{ .pointer_focus = focus },
                 });
             }
 
             if (data.motion) |motion| {
                 data.motion = null;
-                data.event_queue.queue.queue(.{
+                data.event_queue.queue(.{
                     .kind = .{ .pointer_motion = motion },
                 });
             }
 
             if (data.button) |button| {
                 data.button = null;
-                data.event_queue.queue.queue(.{
+                data.event_queue.queue(.{
                     .kind = .{ .pointer_button = button },
                 });
             }
@@ -922,7 +975,7 @@ fn wlPointerListener(
                 else
                     data.scroll_value.?;
 
-                data.event_queue.queue.queue(.{ .kind = .{
+                data.event_queue.queue(.{ .kind = .{
                     .pointer_scroll = .{
                         .axis = axis,
                         .source = source,
@@ -943,6 +996,7 @@ fn wlPointerListener(
 // =============================================================================
 // = Event plumbing
 
+/// Will be faster (if only marginal) with a power of 2 Size
 pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
     return struct {
         buffer: [Size]T,
@@ -951,7 +1005,7 @@ pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
 
         const Queue = @This();
 
-        pub const init = Queue{
+        pub const empty = Queue{
             .buffer = undefined,
             .head = 0,
             .tail = 0,
@@ -969,23 +1023,35 @@ pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
             self.tail = (self.tail + 1) % Size;
             return item;
         }
+
+        pub fn size(self: *Queue) usize {
+            return (self.head -% self.tail +% Size) % Size;
+        }
     };
 }
 
-pub const EventQueue = struct {
-    queue: CircleBufferQueue(32, Event),
-
-    pub const init = EventQueue{ .queue = .init };
-
-    pub fn poll(self: *EventQueue) ?Event {
-        return self.queue.dequeue();
-    }
-};
+// @NOTE: maybe 32 is too high, maybe not
+//  not sure what happens when the loop is blocked for a time
+pub const EventQueue = CircleBufferQueue(32, Event);
 
 pub const Event = struct {
     kind: Kind,
 
+    // - maybe?
+    // time: ?u32,
+    // - since not everthing emits a time
+    // - but sometimes it may be useful
+
     pub const Kind = union(enum) {
+        ping: Ping,
+
+        surface_configure: SurfaceConfigure,
+
+        toplevel_configure: ToplevelConfigure,
+        toplevel_close: void,
+
+        frame: void,
+
         pointer_focus: PointerFocus,
         pointer_motion: PointerMotion,
         pointer_button: PointerButton,
@@ -1000,6 +1066,23 @@ pub const Event = struct {
     pub const FocusState = enum {
         enter,
         leave,
+    };
+
+    pub const Ping = struct {
+        xdg_wm_base: *xdg.WmBase,
+        serial: u32,
+    };
+
+    pub const SurfaceConfigure = struct {
+        wl_surface: *wl.Surface,
+        xdg_surface: *xdg.Surface,
+        serial: u32,
+    };
+
+    pub const ToplevelConfigure = struct {
+        width: ?u32,
+        height: ?u32,
+        states: []xdg.Toplevel.State,
     };
 
     pub const PointerFocus = struct {
@@ -1055,6 +1138,6 @@ pub const ModifierState = packed struct(u8) {
     caps_lock: bool = false,
     ctrl: bool = false,
     alt: bool = false,
-    gui: bool = false, // super
+    logo: bool = false, // super
     _padding: u3 = 0,
 };
