@@ -59,7 +59,11 @@ fn run(gpa: Allocator) !void {
             xkb_keymap.unref();
     }
 
-    var wl_pointer_listener_data = WlPointerListenerData{};
+    var event_queue = EventQueue.init;
+
+    var wl_pointer_listener_data = WlPointerListenerData{
+        .event_queue = &event_queue,
+    };
 
     var wl_seat_listener_data = WlSeatListenerData{
         .wl_keyboard_listener_data = &wl_keyboard_listener_data,
@@ -134,7 +138,49 @@ fn run(gpa: Allocator) !void {
     log.info("starting main loop", .{});
 
     while (true) {
-        if (wl_display.dispatch() != .SUCCESS) break;
+        // run listeners
+        if (wl_display.dispatch() != .SUCCESS) {
+            log.err("wl_display.dispatch() failed", .{});
+            break;
+        }
+
+        while (event_queue.poll()) |event| {
+            switch (event.kind) {
+                .pointer_focus => |focus| {
+                    log.debug(
+                        "pointer_focus: state: {s}, serial: {d}",
+                        .{ @tagName(focus.state), focus.serial },
+                    );
+                },
+                .pointer_motion => |motion| {
+                    log.debug(
+                        "pointer_motion: {d}x{d}",
+                        .{ motion.x, motion.y },
+                    );
+                },
+                .pointer_button => |button| {
+                    log.debug(
+                        "pointer_button: state: {s}, button: {s}, serial: {d}",
+                        .{
+                            @tagName(button.state),
+                            @tagName(button.button),
+                            button.serial,
+                        },
+                    );
+                },
+                .pointer_scroll => |scroll| {
+                    log.debug(
+                        "pointer_scroll: axis: {s}, source: {s}, value: {?d}",
+                        .{
+                            @tagName(scroll.axis),
+                            @tagName(scroll.source),
+                            scroll.value,
+                        },
+                    );
+                },
+                // else => {},
+            }
+        }
 
         if (xdg_toplevel_listener_data.close_request) break;
 
@@ -286,6 +332,12 @@ fn xdgSurfaceListener(
     };
 
     xdg_surface.ackConfigure(configure.serial);
+
+    // not sure if this is the right thing to put here
+    // my undustanding is this is a 'render' event
+    // saying that the surface needs updating
+    //
+    // we could use this for optimiziation of not updating if not needed
     data.wl_surface.commit();
 }
 
@@ -332,7 +384,12 @@ fn xdgToplevelListener(
         .close => {
             data.close_request = true;
         },
-        .configure_bounds => {},
+        .configure_bounds => |configure_bounds| {
+            // informs the client of the bounds we exist in
+            // such as the monitor size
+
+            _ = configure_bounds;
+        },
         .wm_capabilities => {},
     }
 }
@@ -556,20 +613,45 @@ fn wlKeyboardListener(
         .key => |key| {
             const pressed = key.state == .pressed;
 
-            const xkb_scancode = key.key + 8;
             const xkb_state = data.xkb_state.?;
+            const xkb_scancode = key.key + 8;
             const keysym = xkb_state.keyGetOneSym(xkb_scancode);
+            const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(xkb_scancode));
 
-            var utf8: [127:0]u8 = @splat(0);
-            const uft8_len = xkb_state.keyGetUtf8(xkb_scancode, &utf8);
+            var buffer: [4]u8 = undefined;
+            const len = std.unicode.utf8Encode(codepoint, &buffer) catch
+                @panic("got invalid utf8 from xkb");
+            const utf8_slice = buffer[0..len];
 
-            if (uft8_len > utf8.len) {
-                log.warn("got more than 127 bytes of utf8 for single press", .{});
-            }
+            const utf8 = if (len == 1)
+                // filter out ascii control chars
+                // there may be more that we need to filter out
+                if (std.ascii.isPrint(utf8_slice[0]))
+                    utf8_slice
+                else
+                    null
+            else
+                utf8_slice;
+
+            // key:
+            //  state
+            //  scancode
+            //  keysym
+            //  codepoint
+            //
+            // text: (on press)
+            //  codepoint
+            //  utf8
 
             log.debug(
-                "pressed: {}, scancode: {d}, keysym: {}, utf8: '{s}'",
-                .{ pressed, xkb_scancode, keysym, utf8 },
+                "pressed: {}, scancode: {d}, keysym: {}, codepoint: 0x{x}, utf8: '{?s}'",
+                .{
+                    pressed,
+                    xkb_scancode,
+                    keysym,
+                    codepoint,
+                    if (utf8) |s| std.fmt.fmtSliceEscapeLower(s) else null,
+                },
             );
         },
         .modifiers => |modifiers| {
@@ -625,6 +707,11 @@ fn wlKeyboardListener(
             );
         },
         .repeat_info => |repeat_info| {
+            // specifies how repeat should be done
+            //  rate: keys per second
+            //  delay: ms before repeat start
+            // rate of 0 disables repeating
+
             // @TODO: Implement repeat
 
             log.debug(
@@ -636,24 +723,24 @@ fn wlKeyboardListener(
 }
 
 // =============================================================================
-// = ModifierState
-
-pub const ModifierState = packed struct(u8) {
-    shift: bool = false,
-    caps_lock: bool = false,
-    ctrl: bool = false,
-    alt: bool = false,
-    gui: bool = false, // super
-    _padding: u3 = 0,
-};
-
-// =============================================================================
 // = wl pointer
 
-const WlPointerListenerData = struct {};
+const WlPointerListenerData = struct {
+    event_queue: *EventQueue,
+
+    focus: ?Event.PointerFocus = null,
+    motion: ?Event.PointerMotion = null,
+    button: ?Event.PointerButton = null,
+
+    scroll_axis: ?Event.PointerScrollAxis = null,
+    scroll_source: ?Event.PointerScrollSource = null,
+    scroll_value: ?f64 = null,
+    scroll_value120: ?f64 = null,
+    scroll_stop: bool = false,
+};
 
 // https://github.com/torvalds/linux/blob/e618ee89561b6b0fdc69f79e6fd0c33375d3e6b4/include/uapi/linux/input-event-codes.h#L355
-pub const RawLinuxButtons = struct {
+const RawLinuxButtons = struct {
     pub const left = 0x110;
     pub const right = 0x111;
     pub const middle = 0x112;
@@ -667,25 +754,40 @@ fn wlPointerListener(
     data: *WlPointerListenerData,
 ) void {
     _ = wl_pointer;
-    _ = data;
 
     switch (event) {
         .enter => |enter| {
-            _ = enter;
-            log.debug("pointer entered surface", .{});
+            data.focus = .{
+                .state = .enter,
+                .serial = enter.serial,
+                .wl_surface = enter.surface,
+            };
+
+            // It makes more sense to put all motion interpreting in one place
+            data.motion = .{
+                .x = enter.surface_x.toDouble(),
+                .y = enter.surface_y.toDouble(),
+            };
         },
         .leave => |leave| {
-            _ = leave;
-            log.debug("pointer left surface", .{});
+            data.focus = .{
+                .state = .leave,
+                .serial = leave.serial,
+                .wl_surface = leave.surface,
+            };
         },
         .motion => |motion| {
-            log.debug(
-                "pointer motion: {d}x{d}",
-                .{ motion.surface_x.toDouble(), motion.surface_y.toDouble() },
-            );
+            // _ = motion.time;
+
+            data.motion = .{
+                .x = motion.surface_x.toDouble(),
+                .y = motion.surface_y.toDouble(),
+            };
         },
         .button => |button| button: {
-            const mbutton: MouseButton = switch (button.button) {
+            // _ = button.time;
+
+            const mbutton: Event.PointerButtonKind = switch (button.button) {
                 RawLinuxButtons.left => .left,
                 RawLinuxButtons.right => .right,
                 RawLinuxButtons.middle => .middle,
@@ -694,59 +796,265 @@ fn wlPointerListener(
                 else => break :button,
             };
 
-            const pressed = button.state == .pressed;
+            const state: Event.PressState = switch (button.state) {
+                .pressed => .pressed,
+                .released => .released,
+                _ => unreachable,
+            };
 
-            log.debug(
-                "pointer button: pressed: {}, button: {s}",
-                .{ pressed, @tagName(mbutton) },
-            );
-        },
-        .axis => |axis| {
-            log.debug(
-                "pointer axis: axis: {s}, value: {}",
-                .{ @tagName(axis.axis), axis.value.toDouble() },
-            );
-        },
-        .frame => {
-            // batch input until we get this event, then process
-
-            // log.debug("pointer frame", .{});
-            std.debug.print("\n", .{});
+            data.button = .{
+                .button = mbutton,
+                .state = state,
+                .serial = button.serial,
+            };
         },
         .axis_source => |axis_source| {
-            log.debug(
-                "pointer axis source: source: {s}",
-                .{@tagName(axis_source.axis_source)},
-            );
+            data.scroll_source = switch (axis_source.axis_source) {
+                .wheel => .wheel,
+                .finger => .finger,
+                .continuous => .continuous,
+                .wheel_tilt => .wheel_tilt,
+                else => .unknown,
+            };
         },
-        .axis_stop => |axis_stop| {
-            log.debug(
-                "pointer axis stop: axis: {s}",
-                .{@tagName(axis_stop.axis)},
-            );
+        .axis => |axis| {
+            _ = axis.time;
+
+            data.scroll_axis = switch (axis.axis) {
+                .vertical_scroll => .vertical,
+                .horizontal_scroll => .horizontal,
+                else => unreachable,
+            };
+
+            if (data.scroll_value) |*value| {
+                value.* += axis.value.toDouble();
+            } else {
+                data.scroll_value = axis.value.toDouble();
+            }
         },
         .axis_discrete => |axis_discrete| {
-            log.debug(
-                "pointer axis descrete: axis: {s}, discrete: {d}",
-                .{ @tagName(axis_discrete.axis), axis_discrete.discrete },
-            );
+            // Not used in favour of axis_value120 from version 8 of wl_pointer
+
+            _ = axis_discrete.axis;
+            _ = axis_discrete.discrete;
         },
         .axis_value120 => |axis_value120| {
-            log.debug(
-                "pointer axis value120: axis: {s}, value120: {d}",
-                .{ @tagName(axis_value120.axis), axis_value120.value120 },
-            );
+            // High resolution scroll event
+            // measured as a fraction of 120
+            //
+            // e.g. value120 = 30
+            //      30 / 120 = 0.25
+            // thus scroll by a quater of a logical step
+            //
+            // repleaces axis_descrete from version 8 of wl_pointer
+
+            data.scroll_axis = switch (axis_value120.axis) {
+                .vertical_scroll => .vertical,
+                .horizontal_scroll => .horizontal,
+                else => unreachable,
+            };
+
+            // @NOTE:
+            //  on my machine running gnome 47 I get (-)10 for axis events and
+            //  (-)120 ((-)1 adjusted) for this with my mouse - my touchpad does
+            //  not emit this event - thus I have opted to mulitply this value
+            //  by ten. So that when it is prefferd during a frame event the
+            //  value matches what axis would have emited.
+            //
+            //  Since the normal axis event emits 10, it seems to me that a
+            //  step is `10` and that my mouse emits a descrete scroll of 1 step
+            //
+            //  This may be a wrong interpretation
+            const value_scaled =
+                @as(f64, @floatFromInt(axis_value120.value120)) / 120 * 10;
+
+            if (data.scroll_value120) |*value| {
+                value.* += value_scaled;
+            } else {
+                data.scroll_value120 = value_scaled;
+            }
+        },
+        .axis_stop => |axis_stop| {
+            _ = axis_stop.time;
+
+            data.scroll_axis = switch (axis_stop.axis) {
+                .vertical_scroll => .vertical,
+                .horizontal_scroll => .horizontal,
+                else => unreachable,
+            };
+            data.scroll_stop = true;
+        },
+        .frame => {
+            // we batch input until we get this event, then send it
+
+            if (data.focus) |focus| {
+                data.focus = null;
+                data.event_queue.queue.queue(.{
+                    .kind = .{ .pointer_focus = focus },
+                });
+            }
+
+            if (data.motion) |motion| {
+                data.motion = null;
+                data.event_queue.queue.queue(.{
+                    .kind = .{ .pointer_motion = motion },
+                });
+            }
+
+            if (data.button) |button| {
+                data.button = null;
+                data.event_queue.queue.queue(.{
+                    .kind = .{ .pointer_button = button },
+                });
+            }
+
+            // both the scroll axis and source are sent every scroll
+            if (data.scroll_axis) |axis| {
+                const source = data.scroll_source.?;
+
+                // prefer value120 over the standard
+                // at least one will be set
+                // ...if stop is not set
+                const value = if (data.scroll_stop)
+                    null
+                else if (data.scroll_value120) |value120|
+                    value120
+                else
+                    data.scroll_value.?;
+
+                data.event_queue.queue.queue(.{ .kind = .{
+                    .pointer_scroll = .{
+                        .axis = axis,
+                        .source = source,
+                        .value = value,
+                    },
+                } });
+
+                data.scroll_axis = null;
+                data.scroll_source = null;
+                data.scroll_value = null;
+                data.scroll_value120 = null;
+                data.scroll_stop = false;
+            }
         },
     }
 }
 
 // =============================================================================
-// = MouseButton
+// = Event plumbing
 
-pub const MouseButton = enum {
-    left,
-    right,
-    middle,
-    forward,
-    back,
+pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
+    return struct {
+        buffer: [Size]T,
+        head: usize,
+        tail: usize,
+
+        const Queue = @This();
+
+        pub const init = Queue{
+            .buffer = undefined,
+            .head = 0,
+            .tail = 0,
+        };
+
+        pub fn queue(self: *Queue, item: T) void {
+            self.buffer[self.head] = item;
+            self.head = (self.head + 1) % Size;
+        }
+
+        pub fn dequeue(self: *Queue) ?T {
+            if (self.tail == self.head) return null;
+
+            const item = self.buffer[self.tail];
+            self.tail = (self.tail + 1) % Size;
+            return item;
+        }
+    };
+}
+
+pub const EventQueue = struct {
+    queue: CircleBufferQueue(32, Event),
+
+    pub const init = EventQueue{ .queue = .init };
+
+    pub fn poll(self: *EventQueue) ?Event {
+        return self.queue.dequeue();
+    }
+};
+
+pub const Event = struct {
+    kind: Kind,
+
+    pub const Kind = union(enum) {
+        pointer_focus: PointerFocus,
+        pointer_motion: PointerMotion,
+        pointer_button: PointerButton,
+        pointer_scroll: PointerScroll,
+    };
+
+    pub const PressState = enum {
+        pressed,
+        released,
+    };
+
+    pub const FocusState = enum {
+        enter,
+        leave,
+    };
+
+    pub const PointerFocus = struct {
+        state: FocusState,
+        serial: u32,
+        wl_surface: ?*wl.Surface,
+    };
+
+    pub const PointerMotion = struct {
+        x: f64,
+        y: f64,
+    };
+
+    pub const PointerButton = struct {
+        state: PressState,
+        button: PointerButtonKind,
+        serial: u32,
+    };
+
+    pub const PointerButtonKind = enum {
+        left,
+        right,
+        middle,
+        forward,
+        back,
+    };
+
+    pub const PointerScroll = struct {
+        axis: PointerScrollAxis,
+        source: PointerScrollSource,
+        /// null means stop event see `PointerScrollSource`
+        value: ?f64,
+    };
+
+    pub const PointerScrollAxis = enum {
+        vertical,
+        horizontal,
+    };
+
+    /// A stop event is garenteed for finger,
+    /// it is not garenteed for any other type
+    pub const PointerScrollSource = enum {
+        unknown,
+        wheel,
+        finger,
+        continuous,
+        wheel_tilt,
+    };
+};
+
+pub const ModifierState = packed struct(u8) {
+    shift: bool = false,
+    caps_lock: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+    gui: bool = false, // super
+    _padding: u3 = 0,
 };

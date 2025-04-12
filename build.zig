@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
             EntryPoint,
             "entry_point",
             "specify entry point to use",
-        ) orelse .sdl;
+        ) orelse .wayland;
 
     const profile =
         b.option(
