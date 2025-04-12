@@ -178,7 +178,7 @@ pub fn build(b: *std.Build) void {
                 scanner.generate("xdg_wm_base", 6);
                 scanner.generate("wl_seat", 8);
 
-                mod.addImport("wayland2", wayland);
+                mod.addImport("wayland", wayland);
                 mod.linkSystemLibrary("wayland-client", .{ .needed = true });
 
                 if (xkbcommon) |m|

@@ -5,7 +5,7 @@ const Allocator = mem.Allocator;
 
 const log = std.log.scoped(.@"fe[wl]");
 
-const wayland = @import("wayland2");
+const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
 
