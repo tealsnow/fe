@@ -47,10 +47,12 @@ fn run(gpa: Allocator) !void {
     const xkb_context = xkb.Context.new(.no_flags) orelse return error.xkb;
     defer xkb_context.unref();
 
+    var event_queue = EventQueue.empty;
+
     var wl_keyboard_listener_data = WlKeyboardListenerData{
+        .event_queue = &event_queue,
+
         .xkb_context = xkb_context,
-        .xkb_keymap = null, // set in keyboard listener
-        .xkb_state = null, // set in keyboard listener
     };
     defer {
         if (wl_keyboard_listener_data.xkb_state) |xkb_state|
@@ -58,8 +60,6 @@ fn run(gpa: Allocator) !void {
         if (wl_keyboard_listener_data.xkb_keymap) |xkb_keymap|
             xkb_keymap.unref();
     }
-
-    var event_queue = EventQueue.empty;
 
     var wl_pointer_listener_data = WlPointerListenerData{
         .event_queue = &event_queue,
@@ -208,6 +208,52 @@ fn run(gpa: Allocator) !void {
                     do_render = true;
                 },
 
+                .keyboard_focus => |focus| {
+                    log.debug(
+                        "keyboard_focus: state: {s}, serial: {d}",
+                        .{ @tagName(focus.state), focus.serial },
+                    );
+                },
+
+                .key => |key| {
+                    log.debug(
+                        "key: state: {s}, scancode: {d}, keysym: {}," ++
+                            " codepoint: 0x{x}",
+                        .{
+                            @tagName(key.state),
+                            key.scancode,
+                            key.keysym,
+                            key.codepoint,
+                        },
+                    );
+                },
+
+                .modifier => |mods| {
+                    log.debug(
+                        "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}," ++
+                            " gui: {}, serial: {d}",
+                        .{
+                            mods.state.shift,
+                            mods.state.caps_lock,
+                            mods.state.ctrl,
+                            mods.state.alt,
+                            mods.state.logo,
+                            mods.serial,
+                        },
+                    );
+                },
+
+                .text => |text| {
+                    const utf8 = std.mem.sliceTo(&text.utf8, 0);
+                    log.debug(
+                        "text: codepoint: 0x{x}, text: '{s}'",
+                        .{
+                            text.codepoint,
+                            std.fmt.fmtSliceEscapeLower(utf8),
+                        },
+                    );
+                },
+
                 .pointer_focus => |focus| {
                     log.debug(
                         "pointer_focus: state: {s}, serial: {d}",
@@ -241,6 +287,7 @@ fn run(gpa: Allocator) !void {
                         },
                     );
                 },
+
                 // else => {},
             }
         }
@@ -587,9 +634,11 @@ fn wlSeatListener(
 // = wl keyboard
 
 const WlKeyboardListenerData = struct {
+    event_queue: *EventQueue,
+
     xkb_context: *xkb.Context,
-    xkb_keymap: ?*xkb.Keymap,
-    xkb_state: ?*xkb.State,
+    xkb_keymap: ?*xkb.Keymap = null,
+    xkb_state: ?*xkb.State = null,
 
     modifier_indices: XkbModifierIndices = undefined,
 };
@@ -649,63 +698,94 @@ fn wlKeyboardListener(
             };
         },
         .enter => |enter| {
-            _ = enter;
+            data.event_queue.queue(.{ .kind = .{
+                .keyboard_focus = .{
+                    .state = .enter,
+                    .serial = enter.serial,
+                    .wl_surface = enter.surface,
+                },
+            } });
 
-            // gain focus for surface
+            const keys = enter.keys.slice(u32);
+            for (keys) |key| {
+                const xkb_state = data.xkb_state.?;
+                const scancode = key + 8;
+                const keysym = xkb_state.keyGetOneSym(scancode);
+                const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(scancode));
 
-            log.debug("gained keyboard focus", .{});
+                data.event_queue.queue(.{ .kind = .{
+                    .key = .{
+                        .state = .pressed,
+                        .scancode = scancode,
+                        .keysym = keysym,
+                        .codepoint = codepoint,
+                        .serial = enter.serial,
+                    },
+                } });
+            }
         },
         .leave => |leave| {
-            _ = leave;
-
-            // lose focus for surface
-
-            log.debug("lost keyboard focus", .{});
+            data.event_queue.queue(.{ .kind = .{
+                .keyboard_focus = .{
+                    .state = .leave,
+                    .serial = leave.serial,
+                    .wl_surface = leave.surface,
+                },
+            } });
         },
         .key => |key| {
-            const pressed = key.state == .pressed;
-
             const xkb_state = data.xkb_state.?;
             const scancode = key.key + 8;
             const keysym = xkb_state.keyGetOneSym(scancode);
             const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(scancode));
 
-            var buffer: [4]u8 = undefined;
-            const len = std.unicode.utf8Encode(codepoint, &buffer) catch
-                @panic("got invalid utf8 from xkb");
-            const utf8_slice = buffer[0..len];
+            const state: Event.PressState = switch (key.state) {
+                .pressed => .pressed,
+                .released => .released,
+                else => unreachable,
+            };
 
-            const utf8 = if (len == 1)
-                // filter out ascii control chars
-                // there may be more that we need to filter out
-                if (std.ascii.isPrint(utf8_slice[0]))
-                    utf8_slice
-                else
-                    null
-            else
-                utf8_slice;
-
-            // key:
-            //  state
-            //  scancode
-            //  keysym
-            //  codepoint
-            //
-            // text: (on press)
-            //  codepoint
-            //  utf8
-
-            log.debug(
-                "pressed: {}, scancode: {d}, keysym: {}," ++
-                    " codepoint: 0x{x}, utf8: '{?s}'",
-                .{
-                    pressed,
-                    scancode,
-                    keysym,
-                    codepoint,
-                    if (utf8) |s| std.fmt.fmtSliceEscapeLower(s) else null,
+            data.event_queue.queue(.{
+                .kind = .{
+                    .key = .{
+                        .state = state,
+                        .scancode = scancode,
+                        .keysym = keysym,
+                        .codepoint = codepoint,
+                        .serial = key.serial,
+                    },
                 },
-            );
+                .time = key.time,
+            });
+
+            if (state == .pressed) {
+                var utf8_buffer: [4:0]u8 = @splat(0);
+                const utf8_len =
+                    std.unicode.utf8Encode(codepoint, &utf8_buffer) catch
+                        @panic("got invalid utf8 from xkb");
+
+                const utf8: ?[4:0]u8 = if (utf8_len == 1)
+                    // filter out ascii control chars
+                    // there may be more that we need to filter out
+                    if (std.ascii.isPrint(utf8_buffer[0]))
+                        utf8_buffer
+                    else
+                        null
+                else
+                    utf8_buffer;
+
+                if (utf8) |text| {
+                    data.event_queue.queue(.{
+                        .kind = .{
+                            .text = .{
+                                .codepoint = codepoint,
+                                .utf8 = text,
+                            },
+                        },
+                        .time = key.time,
+                    });
+                }
+            }
         },
         .modifiers => |modifiers| {
             const xkb_state = data.xkb_state.?;
@@ -740,7 +820,7 @@ fn wlKeyboardListener(
                 component,
             ) == 1;
 
-            const mod_state = ModifierState{
+            const mod_state = Event.ModifierState{
                 .shift = shift,
                 .caps_lock = caps_lock,
                 .ctrl = ctrl,
@@ -748,16 +828,12 @@ fn wlKeyboardListener(
                 .logo = gui,
             };
 
-            log.debug(
-                "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}, gui: {}",
-                .{
-                    mod_state.shift,
-                    mod_state.caps_lock,
-                    mod_state.ctrl,
-                    mod_state.alt,
-                    mod_state.logo,
+            data.event_queue.queue(.{ .kind = .{
+                .modifier = .{
+                    .state = mod_state,
+                    .serial = modifiers.serial,
                 },
-            );
+            } });
         },
         .repeat_info => |repeat_info| {
             // specifies how repeat should be done
@@ -781,6 +857,7 @@ fn wlKeyboardListener(
 const WlPointerListenerData = struct {
     event_queue: *EventQueue,
 
+    time: ?u32 = null,
     focus: ?Event.PointerFocus = null,
     motion: ?Event.PointerMotion = null,
     button: ?Event.PointerButton = null,
@@ -830,7 +907,7 @@ fn wlPointerListener(
             };
         },
         .motion => |motion| {
-            // _ = motion.time;
+            data.time = motion.time;
 
             data.motion = .{
                 .x = motion.surface_x.toDouble(),
@@ -838,7 +915,7 @@ fn wlPointerListener(
             };
         },
         .button => |button| button: {
-            // _ = button.time;
+            data.time = button.time;
 
             const mbutton: Event.PointerButtonKind = switch (button.button) {
                 RawLinuxButtons.left => .left,
@@ -852,7 +929,7 @@ fn wlPointerListener(
             const state: Event.PressState = switch (button.state) {
                 .pressed => .pressed,
                 .released => .released,
-                _ => unreachable,
+                else => unreachable,
             };
 
             data.button = .{
@@ -871,7 +948,7 @@ fn wlPointerListener(
             };
         },
         .axis => |axis| {
-            _ = axis.time;
+            data.time = axis.time;
 
             data.scroll_axis = switch (axis.axis) {
                 .vertical_scroll => .vertical,
@@ -928,7 +1005,7 @@ fn wlPointerListener(
             }
         },
         .axis_stop => |axis_stop| {
-            _ = axis_stop.time;
+            data.time = axis_stop.time;
 
             data.scroll_axis = switch (axis_stop.axis) {
                 .vertical_scroll => .vertical,
@@ -940,10 +1017,14 @@ fn wlPointerListener(
         .frame => {
             // we batch input until we get this event, then send it
 
+            const time = data.time; // time may be null
+            data.time = null;
+
             if (data.focus) |focus| {
                 data.focus = null;
                 data.event_queue.queue(.{
                     .kind = .{ .pointer_focus = focus },
+                    .time = time,
                 });
             }
 
@@ -951,6 +1032,7 @@ fn wlPointerListener(
                 data.motion = null;
                 data.event_queue.queue(.{
                     .kind = .{ .pointer_motion = motion },
+                    .time = time,
                 });
             }
 
@@ -958,6 +1040,7 @@ fn wlPointerListener(
                 data.button = null;
                 data.event_queue.queue(.{
                     .kind = .{ .pointer_button = button },
+                    .time = time,
                 });
             }
 
@@ -975,13 +1058,16 @@ fn wlPointerListener(
                 else
                     data.scroll_value.?;
 
-                data.event_queue.queue(.{ .kind = .{
-                    .pointer_scroll = .{
-                        .axis = axis,
-                        .source = source,
-                        .value = value,
+                data.event_queue.queue(.{
+                    .kind = .{
+                        .pointer_scroll = .{
+                            .axis = axis,
+                            .source = source,
+                            .value = value,
+                        },
                     },
-                } });
+                    .time = time,
+                });
 
                 data.scroll_axis = null;
                 data.scroll_source = null;
@@ -1036,11 +1122,7 @@ pub const EventQueue = CircleBufferQueue(32, Event);
 
 pub const Event = struct {
     kind: Kind,
-
-    // - maybe?
-    // time: ?u32,
-    // - since not everthing emits a time
-    // - but sometimes it may be useful
+    time: ?u32 = null, // ms
 
     pub const Kind = union(enum) {
         ping: Ping,
@@ -1051,6 +1133,11 @@ pub const Event = struct {
         toplevel_close: void,
 
         frame: void,
+
+        keyboard_focus: KeyboardFocus,
+        key: Key,
+        modifier: Modifier,
+        text: Text,
 
         pointer_focus: PointerFocus,
         pointer_motion: PointerMotion,
@@ -1083,6 +1170,39 @@ pub const Event = struct {
         width: ?u32,
         height: ?u32,
         states: []xdg.Toplevel.State,
+    };
+
+    pub const KeyboardFocus = struct {
+        state: FocusState,
+        serial: u32,
+        wl_surface: ?*wl.Surface,
+    };
+
+    pub const Key = struct {
+        state: PressState,
+        scancode: u32,
+        keysym: xkb.Keysym,
+        codepoint: u21, // may be 0
+        serial: u32,
+    };
+
+    pub const Modifier = struct {
+        state: ModifierState,
+        serial: u32,
+    };
+
+    pub const Text = struct {
+        codepoint: u21,
+        utf8: [4:0]u8,
+    };
+
+    pub const ModifierState = packed struct(u8) {
+        shift: bool = false,
+        caps_lock: bool = false,
+        ctrl: bool = false,
+        alt: bool = false,
+        logo: bool = false, // super
+        _padding: u3 = 0,
     };
 
     pub const PointerFocus = struct {
@@ -1131,13 +1251,4 @@ pub const Event = struct {
         continuous,
         wheel_tilt,
     };
-};
-
-pub const ModifierState = packed struct(u8) {
-    shift: bool = false,
-    caps_lock: bool = false,
-    ctrl: bool = false,
-    alt: bool = false,
-    logo: bool = false, // super
-    _padding: u3 = 0,
 };
