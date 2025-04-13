@@ -33,7 +33,8 @@ pub fn build(b: *std.Build) void {
         b.option(
             bool,
             "use_llvm",
-            "switch to use llvm or not (defaults to false for debug and true for release)",
+            "switch to use llvm or not " ++
+                "(defaults to false for debug and true for release)",
         ) orelse
         if (optimize == .Debug) profile else true;
 
@@ -257,7 +258,11 @@ pub fn build(b: *std.Build) void {
             // @NOTE: setsid used since `addSystemCommand` is blocking
             //  without it, the build system would launch tracy then wait for
             //  it to close before running the app
-            const tracy_cmd = b.addSystemCommand(&.{ "setsid", "-f", "tracy", "-a", "localhost" });
+            const tracy_cmd = b.addSystemCommand(&.{
+                "setsid", //
+                "-f", "tracy", //
+                "-a", "localhost", //
+            });
             run_cmd.step.dependOn(&tracy_cmd.step);
         }
     }
@@ -341,9 +346,12 @@ pub const PluginModule = struct {
     schema_path: std.Build.LazyPath,
 };
 
-pub fn createPluginModule(b: *std.Build, options: CreatePluginModuleOptions) *PluginModule {
+pub fn createPluginModule(
+    b: *std.Build,
+    options: CreatePluginModuleOptions,
+) *PluginModule {
     const wasm_target = b.resolveTargetQuery(.{
-        // unfortunatly as of zig 0.14 support for wasm64/memory64 is not yet implemented:
+        // as of zig 0.14 support for wasm64 is not yet implemented:
         // https://ziglang.org/download/0.14.0/release-notes.html#Support-Table#:~:text=wasm64-wasi
         .cpu_arch = .wasm32,
         .os_tag = .wasi,
@@ -363,7 +371,9 @@ pub fn createPluginModule(b: *std.Build, options: CreatePluginModuleOptions) *Pl
             .relaxed_simd,
             .simd128,
             .tail_call, // breaks wasm2wat
-            // .atomics, // probably part of threads support, which zig does not have for wasm
+
+            // probably part of threads support, which zig does not support
+            // .atomics,
 
             // Unsupprted by wasmtime:
             // .exception_handling,
@@ -431,7 +441,11 @@ pub const PluginCompile = struct {
     bin: *std.Build.Step.Compile,
     schema_install: *std.Build.Step.InstallFile,
 
-    pub fn installPlugin(compile: *PluginCompile, b: *std.Build, rel_out_dir: []const u8) *std.Build.Step.InstallArtifact {
+    pub fn installPlugin(
+        compile: *PluginCompile,
+        b: *std.Build,
+        rel_out_dir: []const u8,
+    ) *std.Build.Step.InstallArtifact {
         const schema_path = b.pathJoin(&.{ rel_out_dir, "plugin.zon" });
         compile.schema_install.dest_rel_path = schema_path;
 
@@ -463,7 +477,8 @@ pub fn addPlugin(b: *std.Build, options: PluginOptions) *PluginCompile {
     bin.import_memory = true;
     bin.export_memory = true;
 
-    // bin.shared_memory = true; // not supported until we have wasm thread support
+    // not supported until we have wasm thread support
+    // bin.shared_memory = true;
 
     // @NOTE:
     //  Might be worth having the schema be described directly in build.zig
@@ -476,7 +491,8 @@ pub fn addPlugin(b: *std.Build, options: PluginOptions) *PluginCompile {
     //  Also since we're talking about schema files here:
     //  I might as well add that at some point an inter-plugin dependancy system
     //  would be a good idea
-    const schema_install = b.addInstallFile(options.root_module.schema_path, "/");
+    const schema_install =
+        b.addInstallFile(options.root_module.schema_path, "/");
     bin.step.dependOn(&schema_install.step);
 
     const compile = b.allocator.create(PluginCompile) catch @panic("oom");
