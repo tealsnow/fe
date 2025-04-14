@@ -7,23 +7,39 @@ const log = std.log.scoped(.@"fe[wl]");
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
+const wp = wayland.client.wp;
 const xdg = wayland.client.xdg;
 const Fixed = wl.Fixed;
 
 const xkb = @import("xkbcommon");
 
+const gio = @cImport({
+    @cInclude("gio/gio.h");
+});
+
 // @TODO:
+//   @[ ]: wgpu intergration
+//
+//   @[ ]: setup cu
+//
 //   @[ ]: pointer gestures
 //     https://wayland.app/protocols/pointer-gestures-unstable-v1
 //
-//   @[ ]: cursor shape
+//   @[ ]: xdg-desktop-portal
+//     @[x]: cursor theme and size
+//     @[ ]: desktop theme / appearance
+//     @[ ]: listen to changes
+//
+//   @[ ]: window rounding - cu?
+//
+//   @[ ]: window shadows - cu?
+//
+//   @[ ]: cu: window border
+//
+//   @[x]: cursor shape
 //     https://wayland.app/protocols/cursor-shape-v1
 //
 //   @[x]: out of window resizing
-//
-//   @[ ]: window rounding
-//
-//   @[ ]: xdg-desktop-portal
 
 pub fn entry(gpa: Allocator) !void {
     try run(gpa);
@@ -32,8 +48,6 @@ pub fn entry(gpa: Allocator) !void {
 }
 
 fn run(gpa: Allocator) !void {
-    _ = gpa;
-
     const wl_display = try wl.Display.connect(null);
     defer wl_display.disconnect();
 
@@ -47,15 +61,25 @@ fn run(gpa: Allocator) !void {
         &wl_registry_listener_data,
     );
 
+    // gather globals
     if (wl_display.roundtrip() != .SUCCESS) return error.wl;
 
-    const wl_compositor = wl_registry_listener_data.wl_compositor.?;
+    const wl_compositor = wl_registry_listener_data.wl_compositor orelse {
+        log.err("failed to get wl_compositor", .{});
+        return;
+    };
     defer wl_compositor.destroy();
 
-    const wl_shared_memory = wl_registry_listener_data.wl_shared_memory.?;
+    const wl_shared_memory = wl_registry_listener_data.wl_shared_memory orelse {
+        log.err("failed to get wl_shared_memory", .{});
+        return;
+    };
     defer wl_shared_memory.destroy();
 
-    const wl_seat = wl_registry_listener_data.wl_seat.?;
+    const wl_seat = wl_registry_listener_data.wl_seat orelse {
+        log.err("failed to get wl_seat", .{});
+        return;
+    };
     defer wl_seat.destroy();
 
     const xkb_context = xkb.Context.new(.no_flags) orelse return error.xkb;
@@ -88,14 +112,157 @@ fn run(gpa: Allocator) !void {
         wlSeatListener,
         &wl_seat_listener_data,
     );
-    defer {
-        if (wl_seat_listener_data.wl_keyboard) |wl_keyboard|
-            wl_keyboard.destroy();
-        if (wl_seat_listener_data.wl_pointer) |wl_pointer|
-            wl_pointer.destroy();
-    }
 
-    const xdg_wm_base = wl_registry_listener_data.xdg_wm_base.?;
+    // gather wl_seat items
+    if (wl_display.roundtrip() != .SUCCESS) return error.wl;
+
+    const wl_keyboard = wl_seat_listener_data.wl_keyboard orelse {
+        log.err("failed to get wl_keyboard", .{});
+        return;
+    };
+    defer wl_keyboard.destroy();
+
+    const wl_pointer = wl_seat_listener_data.wl_pointer orelse {
+        log.err("failed to get wl_pointer", .{});
+        return;
+    };
+    defer wl_pointer.destroy();
+
+    // @TODO: move wl_keyboard and wl_pointer listener installation here
+
+    // @TODO: listen to changes in these settings
+    // @TODO: get appearance (theme)
+    var gio_err: ?*gio.GError = null;
+    const xdp_settings_proxy = gio.g_dbus_proxy_new_for_bus_sync(
+        gio.G_BUS_TYPE_SESSION,
+        gio.G_DBUS_PROXY_FLAGS_NONE,
+        null,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+        null,
+        @ptrCast(&gio_err),
+    );
+    if (xdp_settings_proxy == null) {
+        const err = gio_err.?;
+        log.err(
+            "Failed to create proxy for xdg desktop settings portal: " ++
+                "domain: {d}, code: {d} -- {s}\n",
+            .{ err.domain, err.code, err.message },
+        );
+        gio.g_clear_error(@ptrCast(&gio_err));
+        return error.gio;
+    }
+    defer gio.g_object_unref(xdp_settings_proxy);
+
+    const wp_cursor_shape_manager =
+        wl_registry_listener_data.wp_cursor_shape_manager;
+    defer if (wp_cursor_shape_manager) |manager| manager.destroy();
+
+    const cursor_manager = if (wp_cursor_shape_manager) |manager|
+        try CursorManager.initCursorShapeManager(
+            wl_pointer,
+            manager,
+        )
+    else manager: {
+        const cursor_theme, const cursor_theme_variant = theme: {
+            log.debug("xdp: getting cursor theme", .{});
+
+            const read_cursor_theme = gio.g_dbus_proxy_call_sync(
+                xdp_settings_proxy,
+                "Read",
+                gio.g_variant_new(
+                    "(ss)",
+                    "org.gnome.desktop.interface",
+                    "cursor-theme",
+                ),
+                gio.G_DBUS_CALL_FLAGS_NONE,
+                -1,
+                null,
+                @ptrCast(&gio_err),
+            );
+            if (read_cursor_theme == null) {
+                const err = gio_err.?;
+                log.err(
+                    "Read call to xdg desktop settings portal failed: " ++
+                        "domain: {d}, code: {d} -- {s}",
+                    .{ err.domain, err.code, err.message },
+                );
+                gio.g_clear_error(@ptrCast(&gio_err));
+                return error.gio;
+            }
+            defer gio.g_variant_unref(read_cursor_theme);
+
+            const inner1 = gio.g_variant_get_child_value(read_cursor_theme, 0);
+            defer gio.g_variant_unref(inner1);
+            const inner2 = gio.g_variant_get_variant(inner1);
+            defer gio.g_variant_unref(inner2);
+            const inner3 = gio.g_variant_get_variant(inner2);
+            const str = gio.g_variant_get_string(inner3, 0);
+
+            break :theme .{ std.mem.span(str), inner3 };
+        };
+        defer gio.g_variant_unref(cursor_theme_variant);
+
+        log.debug("xdp: got cursor theme: '{s}'", .{cursor_theme});
+
+        const cursor_size = size: {
+            log.debug("xdp: getting cursor size", .{});
+
+            const read_cursor_size = gio.g_dbus_proxy_call_sync(
+                xdp_settings_proxy,
+                "Read",
+                gio.g_variant_new(
+                    "(ss)",
+                    "org.gnome.desktop.interface",
+                    "cursor-size",
+                ),
+                gio.G_DBUS_CALL_FLAGS_NONE,
+                -1,
+                null,
+                @ptrCast(&gio_err),
+            );
+            if (read_cursor_size == null) {
+                const err = gio_err.?;
+                log.err(
+                    "Read call to xdg desktop settings portal failed: " ++
+                        "domain: {d}, code: {d} -- {s}",
+                    .{ err.domain, err.code, err.message },
+                );
+                gio.g_clear_error(@ptrCast(&gio_err));
+                return error.gio;
+            }
+            defer gio.g_variant_unref(read_cursor_size);
+
+            const inner1 = gio.g_variant_get_child_value(read_cursor_size, 0);
+            defer gio.g_variant_unref(inner1);
+            const inner2 = gio.g_variant_get_variant(inner1);
+            defer gio.g_variant_unref(inner2);
+            const inner3 = gio.g_variant_get_variant(inner2);
+            defer gio.g_variant_unref(inner3);
+
+            const i = gio.g_variant_get_int32(inner3);
+
+            break :size i;
+        };
+
+        log.debug("xpd: got cursor size: {d}", .{cursor_size});
+
+        break :manager try CursorManager.initPointerManager(
+            gpa,
+            wl_compositor,
+            wl_pointer,
+            cursor_theme,
+            cursor_size,
+            wl_shared_memory,
+        );
+    };
+    defer cursor_manager.deinit();
+
+    const xdg_wm_base = wl_registry_listener_data.xdg_wm_base orelse {
+        log.err("failed to get xdg_wm_base", .{});
+        return;
+    };
     defer xdg_wm_base.destroy();
 
     var xdg_wm_base_listener_data = XdgWmBaseListenerData{};
@@ -163,6 +330,7 @@ fn run(gpa: Allocator) !void {
 
     var alpha: u8 = 0;
     var pointer_pos = Point(f64){ .x = -1, .y = -1 };
+    var pointer_enter_serial: u32 = 0;
 
     log.info("starting main loop", .{});
 
@@ -288,16 +456,76 @@ fn run(gpa: Allocator) !void {
                         "pointer_focus: state: {s}, serial: {d}",
                         .{ @tagName(focus.state), focus.serial },
                     );
+
+                    switch (focus.state) {
+                        .enter => {
+                            pointer_enter_serial = focus.serial;
+                        },
+                        .leave => {},
+                    }
                 },
-                .pointer_motion => |motion| {
+                .pointer_motion => |motion| motion: {
                     // log.debug(
                     //     "pointer_motion: {d}x{d}",
                     //     .{ motion.x, motion.y },
                     // );
 
                     pointer_pos = motion.point;
+
+                    const inset: f64 =
+                        @floatFromInt(window.inset orelse break :motion);
+
+                    const x = pointer_pos.x;
+                    const y = pointer_pos.y;
+
+                    const width: f64 =
+                        @floatFromInt(window.bounds.size.width);
+                    const height: f64 =
+                        @floatFromInt(window.bounds.size.height);
+                    const tiling = window.tiling;
+
+                    const left = x < inset and !tiling.tiled_left;
+                    const right = x >= width - inset and !tiling.tiled_right;
+                    const top = y < inset and !tiling.tiled_top;
+                    const bottom = y >= height - inset and !tiling.tiled_bottom;
+
+                    // top left or bottom right
+                    if (top and left or bottom and right) {
+                        try cursor_manager.setCursor(
+                            pointer_enter_serial,
+                            .resize_nwse,
+                        );
+                    }
+                    // bottom left or rop right
+                    else if (bottom and left or top and right) {
+                        try cursor_manager.setCursor(
+                            pointer_enter_serial,
+                            .resize_nesw,
+                        );
+                    }
+                    // left or right
+                    else if (left or right) {
+                        try cursor_manager.setCursor(
+                            pointer_enter_serial,
+                            .resize_ew,
+                        );
+                    }
+                    // top or bottom
+                    else if (top or bottom) {
+                        try cursor_manager.setCursor(
+                            pointer_enter_serial,
+                            .resize_ns,
+                        );
+                    }
+                    // center
+                    else {
+                        try cursor_manager.setCursor(
+                            pointer_enter_serial,
+                            .default,
+                        );
+                    }
                 },
-                .pointer_button => |button| {
+                .pointer_button => |button| button: {
                     log.debug(
                         "pointer_button: state: {s}, button: {s}, serial: {d}",
                         .{
@@ -307,8 +535,9 @@ fn run(gpa: Allocator) !void {
                         },
                     );
 
+                    if (button.state != .pressed) break :button;
+
                     if (window.inset) |inset_int| resize: {
-                        if (button.state != .pressed) break :resize;
                         if (button.button != .left) break :resize;
 
                         const inset: f64 = @floatFromInt(inset_int);
@@ -336,7 +565,7 @@ fn run(gpa: Allocator) !void {
                             );
                         }
                         // top right
-                        if (top and right) {
+                        else if (top and right) {
                             xdg_toplevel.resize(
                                 wl_seat,
                                 button.serial,
@@ -344,7 +573,7 @@ fn run(gpa: Allocator) !void {
                             );
                         }
                         // bottom left
-                        if (bottom and left) {
+                        else if (bottom and left) {
                             xdg_toplevel.resize(
                                 wl_seat,
                                 button.serial,
@@ -352,7 +581,7 @@ fn run(gpa: Allocator) !void {
                             );
                         }
                         // bottom right
-                        if (bottom and right) {
+                        else if (bottom and right) {
                             xdg_toplevel.resize(
                                 wl_seat,
                                 button.serial,
@@ -482,12 +711,14 @@ const WlRegistryListenerData = struct {
     wl_shared_memory: ?*wl.Shm,
     wl_seat: ?*wl.Seat,
     xdg_wm_base: ?*xdg.WmBase,
+    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
 
     pub const empty = WlRegistryListenerData{
         .wl_compositor = null,
         .wl_shared_memory = null,
         .wl_seat = null,
         .xdg_wm_base = null,
+        .wp_cursor_shape_manager = null,
     };
 };
 
@@ -502,7 +733,7 @@ fn wlRegistryListener(
     };
 
     log.debug(
-        "wl: got global interface: '{s}', version: {d}",
+        "got global interface: '{s}', version: {d}",
         .{ global.interface, global.version },
     );
 
@@ -516,6 +747,8 @@ fn wlRegistryListener(
             wl.Compositor,
             6,
         ) catch @panic("could not bind wayland compositor");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
     } else if (mem.orderZ(
         u8,
         global.interface,
@@ -526,6 +759,8 @@ fn wlRegistryListener(
             wl.Shm,
             2,
         ) catch @panic("could not bind wayland shared memory");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
     } else if (mem.orderZ(
         u8,
         global.interface,
@@ -536,6 +771,8 @@ fn wlRegistryListener(
             wl.Seat,
             8,
         ) catch @panic("could not bind wayland seat");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
     } else if (mem.orderZ(
         u8,
         global.interface,
@@ -546,6 +783,20 @@ fn wlRegistryListener(
             xdg.WmBase,
             6,
         ) catch @panic("could not bind xdg wm_base");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
+    } else if (mem.orderZ(
+        u8,
+        global.interface,
+        wp.CursorShapeManagerV1.interface.name,
+    ) == .eq) {
+        data.wp_cursor_shape_manager = registry.bind(
+            global.name,
+            wp.CursorShapeManagerV1,
+            1,
+        ) catch @panic("could not bind wp cursor_shape_manager");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
     }
 }
 
@@ -1001,18 +1252,18 @@ fn wlPointerListener(
 
     switch (event) {
         .enter => |enter| {
-            data.focus = .{
-                .state = .enter,
-                .serial = enter.serial,
-                .wl_surface = enter.surface,
-            };
-
             // It makes more sense to put all motion interpreting in one place
             data.motion = .{
                 .point = .{
                     .x = enter.surface_x.toDouble(),
                     .y = enter.surface_y.toDouble(),
                 },
+            };
+
+            data.focus = .{
+                .state = .enter,
+                .serial = enter.serial,
+                .wl_surface = enter.surface,
             };
         },
         .leave => |leave| {
@@ -1583,4 +1834,312 @@ const PixelData = struct {
             data.* = try configure(size, wl_shared_memory);
         }
     }
+};
+
+// =============================================================================
+// = CursorManager
+
+pub const CursorManager = union(enum) {
+    pointer: PointerManager,
+    cursor_shape: CursorShapeManager,
+
+    pub fn initPointerManager(
+        gpa: Allocator,
+        wl_compositor: *wl.Compositor,
+        wl_pointer: *wl.Pointer,
+        theme_name: [:0]const u8,
+        theme_size: i32,
+        wl_shm: *wl.Shm,
+    ) !CursorManager {
+        return .{
+            .pointer = try .init(
+                gpa,
+                wl_compositor,
+                wl_pointer,
+                theme_name,
+                theme_size,
+                wl_shm,
+            ),
+        };
+    }
+
+    pub fn initCursorShapeManager(
+        wl_pointer: *wl.Pointer,
+        wp_cursor_shape_manager: *wp.CursorShapeManagerV1,
+    ) !CursorManager {
+        const device = try wp_cursor_shape_manager.getPointer(wl_pointer);
+        return .{
+            .cursor_shape = .{
+                .wp_cursor_shape_device = device,
+            },
+        };
+    }
+
+    pub fn deinit(manager: CursorManager) void {
+        switch (manager) {
+            .pointer => |pointer| pointer.deinit(),
+            .cursor_shape => {},
+        }
+    }
+
+    pub fn setCursor(
+        manager: CursorManager,
+        enter_event_serial: u32,
+        kind: CursorKind,
+    ) !void {
+        switch (manager) {
+            .pointer => |*pointer| try pointer.setCursor(enter_event_serial, kind),
+            .cursor_shape => |shape| shape.setCursor(enter_event_serial, kind),
+        }
+    }
+
+    const PointerManager = struct {
+        wl_compositor: *wl.Compositor,
+        wl_pointer: *wl.Pointer,
+        wl_cursor_theme: *wl.CursorTheme,
+        map: *CursorMap,
+
+        pub fn init(
+            gpa: Allocator,
+            wl_compositor: *wl.Compositor,
+            wl_pointer: *wl.Pointer,
+            theme_name: [:0]const u8,
+            theme_size: i32,
+            wl_shm: *wl.Shm,
+        ) !PointerManager {
+            const wl_cursor_theme = try wl.CursorTheme.load(
+                theme_name,
+                theme_size,
+                wl_shm,
+            );
+
+            const map = try gpa.create(CursorMap);
+            map.* = .init(gpa);
+
+            return .{
+                .wl_compositor = wl_compositor,
+                .wl_pointer = wl_pointer,
+                .wl_cursor_theme = wl_cursor_theme,
+                .map = map,
+            };
+        }
+
+        pub fn deinit(manager: PointerManager) void {
+            for (manager.map.values()) |val| {
+                val.surface.destroy();
+                // val.buffer.destroy();
+            }
+
+            manager.wl_cursor_theme.destroy();
+
+            const gpa = manager.map.allocator;
+            manager.map.deinit();
+            gpa.destroy(manager.map);
+        }
+
+        pub fn setCursor(
+            manager: PointerManager,
+            enter_event_serial: u32,
+            kind: CursorKind,
+        ) !void {
+            const storage = if (manager.map.get(kind)) |storage|
+                storage
+            else blk: {
+                const name = switch (kind) {
+                    .default => "default",
+
+                    .context_menu => "context-menu",
+                    .help => "help",
+                    .pointer => "pointer",
+                    .progress => "progress",
+                    .wait => "wait",
+                    .cell => "cell",
+                    .crosshair => "crosshair",
+
+                    .text => "text",
+                    .text_vertical => "vertical-text",
+
+                    .dnd_alias => "alias",
+                    .dnd_copy => "copy",
+                    .dnd_move => "move",
+                    .dnd_no_drop => "no-drop",
+                    .dnd_not_allowed => "not-allowed",
+                    .dnd_grab => "grab",
+                    .dnd_grabbing => "grabbing",
+                    .dnd_ask => return,
+
+                    .resize_e => "e-resize",
+                    .resize_n => "n-resize",
+                    .resize_ne => "ne-resize",
+                    .resize_nw => "nw-resize",
+                    .resize_s => "s-resize",
+                    .resize_se => "se-resize",
+                    .resize_sw => "sw-resize",
+                    .resize_w => "w-resize",
+                    .resize_ew => "ew-resize",
+                    .resize_ns => "ns-resize",
+                    .resize_nesw => "nesw-resize",
+                    .resize_nwse => "nwse-resize",
+                    .resize_col => "col-resize",
+                    .resize_row => "row-resize",
+                    .resize_all => return,
+
+                    .all_scroll => "all-scroll",
+
+                    .zoom_in => "zoom-in",
+                    .zoom_out => "zoom-out",
+                };
+
+                const cursor =
+                    manager.wl_cursor_theme.getCursor(name) orelse {
+                        log.err("failed to get cursor '{s}'", .{name});
+                        return;
+                    };
+
+                const images = cursor.images[0..cursor.image_count];
+                if (images.len > 1)
+                    log.warn(
+                        "more than one cursor image ({d}): TODO",
+                        .{images.len},
+                    );
+
+                const image = images[0];
+
+                const buffer = try image.getBuffer();
+                // defer buffer.destroy();
+
+                const surface = try manager.wl_compositor.createSurface();
+                // defer surface.destroy();
+
+                const storage = CursorStorage{
+                    .image = image,
+                    .buffer = buffer,
+                    .surface = surface,
+                };
+
+                try manager.map.put(kind, storage);
+
+                break :blk storage;
+            };
+
+            storage.surface.attach(storage.buffer, 0, 0);
+            storage.surface.commit();
+            manager.wl_pointer.setCursor(
+                enter_event_serial,
+                storage.surface,
+                @intCast(storage.image.hotspot_x),
+                @intCast(storage.image.hotspot_y),
+            );
+        }
+
+        const CursorMap = std.AutoArrayHashMap(CursorKind, CursorStorage);
+
+        const CursorStorage = struct {
+            image: *wl.CursorImage,
+            buffer: *wl.Buffer,
+            surface: *wl.Surface,
+        };
+    };
+
+    const CursorShapeManager = struct {
+        wp_cursor_shape_device: *wp.CursorShapeDeviceV1,
+
+        pub fn setCursor(
+            manager: CursorShapeManager,
+            enter_event_serial: u32,
+            kind: CursorKind,
+        ) void {
+            const shape: wp.CursorShapeDeviceV1.Shape = switch (kind) {
+                .default => .default,
+                .context_menu => .context_menu,
+                .help => .help,
+                .pointer => .pointer,
+                .progress => .progress,
+                .wait => .wait,
+                .cell => .cell,
+                .crosshair => .crosshair,
+
+                .text => .text,
+                .text_vertical => .vertical_text,
+
+                .dnd_alias => .alias,
+                .dnd_copy => .copy,
+                .dnd_move => .move,
+                .dnd_no_drop => .no_drop,
+                .dnd_not_allowed => .not_allowed,
+                .dnd_grab => .grab,
+                .dnd_grabbing => .grabbing,
+                // .dnd_ask => .dnd_ask,
+
+                .resize_e => .e_resize,
+                .resize_n => .n_resize,
+                .resize_ne => .ne_resize,
+                .resize_nw => .nw_resize,
+                .resize_s => .s_resize,
+                .resize_se => .se_resize,
+                .resize_sw => .sw_resize,
+                .resize_w => .w_resize,
+                .resize_ew => .ew_resize,
+                .resize_ns => .ns_resize,
+                .resize_nesw => .nesw_resize,
+                .resize_nwse => .nwse_resize,
+                .resize_col => .col_resize,
+                .resize_row => .row_resize,
+                // .resize_all => .all_resize,
+
+                .all_scroll => .all_scroll,
+
+                .zoom_in => .zoom_in,
+                .zoom_out => .zoom_out,
+
+                else => return,
+            };
+
+            manager.wp_cursor_shape_device.setShape(enter_event_serial, shape);
+        }
+    };
+};
+
+pub const CursorKind = enum {
+    default,
+    context_menu,
+    help,
+    pointer,
+    progress,
+    wait,
+    cell,
+    crosshair,
+
+    text,
+    text_vertical,
+
+    dnd_alias,
+    dnd_copy,
+    dnd_move,
+    dnd_no_drop,
+    dnd_not_allowed,
+    dnd_grab,
+    dnd_grabbing,
+    dnd_ask, // v2
+
+    resize_e,
+    resize_n,
+    resize_ne,
+    resize_nw,
+    resize_s,
+    resize_se,
+    resize_sw,
+    resize_w,
+    resize_ew,
+    resize_ns,
+    resize_nesw,
+    resize_nwse,
+    resize_col,
+    resize_row,
+    resize_all, // v2
+
+    all_scroll,
+
+    zoom_in,
+    zoom_out,
 };

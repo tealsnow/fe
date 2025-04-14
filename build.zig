@@ -173,18 +173,25 @@ pub fn build(b: *std.Build) void {
                 });
 
                 scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+                scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
+                scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
 
                 scanner.generate("wl_compositor", 6);
                 scanner.generate("wl_shm", 2);
                 scanner.generate("xdg_wm_base", 6);
                 scanner.generate("wl_seat", 8);
+                scanner.generate("wp_cursor_shape_manager_v1", 1);
 
                 mod.addImport("wayland", wayland);
                 mod.linkSystemLibrary("wayland-client", .{ .needed = true });
+                mod.linkSystemLibrary("wayland-cursor", .{ .needed = true });
 
                 if (xkbcommon) |m|
                     mod.addImport("xkbcommon", m.module("xkbcommon"));
                 mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
+
+                mod.addSystemIncludePath(b.path("glib-2.0"));
+                mod.linkSystemLibrary("gio-2", .{ .needed = true });
             },
         }
 

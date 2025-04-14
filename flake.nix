@@ -60,6 +60,8 @@
             wayland
             wayland-protocols
             wayland-scanner
+
+            glib
           ];
 
           env = {
