@@ -8,8 +8,22 @@ const log = std.log.scoped(.@"fe[wl]");
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const xdg = wayland.client.xdg;
+const Fixed = wl.Fixed;
 
 const xkb = @import("xkbcommon");
+
+// @TODO:
+//   @[ ]: pointer gestures
+//     https://wayland.app/protocols/pointer-gestures-unstable-v1
+//
+//   @[ ]: cursor shape
+//     https://wayland.app/protocols/cursor-shape-v1
+//
+//   @[x]: out of window resizing
+//
+//   @[ ]: window rounding
+//
+//   @[ ]: xdg-desktop-portal
 
 pub fn entry(gpa: Allocator) !void {
     try run(gpa);
@@ -84,10 +98,7 @@ fn run(gpa: Allocator) !void {
     const xdg_wm_base = wl_registry_listener_data.xdg_wm_base.?;
     defer xdg_wm_base.destroy();
 
-    var xdg_wm_base_listener_data = XdgWmBaseListenerData{
-        .event_queue = &event_queue,
-    };
-
+    var xdg_wm_base_listener_data = XdgWmBaseListenerData{};
     xdg_wm_base.setListener(
         *XdgWmBaseListenerData,
         &xdgWmBaseListener,
@@ -138,21 +149,24 @@ fn run(gpa: Allocator) !void {
         &wl_frame_callback_listener_data,
     );
 
-    const initial_width = 800;
-    const initial_height = 600;
-
-    var buffer_data = try BufferData.configure(
-        initial_width,
-        initial_height,
-        wl_shared_memory,
+    const initial_size = Size(u32){ .width = 200, .height = 200 };
+    var window = Window.init(
+        initial_size,
+        try PixelData.configure(
+            initial_size,
+            wl_shared_memory,
+        ),
     );
-    defer buffer_data.deinit();
+    defer window.deinit();
 
-    wl_surface.commit();
+    window.inset = 10;
 
     var alpha: u8 = 0;
+    var pointer_pos = Point(f64){ .x = -1, .y = -1 };
 
     log.info("starting main loop", .{});
+
+    wl_surface.commit();
 
     main_loop: while (true) {
         // run listeners
@@ -165,29 +179,40 @@ fn run(gpa: Allocator) !void {
 
         while (event_queue.dequeue()) |event| {
             switch (event.kind) {
-                .ping => |ping| {
-                    // inform the compositor that we are not blocked
-
-                    ping.xdg_wm_base.pong(ping.serial);
-                },
-
                 .surface_configure => |configure| {
                     // surface requested a rerender
                     // acknowledge configure and mark for render
 
                     configure.xdg_surface.ackConfigure(configure.serial);
+
+                    // window gemetry excludes CSD
+                    const window_gemoetry = window.innerBounds();
+
+                    xdg_surface.setWindowGeometry(
+                        window_gemoetry.origin.x,
+                        window_gemoetry.origin.y,
+                        window_gemoetry.size.width,
+                        window_gemoetry.size.height,
+                    );
+
                     do_render = true;
                 },
 
                 .toplevel_configure => |conf| {
                     // mostly just a resize event
 
-                    const width = if (conf.width) |w| w else initial_width;
-                    const height = if (conf.height) |h| h else initial_height;
+                    window.tiling = conf.state;
 
-                    try buffer_data.reconfigure(
-                        width,
-                        height,
+                    // this size is in terms of window geometry
+                    // so we need to add back our inset to get the actual size
+                    const new_size = conf.size orelse initial_size;
+                    const size =
+                        computeOuterSize(window.inset, new_size, conf.state);
+
+                    window.bounds.size = size;
+
+                    try window.pixel_data.reconfigure(
+                        size,
                         wl_shared_memory,
                     );
 
@@ -226,6 +251,10 @@ fn run(gpa: Allocator) !void {
                             key.codepoint,
                         },
                     );
+
+                    if (key.state == .pressed and key.codepoint == 'w') {
+                        std.Thread.sleep(std.time.ns_per_s * 2);
+                    }
                 },
 
                 .modifier => |mods| {
@@ -244,7 +273,7 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .text => |text| {
-                    const utf8 = std.mem.sliceTo(&text.utf8, 0);
+                    const utf8 = text.sliceZ();
                     log.debug(
                         "text: codepoint: 0x{x}, text: '{s}'",
                         .{
@@ -261,11 +290,12 @@ fn run(gpa: Allocator) !void {
                     );
                 },
                 .pointer_motion => |motion| {
-                    _ = motion;
                     // log.debug(
                     //     "pointer_motion: {d}x{d}",
                     //     .{ motion.x, motion.y },
                     // );
+
+                    pointer_pos = motion.point;
                 },
                 .pointer_button => |button| {
                     log.debug(
@@ -276,6 +306,96 @@ fn run(gpa: Allocator) !void {
                             button.serial,
                         },
                     );
+
+                    if (window.inset) |inset_int| resize: {
+                        if (button.state != .pressed) break :resize;
+                        if (button.button != .left) break :resize;
+
+                        const inset: f64 = @floatFromInt(inset_int);
+
+                        const x = pointer_pos.x;
+                        const y = pointer_pos.y;
+
+                        const width: f64 =
+                            @floatFromInt(window.bounds.size.width);
+                        const height: f64 =
+                            @floatFromInt(window.bounds.size.height);
+                        const tiling = window.tiling;
+
+                        const left = x < inset and !tiling.tiled_left;
+                        const right = x >= width - inset and !tiling.tiled_right;
+                        const top = y < inset and !tiling.tiled_top;
+                        const bottom = y >= height - inset and !tiling.tiled_bottom;
+
+                        // top left
+                        if (top and left) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .top_left,
+                            );
+                        }
+                        // top right
+                        if (top and right) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .top_right,
+                            );
+                        }
+                        // bottom left
+                        if (bottom and left) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .bottom_left,
+                            );
+                        }
+                        // bottom right
+                        if (bottom and right) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .bottom_right,
+                            );
+                        }
+                        // left
+                        else if (left) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .left,
+                            );
+                        }
+                        // right
+                        else if (right) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .right,
+                            );
+                        }
+                        // top
+                        else if (top) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .top,
+                            );
+                        }
+                        // bottom
+                        else if (bottom) {
+                            xdg_toplevel.resize(
+                                wl_seat,
+                                button.serial,
+                                .bottom,
+                            );
+                        }
+                    }
+
+                    if (button.button == .left) {
+                        xdg_toplevel.move(wl_seat, button.serial);
+                    }
                 },
                 .pointer_scroll => |scroll| {
                     log.debug(
@@ -293,21 +413,61 @@ fn run(gpa: Allocator) !void {
         }
 
         if (do_render) {
+            const pixel_data = window.pixel_data;
+
             const pixels_u32 =
-                @as([*]u32, @ptrCast(@alignCast(buffer_data.pixels.ptr))) //
-                [0..(buffer_data.width * buffer_data.height)];
-            @memset(
-                pixels_u32,
-                0x00f4597b | (@as(u32, @intCast(alpha)) << 24),
-            );
+                @as([*]u32, @ptrCast(@alignCast(pixel_data.pixels.ptr))) //
+                [0..(pixel_data.size.width * pixel_data.size.height)];
+
+            const pink = 0x00f4597b | (@as(u32, @intCast(alpha)) << 24);
+
+            if (window.inset) |inset| {
+                for (0..pixel_data.size.height) |y| {
+                    for (0..pixel_data.size.width) |x| {
+                        const i = y * pixel_data.size.width + x;
+
+                        // left
+                        if (x < inset and !window.tiling.tiled_left) {
+                            pixels_u32[i] = 0xff_ff_00_00;
+                            // pixels_u32[i] = 0x00000000;
+                        }
+                        // right
+                        else if (x >= pixel_data.size.width - inset and
+                            !window.tiling.tiled_right)
+                        {
+                            pixels_u32[i] = 0xff_00_ff_00;
+                            // pixels_u32[i] = 0x00000000;
+                        }
+                        // top
+                        else if (y < inset and !window.tiling.tiled_top) {
+                            pixels_u32[i] = 0xff_00_00_ff;
+                            // pixels_u32[i] = 0x00000000;
+                        }
+                        // bottom
+                        else if (y >= pixel_data.size.height - inset and
+                            !window.tiling.tiled_bottom)
+                        {
+                            pixels_u32[i] = 0xff_ff_ff_00;
+                            // pixels_u32[i] = 0x00000000;
+                        }
+                        // content
+                        else {
+                            pixels_u32[i] = pink;
+                        }
+                    }
+                }
+            } else {
+                @memset(pixels_u32, pink);
+            }
+
             alpha +%= 1;
 
-            wl_surface.attach(buffer_data.wl_buffer, 0, 0);
+            wl_surface.attach(pixel_data.wl_buffer, 0, 0);
             wl_surface.damageBuffer(
                 0,
                 0,
-                @intCast(buffer_data.width),
-                @intCast(buffer_data.height),
+                @intCast(pixel_data.size.width),
+                @intCast(pixel_data.size.height),
             );
             wl_surface.commit();
         }
@@ -340,6 +500,11 @@ fn wlRegistryListener(
         .global => |global| global,
         .global_remove => return,
     };
+
+    log.debug(
+        "wl: got global interface: '{s}', version: {d}",
+        .{ global.interface, global.version },
+    );
 
     if (mem.orderZ(
         u8,
@@ -387,23 +552,17 @@ fn wlRegistryListener(
 // =============================================================================
 // = xdg wm base
 
-const XdgWmBaseListenerData = struct {
-    event_queue: *EventQueue,
-};
+const XdgWmBaseListenerData = struct {};
 
 fn xdgWmBaseListener(
     xdg_wm_base: *xdg.WmBase,
     event: xdg.WmBase.Event,
     data: *XdgWmBaseListenerData,
 ) void {
+    _ = data;
     switch (event) {
         .ping => |ping| {
-            data.event_queue.queue(.{ .kind = .{
-                .ping = .{
-                    .xdg_wm_base = xdg_wm_base,
-                    .serial = ping.serial,
-                },
-            } });
+            xdg_wm_base.pong(ping.serial);
         },
     }
 }
@@ -451,23 +610,42 @@ fn xdgToplevelListener(
 
     switch (event) {
         .configure => |configure| {
+            const size: ?Size(u32) =
+                if (configure.width == 0 or configure.height == 0)
+                    null
+                else
+                    .{
+                        .width = @intCast(configure.width),
+                        .height = @intCast(configure.height),
+                    };
+
+            var state = Event.ToplevelConfigureState{};
             const states = configure.states.slice(xdg.Toplevel.State);
-
-            const width: ?u32 = if (configure.width == 0)
-                null
-            else
-                @intCast(configure.width);
-
-            const height: ?u32 = if (configure.height == 0)
-                null
-            else
-                @intCast(configure.height);
+            for (states) |s| {
+                if (s == .maximized)
+                    state.maximized = true;
+                if (s == .fullscreen)
+                    state.fullscreen = true;
+                if (s == .resizing)
+                    state.resizing = true;
+                if (s == .activated)
+                    state.activated = true;
+                if (s == .tiled_left)
+                    state.tiled_left = true;
+                if (s == .tiled_right)
+                    state.tiled_right = true;
+                if (s == .tiled_top)
+                    state.tiled_top = true;
+                if (s == .tiled_bottom)
+                    state.tiled_bottom = true;
+                if (s == .suspended)
+                    state.suspended = true;
+            }
 
             data.event_queue.queue(.{ .kind = .{
                 .toplevel_configure = .{
-                    .width = width,
-                    .height = height,
-                    .states = states,
+                    .size = size,
+                    .state = state,
                 },
             } });
         },
@@ -515,70 +693,6 @@ fn wlFrameCallbackListener(
         data,
     );
 }
-
-// =============================================================================
-// = BufferData
-
-const BufferData = struct {
-    wl_buffer: *wl.Buffer,
-    pixels: []u8,
-    width: u32,
-    height: u32,
-
-    pub fn configure(
-        width: u32,
-        height: u32,
-        wl_shared_memory: *wl.Shm,
-    ) !BufferData {
-        const size = width * height * 4;
-
-        const fd = try std.posix.memfd_create("fe-wl_shm", 0);
-        try std.posix.ftruncate(fd, size);
-
-        const pixels = try std.posix.mmap(
-            null,
-            size,
-            std.posix.PROT.READ | std.posix.PROT.WRITE,
-            std.posix.MAP{ .TYPE = .SHARED },
-            fd,
-            0,
-        );
-
-        const pool = try wl_shared_memory.createPool(fd, @intCast(size));
-        defer pool.destroy();
-
-        const wl_buffer = try pool.createBuffer(
-            0,
-            @intCast(width),
-            @intCast(height),
-            @intCast(width * 4),
-            .argb8888,
-        );
-
-        return .{
-            .wl_buffer = wl_buffer,
-            .pixels = pixels,
-            .width = width,
-            .height = height,
-        };
-    }
-
-    pub fn deinit(data: BufferData) void {
-        data.wl_buffer.destroy();
-    }
-
-    pub fn reconfigure(
-        data: *BufferData,
-        width: u32,
-        height: u32,
-        wl_shared_memory: *wl.Shm,
-    ) !void {
-        if (data.width != width or data.height != height) {
-            data.deinit();
-            data.* = try configure(width, height, wl_shared_memory);
-        }
-    }
-};
 
 // =============================================================================
 // = wl seat
@@ -895,8 +1009,10 @@ fn wlPointerListener(
 
             // It makes more sense to put all motion interpreting in one place
             data.motion = .{
-                .x = enter.surface_x.toDouble(),
-                .y = enter.surface_y.toDouble(),
+                .point = .{
+                    .x = enter.surface_x.toDouble(),
+                    .y = enter.surface_y.toDouble(),
+                },
             };
         },
         .leave => |leave| {
@@ -910,8 +1026,10 @@ fn wlPointerListener(
             data.time = motion.time;
 
             data.motion = .{
-                .x = motion.surface_x.toDouble(),
-                .y = motion.surface_y.toDouble(),
+                .point = .{
+                    .x = motion.surface_x.toDouble(),
+                    .y = motion.surface_y.toDouble(),
+                },
             };
         },
         .button => |button| button: {
@@ -1083,9 +1201,11 @@ fn wlPointerListener(
 // = Event plumbing
 
 /// Will be faster (if only marginal) with a power of 2 Size
-pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
+///
+/// This has no checking for overwriting
+pub fn CircleBufferQueue(comptime size: usize, comptime T: type) type {
     return struct {
-        buffer: [Size]T,
+        buffer: [size]T,
         head: usize,
         tail: usize,
 
@@ -1099,34 +1219,32 @@ pub fn CircleBufferQueue(comptime Size: usize, comptime T: type) type {
 
         pub fn queue(self: *Queue, item: T) void {
             self.buffer[self.head] = item;
-            self.head = (self.head + 1) % Size;
+            self.head = (self.head + 1) % size;
         }
 
         pub fn dequeue(self: *Queue) ?T {
             if (self.tail == self.head) return null;
 
             const item = self.buffer[self.tail];
-            self.tail = (self.tail + 1) % Size;
+            self.tail = (self.tail + 1) % size;
             return item;
         }
 
-        pub fn size(self: *Queue) usize {
-            return (self.head -% self.tail +% Size) % Size;
+        pub fn count(self: *Queue) usize {
+            return (self.head -% self.tail +% size) % size;
         }
     };
 }
 
-// @NOTE: maybe 32 is too high, maybe not
-//  not sure what happens when the loop is blocked for a time
-pub const EventQueue = CircleBufferQueue(32, Event);
+// set to 8 max as a conservative measure, I have not seen more than 3 in my
+// testing, but different compositors could act different
+pub const EventQueue = CircleBufferQueue(8, Event);
 
 pub const Event = struct {
     kind: Kind,
     time: ?u32 = null, // ms
 
     pub const Kind = union(enum) {
-        ping: Ping,
-
         surface_configure: SurfaceConfigure,
 
         toplevel_configure: ToplevelConfigure,
@@ -1167,9 +1285,29 @@ pub const Event = struct {
     };
 
     pub const ToplevelConfigure = struct {
-        width: ?u32,
-        height: ?u32,
-        states: []xdg.Toplevel.State,
+        size: ?Size(u32),
+        state: ToplevelConfigureState,
+    };
+
+    pub const ToplevelConfigureState = packed struct {
+        maximized: bool = false,
+        fullscreen: bool = false,
+        resizing: bool = false,
+        activated: bool = false,
+        tiled_left: bool = false,
+        tiled_right: bool = false,
+        tiled_top: bool = false,
+        tiled_bottom: bool = false,
+        suspended: bool = false,
+
+        pub fn isTiled(state: ToplevelConfigureState) bool {
+            return state.maximized or
+                state.fullscreen or
+                (state.tiled_left and
+                    state.tiled_right and
+                    state.tiled_top and
+                    state.tiled_bottom);
+        }
     };
 
     pub const KeyboardFocus = struct {
@@ -1194,6 +1332,15 @@ pub const Event = struct {
     pub const Text = struct {
         codepoint: u21,
         utf8: [4:0]u8,
+
+        pub fn sliceZ(text: Text) [:0]const u8 {
+            return std.mem.sliceTo(&text.utf8, 0);
+        }
+
+        pub fn slice(text: Text) []const u8 {
+            const z = text.sliceZ();
+            z[0..z.len];
+        }
     };
 
     pub const ModifierState = packed struct(u8) {
@@ -1212,8 +1359,7 @@ pub const Event = struct {
     };
 
     pub const PointerMotion = struct {
-        x: f64,
-        y: f64,
+        point: Point(f64),
     };
 
     pub const PointerButton = struct {
@@ -1251,4 +1397,190 @@ pub const Event = struct {
         continuous,
         wheel_tilt,
     };
+};
+
+// =============================================================================
+// = Math
+
+pub fn Point(comptime T: type) type {
+    return struct {
+        x: T,
+        y: T,
+
+        const Self = @This();
+
+        pub fn intCast(point: Self, comptime NT: type) Point(NT) {
+            return .{
+                .x = @intCast(point.x),
+                .y = @intCast(point.y),
+            };
+        }
+    };
+}
+
+pub fn Size(comptime T: type) type {
+    return struct {
+        width: T,
+        height: T,
+
+        const Self = @This();
+
+        pub fn intCast(size: Self, comptime NT: type) Size(NT) {
+            return .{
+                .width = @intCast(size.width),
+                .height = @intCast(size.height),
+            };
+        }
+    };
+}
+
+pub fn Bounds(comptime T: type) type {
+    return struct {
+        origin: Point(T),
+        size: Size(T),
+
+        const Self = @This();
+
+        pub fn intCast(bounds: Self, comptime NT: type) Bounds(NT) {
+            return .{
+                .origin = bounds.origin.intCast(NT),
+                .size = bounds.size.intCast(NT),
+            };
+        }
+    };
+}
+
+fn computeOuterSize(
+    window_inset: ?u32,
+    new_size: Size(u32),
+    tiling: Event.ToplevelConfigureState,
+) Size(u32) {
+    const inset = window_inset orelse return new_size;
+
+    var size = new_size;
+
+    if (!tiling.tiled_top)
+        size.height += inset;
+    if (!tiling.tiled_bottom)
+        size.height += inset;
+    if (!tiling.tiled_left)
+        size.width += inset;
+    if (!tiling.tiled_right)
+        size.width += inset;
+
+    return size;
+}
+
+fn insetBounds(
+    bounds: Bounds(u32),
+    window_inset: ?u32,
+    tiling: Event.ToplevelConfigureState,
+) Bounds(i32) {
+    var out = bounds.intCast(i32);
+    const inset: i32 = @intCast(window_inset orelse return out);
+
+    if (!tiling.tiled_top) {
+        out.origin.y += inset;
+        out.size.height -= inset;
+    }
+    if (!tiling.tiled_bottom) {
+        out.size.height -= inset;
+    }
+    if (!tiling.tiled_left) {
+        out.origin.x += inset;
+        out.size.width -= inset;
+    }
+    if (!tiling.tiled_right) {
+        out.size.width -= inset;
+    }
+
+    return out;
+}
+
+// =============================================================================
+// = Window
+
+pub const Window = struct {
+    bounds: Bounds(u32),
+    inset: ?u32,
+    tiling: Event.ToplevelConfigureState,
+
+    pixel_data: PixelData,
+
+    pub fn init(size: Size(u32), pixel_data: PixelData) Window {
+        return .{
+            .bounds = .{
+                .origin = .{ .x = 0, .y = 0 },
+                .size = size,
+            },
+            .inset = null,
+            .tiling = .{},
+            .pixel_data = pixel_data,
+        };
+    }
+
+    pub fn deinit(window: Window) void {
+        window.pixel_data.deinit();
+    }
+
+    pub fn innerBounds(window: Window) Bounds(i32) {
+        return insetBounds(window.bounds, window.inset, window.tiling);
+    }
+};
+
+const PixelData = struct {
+    wl_buffer: *wl.Buffer,
+    pixels: []u8,
+    size: Size(u32),
+
+    pub fn configure(
+        size: Size(u32),
+        wl_shared_memory: *wl.Shm,
+    ) !PixelData {
+        const len = size.width * size.height * 4;
+
+        const fd = try std.posix.memfd_create("fe-wl_shm", 0);
+        try std.posix.ftruncate(fd, len);
+
+        const pixels = try std.posix.mmap(
+            null,
+            len,
+            std.posix.PROT.READ | std.posix.PROT.WRITE,
+            std.posix.MAP{ .TYPE = .SHARED },
+            fd,
+            0,
+        );
+
+        const pool = try wl_shared_memory.createPool(fd, @intCast(len));
+        defer pool.destroy();
+
+        const wl_buffer = try pool.createBuffer(
+            0,
+            @intCast(size.width),
+            @intCast(size.height),
+            @intCast(size.width * 4),
+            .argb8888,
+        );
+
+        return .{
+            .wl_buffer = wl_buffer,
+            .pixels = pixels,
+            .size = size,
+        };
+    }
+
+    pub fn deinit(data: PixelData) void {
+        data.wl_buffer.destroy();
+    }
+
+    pub fn reconfigure(
+        data: *PixelData,
+        size: Size(u32),
+        wl_shared_memory: *wl.Shm,
+    ) !void {
+        if (data.size.width != size.width or data.size.height != size.height) {
+            data.deinit();
+            data.* = try configure(size, wl_shared_memory);
+        }
+    }
 };
