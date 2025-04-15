@@ -224,6 +224,47 @@ pub fn xdgToplevelListener(
     }
 }
 
+// // =============================================================================
+// // = xdg popup
+
+// pub const XdgPopupListenerData = struct {
+//     event_queue: *EventQueue,
+// };
+
+// pub fn xdgPopupListener(
+//     popup: *xdg.Popup,
+//     event: xdg.Popup.Event,
+//     data: *XdgPopupListenerData,
+// ) void {
+//     _ = popup;
+//     switch (event) {
+//         .configure => |configure| {
+//             data.event_queue.queue(.{ .kind = .{
+//                 .popup_configure = .{
+//                     .position = .{
+//                         .x = @intCast(configure.x),
+//                         .y = @intCast(configure.y),
+//                     },
+//                     .size = .{
+//                         .width = @intCast(configure.width),
+//                         .height = @intCast(configure.height),
+//                     },
+//                 },
+//             } });
+//         },
+//         .popup_done => {
+//             data.event_queue.queue(.{ .kind = .{
+//                 .popup_done = .{},
+//             } });
+//         },
+//         .repositioned => |repositioned| {
+//             data.event_queue.queue(.{ .kind = .{
+//                 .popup_repositioned = .{ .token = repositioned.token },
+//             } });
+//         },
+//     }
+// }
+
 // =============================================================================
 // = wl frame callback
 
@@ -285,12 +326,11 @@ pub fn wlSeatListener(
             }
 
             if (capability.pointer) {
-                log.debug("getting wl pointer", .{});
-
                 data.wl_pointer = wl_seat.getPointer() catch {
                     log.err("failed to get wl_pointer", .{});
                     return;
                 };
+                log.debug("got wl pointer", .{});
             }
         },
         .name => {},

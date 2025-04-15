@@ -57,6 +57,10 @@ pub const Event = struct {
         toplevel_configure: ToplevelConfigure,
         toplevel_close: void,
 
+        // popup_configure: PopupConfigure,
+        // popup_done: PopupDone,
+        // popup_repositioned: PopupRepositioned,
+
         frame: void,
 
         keyboard_focus: KeyboardFocus,
@@ -116,6 +120,17 @@ pub const Event = struct {
                     state.tiled_bottom);
         }
     };
+
+    // pub const PopupConfigure = struct {
+    //     position: Point(u32),
+    //     size: Size(u32),
+    // };
+
+    // pub const PopupDone = struct {};
+
+    // pub const PopupRepositioned = struct {
+    //     token: u32,
+    // };
 
     pub const KeyboardFocus = struct {
         state: FocusState,
