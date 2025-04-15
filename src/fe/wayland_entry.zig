@@ -1897,7 +1897,7 @@ pub const CursorManager = union(enum) {
         wl_compositor: *wl.Compositor,
         wl_pointer: *wl.Pointer,
         wl_cursor_theme: *wl.CursorTheme,
-        map: *CursorMap,
+        cusor_cache: *CursorMap,
 
         pub fn init(
             gpa: Allocator,
@@ -1925,16 +1925,16 @@ pub const CursorManager = union(enum) {
         }
 
         pub fn deinit(manager: PointerManager) void {
-            for (manager.map.values()) |val| {
+            for (manager.cusor_cache.values()) |val| {
                 val.surface.destroy();
                 // val.buffer.destroy();
             }
 
             manager.wl_cursor_theme.destroy();
 
-            const gpa = manager.map.allocator;
-            manager.map.deinit();
-            gpa.destroy(manager.map);
+            const gpa = manager.cusor_cache.allocator;
+            manager.cusor_cache.deinit();
+            gpa.destroy(manager.cusor_cache);
         }
 
         pub fn setCursor(
@@ -1942,7 +1942,7 @@ pub const CursorManager = union(enum) {
             enter_event_serial: u32,
             kind: CursorKind,
         ) !void {
-            const storage = if (manager.map.get(kind)) |storage|
+            const storage = if (manager.cusor_cache.get(kind)) |storage|
                 storage
             else blk: {
                 const name = switch (kind) {
@@ -2017,7 +2017,7 @@ pub const CursorManager = union(enum) {
                     .surface = surface,
                 };
 
-                try manager.map.put(kind, storage);
+                try manager.cusor_cache.put(kind, storage);
 
                 break :blk storage;
             };
