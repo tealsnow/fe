@@ -41,17 +41,7 @@ cursor_manager: CursorManager,
 
 xdg_wm_base: *xdg.WmBase,
 
-// window
-wl_surface: *wl.Surface,
-wl_frame_callback_listener_data: *listeners.WlFrameCallbackListenerData,
-
-xdg_surface_listener_data: *listeners.XdgSurfaceListenerData,
-xdg_surface: *xdg.Surface,
-
-xdg_toplevel_listener_data: *listeners.XdgToplevelListenerData,
-xdg_toplevel: *xdg.Toplevel,
-
-pub fn init(gpa: Allocator) !Connection {
+pub fn init(gpa: Allocator) !*Connection {
     const wl_display_name =
         if (try getEnvVarOwned(gpa, "WAYLAND_DISPLAY")) |name| blk: {
             defer gpa.free(name);
@@ -183,55 +173,8 @@ pub fn init(gpa: Allocator) !Connection {
         null,
     );
 
-    // -------------------------------------------------------------------------
-    // - window
-
-    const wl_surface = try wl_compositor.createSurface();
-
-    const xdg_surface = try xdg_wm_base.getXdgSurface(wl_surface);
-
-    const xdg_surface_listener_data =
-        try gpa.create(listeners.XdgSurfaceListenerData);
-    xdg_surface_listener_data.* = .{
-        .event_queue = event_queue,
-        .wl_surface = wl_surface,
-    };
-    xdg_surface.setListener(
-        *listeners.XdgSurfaceListenerData,
-        listeners.xdgSurfaceListener,
-        xdg_surface_listener_data,
-    );
-
-    const xdg_toplevel = try xdg_surface.getToplevel();
-
-    xdg_toplevel.setTitle("fe wayland 2");
-
-    const xdg_toplevel_listener_data =
-        try gpa.create(listeners.XdgToplevelListenerData);
-    xdg_toplevel_listener_data.* = .{
-        .event_queue = event_queue,
-    };
-    xdg_toplevel.setListener(
-        *listeners.XdgToplevelListenerData,
-        listeners.xdgToplevelListener,
-        xdg_toplevel_listener_data,
-    );
-
-    const wl_frame_callback = try wl_surface.frame();
-
-    const wl_frame_callback_listener_data =
-        try gpa.create(listeners.WlFrameCallbackListenerData);
-    wl_frame_callback_listener_data.* = .{
-        .event_queue = event_queue,
-        .wl_surface = wl_surface,
-    };
-    wl_frame_callback.setListener(
-        *listeners.WlFrameCallbackListenerData,
-        listeners.wlFrameCallbackListener,
-        wl_frame_callback_listener_data,
-    );
-
-    return Connection{
+    const con = try gpa.create(Connection);
+    con.* = .{
         .wl_display = wl_display,
 
         .wl_registry_listener_data = wl_registry_listener_data,
@@ -256,21 +199,13 @@ pub fn init(gpa: Allocator) !Connection {
         .cursor_manager = cursor_manager,
 
         .xdg_wm_base = xdg_wm_base,
-
-        // window
-
-        .wl_surface = wl_surface,
-        .wl_frame_callback_listener_data = wl_frame_callback_listener_data,
-
-        .xdg_surface_listener_data = xdg_surface_listener_data,
-        .xdg_surface = xdg_surface,
-
-        .xdg_toplevel_listener_data = xdg_toplevel_listener_data,
-        .xdg_toplevel = xdg_toplevel,
     };
+    return con;
 }
 
-pub fn deinit(conn: Connection, gpa: Allocator) void {
+pub fn deinit(conn: *Connection, gpa: Allocator) void {
+    defer gpa.destroy(conn);
+
     defer conn.wl_display.disconnect();
 
     defer gpa.destroy(conn.wl_registry_listener_data);
@@ -298,17 +233,6 @@ pub fn deinit(conn: Connection, gpa: Allocator) void {
     defer conn.cursor_manager.deinit();
 
     defer conn.xdg_wm_base.destroy();
-
-    // window
-
-    defer conn.wl_surface.destroy();
-    defer gpa.destroy(conn.wl_frame_callback_listener_data);
-
-    defer gpa.destroy(conn.xdg_surface_listener_data);
-    defer conn.xdg_surface.destroy();
-
-    defer gpa.destroy(conn.xdg_toplevel_listener_data);
-    defer conn.xdg_toplevel.destroy();
 }
 
 pub fn dispatch(conn: Connection) !void {

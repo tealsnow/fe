@@ -5,16 +5,11 @@ const Allocator = mem.Allocator;
 
 const log = std.log.scoped(.@"fe[wl]");
 
-const xdg = @import("wayland").client.xdg;
 const xkb = @import("xkbcommon");
 
-const Connection = @import("platform/linux/wayland/Connection.zig");
-const Window = @import("platform/linux/wayland/Window.zig");
-
-const CursorKind = @import("platform/linux/wayland/cursor_manager.zig").CursorKind;
-
-const Size = @import("math.zig").Size;
 const Point = @import("math.zig").Point;
+
+const wl = @import("platform/linux/wayland/wayland.zig");
 
 // @TODO:
 //   @[ ]: wgpu intergration
@@ -48,20 +43,19 @@ pub fn entry(gpa: Allocator) !void {
 }
 
 fn run(gpa: Allocator) !void {
-    const conn = try Connection.init(gpa);
+    const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
 
-    const initial_size = Size(u32){ .width = 200, .height = 200 };
-    var window = Window.init(
-        initial_size,
-        try Window.PixelData.configure(
-            initial_size,
-            conn.wl_shm,
-        ),
+    const window = try wl.Window.init(
+        gpa,
+        conn,
+        .{ .width = 200, .height = 200 },
     );
-    defer window.deinit();
+    defer window.deinit(gpa);
+    window.inset = 15;
 
-    window.inset = 10;
+    var surface = try window.createSurface();
+    defer surface.deinit();
 
     var alpha: u8 = 0;
     var pointer_pos = Point(f64){ .x = -1, .y = -1 };
@@ -69,10 +63,9 @@ fn run(gpa: Allocator) !void {
 
     log.info("starting main loop", .{});
 
-    conn.wl_surface.commit();
+    window.commit();
 
     main_loop: while (true) {
-        // gather events
         try conn.dispatch();
 
         var do_render = false;
@@ -80,48 +73,31 @@ fn run(gpa: Allocator) !void {
         while (conn.event_queue.dequeue()) |event| {
             switch (event.kind) {
                 .surface_configure => |configure| {
-                    // surface requested a rerender
-                    // acknowledge configure and mark for render
-
-                    configure.xdg_surface.ackConfigure(configure.serial);
-
-                    // window gemetry excludes CSD
-                    const window_gemoetry = window.innerBounds();
-
-                    conn.xdg_surface.setWindowGeometry(
-                        window_gemoetry.origin.x,
-                        window_gemoetry.origin.y,
-                        window_gemoetry.size.width,
-                        window_gemoetry.size.height,
-                    );
-
+                    window.handleSurfaceConfigureEvent(configure);
                     do_render = true;
                 },
 
                 .toplevel_configure => |conf| {
-                    // mostly just a resize event
-
                     window.tiling = conf.state;
 
-                    // this size is in terms of window geometry
-                    // so we need to add back our inset to get the actual size
-                    const new_size = conf.size orelse initial_size;
-                    const size =
-                        Window.computeOuterSize(window.inset, new_size, conf.state);
-
-                    window.size = size;
-
-                    try window.pixel_data.reconfigure(
-                        size,
-                        conn.wl_shm,
+                    const new_size_inner = conf.size orelse window.size;
+                    const new_size = wl.Window.computeOuterSize(
+                        window.inset,
+                        new_size_inner,
+                        window.tiling,
                     );
+
+                    if (new_size.width != window.size.width or
+                        new_size.height != window.size.height)
+                    {
+                        window.size = new_size;
+                        try surface.reconfigure();
+                    }
 
                     do_render = true;
                 },
 
                 .toplevel_close => {
-                    // window was requested to close
-
                     log.debug("close request", .{});
                     break :main_loop;
                 },
@@ -212,13 +188,8 @@ fn run(gpa: Allocator) !void {
 
                     pointer_pos = motion.point;
 
-                    const cursor: CursorKind = if (window.inset) |inset|
-                        if (Window.Edge.fromPoint(
-                            pointer_pos,
-                            window.size,
-                            inset,
-                            window.tiling,
-                        )) |edge|
+                    const cursor: wl.CursorKind =
+                        if (window.getEdge(pointer_pos)) |edge|
                             switch (edge) {
                                 .top_left, .bottom_right => .resize_nwse,
                                 .top_right, .bottom_left => .resize_nesw,
@@ -226,9 +197,7 @@ fn run(gpa: Allocator) !void {
                                 .top, .bottom => .resize_ns,
                             }
                         else
-                            .default
-                    else
-                        .default;
+                            .default;
 
                     try conn.cursor_manager.setCursor(
                         pointer_enter_serial,
@@ -247,36 +216,12 @@ fn run(gpa: Allocator) !void {
 
                     if (button.state != .pressed) break :button;
 
-                    if (window.inset) |inset| resize: {
-                        if (button.button != .left) break :resize;
-
-                        if (Window.Edge.fromPoint(
-                            pointer_pos,
-                            window.size,
-                            inset,
-                            window.tiling,
-                        )) |edge| {
-                            const resize: xdg.Toplevel.ResizeEdge = switch (edge) {
-                                .left => .left,
-                                .right => .right,
-                                .top => .top,
-                                .bottom => .bottom,
-                                .top_left => .top_left,
-                                .top_right => .top_right,
-                                .bottom_left => .bottom_left,
-                                .bottom_right => .bottom_right,
-                            };
-
-                            conn.xdg_toplevel.resize(
-                                conn.wl_seat,
-                                button.serial,
-                                resize,
-                            );
-                        }
-                    }
-
                     if (button.button == .left) {
-                        conn.xdg_toplevel.move(conn.wl_seat, button.serial);
+                        if (window.getEdge(pointer_pos)) |edge| {
+                            window.startResize(button.serial, edge);
+                        } else {
+                            window.startMove(button.serial);
+                        }
                     }
                 },
                 .pointer_scroll => |scroll| {
@@ -293,24 +238,19 @@ fn run(gpa: Allocator) !void {
         }
 
         if (do_render) {
-            const pixel_data = window.pixel_data;
-
             const pixels_u32 =
-                @as([*]u32, @ptrCast(@alignCast(pixel_data.pixels.ptr))) //
-                [0..(pixel_data.size.width * pixel_data.size.height)];
+                @as([*]u32, @ptrCast(@alignCast(surface.pixels.ptr))) //
+                [0..(window.size.width * window.size.height)];
 
             const pink = 0x00f4597b | (@as(u32, @intCast(alpha)) << 24);
 
-            if (window.inset) |inset| {
-                for (0..pixel_data.size.height) |y| {
-                    for (0..pixel_data.size.width) |x| {
-                        const i = y * pixel_data.size.width + x;
+            if (window.inset) |_| {
+                for (0..window.size.height) |y| {
+                    for (0..window.size.width) |x| {
+                        const i = y * window.size.width + x;
 
-                        const color: u32 = if (Window.Edge.fromPoint(
+                        const color: u32 = if (window.getEdge(
                             .{ .x = @floatFromInt(x), .y = @floatFromInt(y) },
-                            window.size,
-                            inset,
-                            window.tiling,
                         )) |edge|
                             switch (edge) {
                                 .left => 0xffff0000,
@@ -335,14 +275,8 @@ fn run(gpa: Allocator) !void {
 
             alpha +%= 1;
 
-            conn.wl_surface.attach(pixel_data.wl_buffer, 0, 0);
-            conn.wl_surface.damageBuffer(
-                0,
-                0,
-                @intCast(pixel_data.size.width),
-                @intCast(pixel_data.size.height),
-            );
-            conn.wl_surface.commit();
+            surface.attach();
+            window.commit();
         }
     }
 }

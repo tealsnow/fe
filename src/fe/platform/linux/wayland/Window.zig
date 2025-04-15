@@ -1,32 +1,118 @@
 const Window = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const wl = @import("wayland").client.wl;
+const xdg = @import("wayland").client.xdg;
 
 const Size = @import("../../../math.zig").Size;
 const Bounds = @import("../../../math.zig").Bounds;
 const Point = @import("../../../math.zig").Point;
 
 const Event = @import("events.zig").Event;
+const Connection = @import("Connection.zig");
+const listeners = @import("listeners.zig");
 
-size: Size(u32),
+conn: *Connection,
+
 inset: ?u32,
 tiling: Event.ToplevelConfigureState,
 
-pixel_data: PixelData,
+wl_surface: *wl.Surface,
+wl_frame_callback_listener_data: *listeners.WlFrameCallbackListenerData,
 
-pub fn init(size: Size(u32), pixel_data: PixelData) Window {
-    return .{
-        .size = size,
+xdg_surface_listener_data: *listeners.XdgSurfaceListenerData,
+xdg_surface: *xdg.Surface,
+
+// @TODO: we'll create another type for popups
+xdg_toplevel_listener_data: *listeners.XdgToplevelListenerData,
+xdg_toplevel: *xdg.Toplevel,
+
+size: Size(u32),
+
+pub fn init(
+    gpa: Allocator,
+    conn: *Connection,
+    size: Size(u32),
+) !*Window {
+    const wl_surface = try conn.wl_compositor.createSurface();
+
+    const xdg_surface = try conn.xdg_wm_base.getXdgSurface(wl_surface);
+
+    const xdg_surface_listener_data =
+        try gpa.create(listeners.XdgSurfaceListenerData);
+    xdg_surface_listener_data.* = .{
+        .event_queue = conn.event_queue,
+        .wl_surface = wl_surface,
+    };
+    xdg_surface.setListener(
+        *listeners.XdgSurfaceListenerData,
+        listeners.xdgSurfaceListener,
+        xdg_surface_listener_data,
+    );
+
+    const xdg_toplevel = try xdg_surface.getToplevel();
+
+    xdg_toplevel.setTitle("fe wayland 2");
+
+    const xdg_toplevel_listener_data =
+        try gpa.create(listeners.XdgToplevelListenerData);
+    xdg_toplevel_listener_data.* = .{
+        .event_queue = conn.event_queue,
+    };
+    xdg_toplevel.setListener(
+        *listeners.XdgToplevelListenerData,
+        listeners.xdgToplevelListener,
+        xdg_toplevel_listener_data,
+    );
+
+    const wl_frame_callback = try wl_surface.frame();
+
+    const wl_frame_callback_listener_data =
+        try gpa.create(listeners.WlFrameCallbackListenerData);
+    wl_frame_callback_listener_data.* = .{
+        .event_queue = conn.event_queue,
+        .wl_surface = wl_surface,
+    };
+    wl_frame_callback.setListener(
+        *listeners.WlFrameCallbackListenerData,
+        listeners.wlFrameCallbackListener,
+        wl_frame_callback_listener_data,
+    );
+
+    const window = try gpa.create(Window);
+    window.* = .{
+        .conn = conn,
+
         .inset = null,
         .tiling = .{},
-        .pixel_data = pixel_data,
+
+        .wl_surface = wl_surface,
+        .wl_frame_callback_listener_data = wl_frame_callback_listener_data,
+
+        .xdg_surface_listener_data = xdg_surface_listener_data,
+        .xdg_surface = xdg_surface,
+
+        .xdg_toplevel_listener_data = xdg_toplevel_listener_data,
+        .xdg_toplevel = xdg_toplevel,
+
+        .size = size,
     };
+    return window;
 }
 
-pub fn deinit(window: Window) void {
-    window.pixel_data.deinit();
+pub fn deinit(window: *Window, gpa: Allocator) void {
+    defer gpa.destroy(window);
+
+    defer window.wl_surface.destroy();
+    defer gpa.destroy(window.wl_frame_callback_listener_data);
+
+    defer gpa.destroy(window.xdg_surface_listener_data);
+    defer window.xdg_surface.destroy();
+
+    defer gpa.destroy(window.xdg_toplevel_listener_data);
+    defer window.xdg_toplevel.destroy();
 }
 
 pub fn innerBounds(window: Window) Bounds(i32) {
@@ -40,72 +126,75 @@ pub fn innerBounds(window: Window) Bounds(i32) {
     );
 }
 
-pub const PixelData = struct {
-    wl_buffer: *wl.Buffer,
-    pixels: []u8,
-    size: Size(u32),
+pub fn createSurface(window: *Window) !WindowSurface {
+    return WindowSurface.init(window);
+}
 
-    pub fn configure(
-        size: Size(u32),
-        wl_shared_memory: *wl.Shm,
-    ) !PixelData {
-        const len = size.width * size.height * 4;
+pub fn commit(window: Window) void {
+    window.wl_surface.damageBuffer(
+        0,
+        0,
+        @intCast(window.size.width),
+        @intCast(window.size.height),
+    );
+    window.wl_surface.commit();
+}
 
-        const fd = try std.posix.memfd_create("fe-wl_shm", 0);
-        try std.posix.ftruncate(fd, len);
+pub fn getEdge(window: Window, point: Point(f64)) ?Edge {
+    return if (window.inset) |inset|
+        Edge.fromPoint(point, window.size, inset, window.tiling)
+    else
+        null;
+}
 
-        const pixels = try std.posix.mmap(
-            null,
-            len,
-            std.posix.PROT.READ | std.posix.PROT.WRITE,
-            std.posix.MAP{ .TYPE = .SHARED },
-            fd,
-            0,
-        );
+pub fn startResize(window: Window, mouse_button_serial: u32, edge: Edge) void {
+    const resize: xdg.Toplevel.ResizeEdge = switch (edge) {
+        .left => .left,
+        .right => .right,
+        .top => .top,
+        .bottom => .bottom,
+        .top_left => .top_left,
+        .top_right => .top_right,
+        .bottom_left => .bottom_left,
+        .bottom_right => .bottom_right,
+    };
 
-        const pool = try wl_shared_memory.createPool(fd, @intCast(len));
-        defer pool.destroy();
+    window.xdg_toplevel.resize(
+        window.conn.wl_seat,
+        mouse_button_serial,
+        resize,
+    );
+}
 
-        const wl_buffer = try pool.createBuffer(
-            0,
-            @intCast(size.width),
-            @intCast(size.height),
-            @intCast(size.width * 4),
-            .argb8888,
-        );
+pub fn startMove(window: Window, mouse_button_serial: u32) void {
+    window.xdg_toplevel.move(window.conn.wl_seat, mouse_button_serial);
+}
 
-        return .{
-            .wl_buffer = wl_buffer,
-            .pixels = pixels,
-            .size = size,
-        };
-    }
+pub fn handleSurfaceConfigureEvent(
+    window: *Window,
+    conf: Event.SurfaceConfigure,
+) void {
+    window.xdg_surface.ackConfigure(conf.serial);
 
-    pub fn deinit(data: PixelData) void {
-        data.wl_buffer.destroy();
-        std.posix.munmap(@alignCast(data.pixels));
-    }
+    // window gemetry excludes CSD
+    const gemoetry = window.innerBounds();
 
-    pub fn reconfigure(
-        data: *PixelData,
-        size: Size(u32),
-        wl_shared_memory: *wl.Shm,
-    ) !void {
-        if (data.size.width != size.width or data.size.height != size.height) {
-            data.deinit();
-            data.* = try configure(size, wl_shared_memory);
-        }
-    }
-};
+    window.xdg_surface.setWindowGeometry(
+        gemoetry.origin.x,
+        gemoetry.origin.y,
+        gemoetry.size.width,
+        gemoetry.size.height,
+    );
+}
 
 pub fn computeOuterSize(
     window_inset: ?u32,
-    new_size: Size(u32),
+    new_size_inner: Size(u32),
     tiling: Event.ToplevelConfigureState,
 ) Size(u32) {
-    const inset = window_inset orelse return new_size;
+    const inset = window_inset orelse return new_size_inner;
 
-    var size = new_size;
+    var size = new_size_inner;
 
     if (!tiling.tiled_top)
         size.height += inset;
@@ -119,7 +208,7 @@ pub fn computeOuterSize(
     return size;
 }
 
-pub fn insetBounds(
+fn insetBounds(
     bounds: Bounds(u32),
     window_inset: ?u32,
     tiling: Event.ToplevelConfigureState,
@@ -194,5 +283,63 @@ pub const Edge = enum {
             .bottom
         else
             null;
+    }
+};
+
+pub const WindowSurface = struct {
+    window: *Window,
+    wl_buffer: *wl.Buffer,
+    pixels: []u8,
+
+    pub fn init(
+        window: *Window,
+    ) !WindowSurface {
+        const len = window.size.width * window.size.height * 4;
+
+        const fd = try std.posix.memfd_create("fe-wl_shm", 0);
+        try std.posix.ftruncate(fd, len);
+
+        const pixels = try std.posix.mmap(
+            null,
+            len,
+            std.posix.PROT.READ | std.posix.PROT.WRITE,
+            std.posix.MAP{ .TYPE = .SHARED },
+            fd,
+            0,
+        );
+
+        const pool = try window.conn.wl_shm.createPool(fd, @intCast(len));
+        defer pool.destroy();
+
+        const wl_buffer = try pool.createBuffer(
+            0,
+            @intCast(window.size.width),
+            @intCast(window.size.height),
+            @intCast(window.size.width * 4),
+            .argb8888,
+        );
+
+        return .{
+            .window = window,
+            .wl_buffer = wl_buffer,
+            .pixels = pixels,
+        };
+    }
+
+    pub fn deinit(surface: WindowSurface) void {
+        surface.wl_buffer.destroy();
+        std.posix.munmap(@alignCast(surface.pixels));
+    }
+
+    pub fn reconfigure(
+        surface: *WindowSurface,
+    ) !void {
+        const window = surface.window;
+        surface.deinit();
+        surface.* = try WindowSurface.init(window);
+    }
+
+    pub fn attach(surface: WindowSurface) void {
+        surface.window.wl_surface.attach(surface.wl_buffer, 0, 0);
     }
 };
