@@ -377,7 +377,7 @@ fn run(gpa: Allocator) !void {
                     const size =
                         computeOuterSize(window.inset, new_size, conf.state);
 
-                    window.bounds.size = size;
+                    window.size = size;
 
                     try window.pixel_data.reconfigure(
                         size,
@@ -408,7 +408,7 @@ fn run(gpa: Allocator) !void {
                     );
                 },
 
-                .key => |key| {
+                .key => |key| key: {
                     log.debug(
                         "key: state: {s}, scancode: {d}, keysym: {}," ++
                             " codepoint: 0x{x}",
@@ -420,8 +420,16 @@ fn run(gpa: Allocator) !void {
                         },
                     );
 
-                    if (key.state == .pressed and key.codepoint == 'w') {
-                        std.Thread.sleep(std.time.ns_per_s * 2);
+                    if (key.state != .pressed) break :key;
+
+                    switch (@intFromEnum(key.keysym)) {
+                        xkb.Keysym.q => break :main_loop,
+
+                        xkb.Keysym.w => {
+                            std.Thread.sleep(std.time.ns_per_s * 2);
+                        },
+
+                        else => {},
                     }
                 },
 
@@ -464,7 +472,7 @@ fn run(gpa: Allocator) !void {
                         .leave => {},
                     }
                 },
-                .pointer_motion => |motion| motion: {
+                .pointer_motion => |motion| {
                     // log.debug(
                     //     "pointer_motion: {d}x{d}",
                     //     .{ motion.x, motion.y },
@@ -472,58 +480,28 @@ fn run(gpa: Allocator) !void {
 
                     pointer_pos = motion.point;
 
-                    const inset: f64 =
-                        @floatFromInt(window.inset orelse break :motion);
+                    const cursor: CursorKind = if (window.inset) |inset|
+                        if (WindowEdge.fromPoint(
+                            pointer_pos,
+                            window.size,
+                            inset,
+                            window.tiling,
+                        )) |edge|
+                            switch (edge) {
+                                .top_left, .bottom_right => .resize_nwse,
+                                .top_right, .bottom_left => .resize_nesw,
+                                .left, .right => .resize_ew,
+                                .top, .bottom => .resize_ns,
+                            }
+                        else
+                            .default
+                    else
+                        .default;
 
-                    const x = pointer_pos.x;
-                    const y = pointer_pos.y;
-
-                    const width: f64 =
-                        @floatFromInt(window.bounds.size.width);
-                    const height: f64 =
-                        @floatFromInt(window.bounds.size.height);
-                    const tiling = window.tiling;
-
-                    const left = x < inset and !tiling.tiled_left;
-                    const right = x >= width - inset and !tiling.tiled_right;
-                    const top = y < inset and !tiling.tiled_top;
-                    const bottom = y >= height - inset and !tiling.tiled_bottom;
-
-                    // top left or bottom right
-                    if (top and left or bottom and right) {
-                        try cursor_manager.setCursor(
-                            pointer_enter_serial,
-                            .resize_nwse,
-                        );
-                    }
-                    // bottom left or rop right
-                    else if (bottom and left or top and right) {
-                        try cursor_manager.setCursor(
-                            pointer_enter_serial,
-                            .resize_nesw,
-                        );
-                    }
-                    // left or right
-                    else if (left or right) {
-                        try cursor_manager.setCursor(
-                            pointer_enter_serial,
-                            .resize_ew,
-                        );
-                    }
-                    // top or bottom
-                    else if (top or bottom) {
-                        try cursor_manager.setCursor(
-                            pointer_enter_serial,
-                            .resize_ns,
-                        );
-                    }
-                    // center
-                    else {
-                        try cursor_manager.setCursor(
-                            pointer_enter_serial,
-                            .default,
-                        );
-                    }
+                    try cursor_manager.setCursor(
+                        pointer_enter_serial,
+                        cursor,
+                    );
                 },
                 .pointer_button => |button| button: {
                     log.debug(
@@ -537,87 +515,30 @@ fn run(gpa: Allocator) !void {
 
                     if (button.state != .pressed) break :button;
 
-                    if (window.inset) |inset_int| resize: {
+                    if (window.inset) |inset| resize: {
                         if (button.button != .left) break :resize;
 
-                        const inset: f64 = @floatFromInt(inset_int);
+                        if (WindowEdge.fromPoint(
+                            pointer_pos,
+                            window.size,
+                            inset,
+                            window.tiling,
+                        )) |edge| {
+                            const resize: xdg.Toplevel.ResizeEdge = switch (edge) {
+                                .left => .left,
+                                .right => .right,
+                                .top => .top,
+                                .bottom => .bottom,
+                                .top_left => .top_left,
+                                .top_right => .top_right,
+                                .bottom_left => .bottom_left,
+                                .bottom_right => .bottom_right,
+                            };
 
-                        const x = pointer_pos.x;
-                        const y = pointer_pos.y;
-
-                        const width: f64 =
-                            @floatFromInt(window.bounds.size.width);
-                        const height: f64 =
-                            @floatFromInt(window.bounds.size.height);
-                        const tiling = window.tiling;
-
-                        const left = x < inset and !tiling.tiled_left;
-                        const right = x >= width - inset and !tiling.tiled_right;
-                        const top = y < inset and !tiling.tiled_top;
-                        const bottom = y >= height - inset and !tiling.tiled_bottom;
-
-                        // top left
-                        if (top and left) {
                             xdg_toplevel.resize(
                                 wl_seat,
                                 button.serial,
-                                .top_left,
-                            );
-                        }
-                        // top right
-                        else if (top and right) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .top_right,
-                            );
-                        }
-                        // bottom left
-                        else if (bottom and left) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .bottom_left,
-                            );
-                        }
-                        // bottom right
-                        else if (bottom and right) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .bottom_right,
-                            );
-                        }
-                        // left
-                        else if (left) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .left,
-                            );
-                        }
-                        // right
-                        else if (right) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .right,
-                            );
-                        }
-                        // top
-                        else if (top) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .top,
-                            );
-                        }
-                        // bottom
-                        else if (bottom) {
-                            xdg_toplevel.resize(
-                                wl_seat,
-                                button.serial,
-                                .bottom,
+                                resize,
                             );
                         }
                     }
@@ -1752,7 +1673,7 @@ fn insetBounds(
 // = Window
 
 pub const Window = struct {
-    bounds: Bounds(u32),
+    size: Size(u32),
     inset: ?u32,
     tiling: Event.ToplevelConfigureState,
 
@@ -1760,10 +1681,7 @@ pub const Window = struct {
 
     pub fn init(size: Size(u32), pixel_data: PixelData) Window {
         return .{
-            .bounds = .{
-                .origin = .{ .x = 0, .y = 0 },
-                .size = size,
-            },
+            .size = size,
             .inset = null,
             .tiling = .{},
             .pixel_data = pixel_data,
@@ -1775,7 +1693,14 @@ pub const Window = struct {
     }
 
     pub fn innerBounds(window: Window) Bounds(i32) {
-        return insetBounds(window.bounds, window.inset, window.tiling);
+        return insetBounds(
+            .{
+                .origin = .{ .x = 0, .y = 0 },
+                .size = window.size,
+            },
+            window.inset,
+            window.tiling,
+        );
     }
 };
 
@@ -2142,4 +2067,59 @@ pub const CursorKind = enum {
 
     zoom_in,
     zoom_out,
+};
+
+// =============================================================================
+// = WindowEdge
+
+pub const WindowEdge = enum {
+    left,
+    right,
+    top,
+    bottom,
+    top_left,
+    top_right,
+    bottom_left,
+    bottom_right,
+
+    pub fn fromPoint(
+        point: Point(f64),
+        window_size: Size(u32),
+        window_inset: u32,
+        tiling: Event.ToplevelConfigureState,
+    ) ?WindowEdge {
+        const x = point.x;
+        const y = point.y;
+
+        const width: f64 =
+            @floatFromInt(window_size.width);
+        const height: f64 =
+            @floatFromInt(window_size.height);
+
+        const inset: f64 = @floatFromInt(window_inset);
+
+        const left = x < inset and !tiling.tiled_left;
+        const right = x >= width - inset and !tiling.tiled_right;
+        const top = y < inset and !tiling.tiled_top;
+        const bottom = y >= height - inset and !tiling.tiled_bottom;
+
+        return if (top and left)
+            .top_left
+        else if (top and right)
+            .top_right
+        else if (bottom and left)
+            .bottom_left
+        else if (bottom and right)
+            .bottom_right
+        else if (left)
+            .left
+        else if (right)
+            .right
+        else if (top)
+            .top
+        else if (bottom)
+            .bottom
+        else
+            null;
+    }
 };
