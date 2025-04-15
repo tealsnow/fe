@@ -13,9 +13,7 @@ const Fixed = wl.Fixed;
 
 const xkb = @import("xkbcommon");
 
-const gio = @cImport({
-    @cInclude("gio/gio.h");
-});
+const xdp = @import("platform/linux/wayland/xdg_desktop_portal.zig");
 
 // @TODO:
 //   @[ ]: wgpu intergration
@@ -139,33 +137,8 @@ fn run(gpa: Allocator) !void {
 
     // @TODO: move wl_keyboard and wl_pointer listener installation here
 
-    // @TODO: listen to changes in these settings
-    // @TODO: get appearance (theme)
-
-    log.debug("xdp: opening xdg-desktop-portal proxy", .{});
-
-    var gio_err: ?*gio.GError = null;
-    const xdp_settings_proxy = gio.g_dbus_proxy_new_for_bus_sync(
-        gio.G_BUS_TYPE_SESSION,
-        gio.G_DBUS_PROXY_FLAGS_NONE,
-        null,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Settings",
-        null,
-        @ptrCast(&gio_err),
-    );
-    if (xdp_settings_proxy == null) {
-        const err = gio_err.?;
-        log.err(
-            "Failed to create proxy for xdg desktop settings portal: " ++
-                "domain: {d}, code: {d} -- {s}\n",
-            .{ err.domain, err.code, err.message },
-        );
-        gio.g_clear_error(@ptrCast(&gio_err));
-        return error.gio;
-    }
-    defer gio.g_object_unref(xdp_settings_proxy);
+    log.debug("xdp: opening xdg-desktop-portal settings proxy", .{});
+    const xdp_settings = try xdp.XdpSettings.init();
 
     const wp_cursor_shape_manager =
         wl_registry_listener_data.wp_cursor_shape_manager;
@@ -177,86 +150,14 @@ fn run(gpa: Allocator) !void {
             manager,
         )
     else manager: {
-        const cursor_theme_variant = theme: {
-            log.debug("xdp: getting cursor theme", .{});
-
-            const read_cursor_theme = gio.g_dbus_proxy_call_sync(
-                xdp_settings_proxy,
-                "Read",
-                gio.g_variant_new(
-                    "(ss)",
-                    "org.gnome.desktop.interface",
-                    "cursor-theme",
-                ),
-                gio.G_DBUS_CALL_FLAGS_NONE,
-                -1,
-                null,
-                @ptrCast(&gio_err),
-            );
-            if (read_cursor_theme == null) {
-                const err = gio_err.?;
-                log.err(
-                    "Read call to xdg desktop settings portal failed: " ++
-                        "domain: {d}, code: {d} -- {s}",
-                    .{ err.domain, err.code, err.message },
-                );
-                gio.g_clear_error(@ptrCast(&gio_err));
-                return error.gio;
-            }
-            defer gio.g_variant_unref(read_cursor_theme);
-
-            const inner1 = gio.g_variant_get_child_value(read_cursor_theme, 0);
-            defer gio.g_variant_unref(inner1);
-            const inner2 = gio.g_variant_get_variant(inner1);
-            defer gio.g_variant_unref(inner2);
-            const inner3 = gio.g_variant_get_variant(inner2);
-
-            break :theme inner3;
-        };
-        defer gio.g_variant_unref(cursor_theme_variant);
-        const cursor_theme = gio.g_variant_get_string(cursor_theme_variant, 0);
-
+        log.debug("xdp: getting cursor theme", .{});
+        const cursor_theme = try xdp_settings.getCursorTheme(gpa);
+        defer gpa.free(cursor_theme);
         log.debug("xdp: got cursor theme: '{s}'", .{cursor_theme});
 
-        const cursor_size = size: {
-            log.debug("xdp: getting cursor size", .{});
-
-            const read_cursor_size = gio.g_dbus_proxy_call_sync(
-                xdp_settings_proxy,
-                "Read",
-                gio.g_variant_new(
-                    "(ss)",
-                    "org.gnome.desktop.interface",
-                    "cursor-size",
-                ),
-                gio.G_DBUS_CALL_FLAGS_NONE,
-                -1,
-                null,
-                @ptrCast(&gio_err),
-            );
-            if (read_cursor_size == null) {
-                const err = gio_err.?;
-                log.err(
-                    "Read call to xdg desktop settings portal failed: " ++
-                        "domain: {d}, code: {d} -- {s}",
-                    .{ err.domain, err.code, err.message },
-                );
-                gio.g_clear_error(@ptrCast(&gio_err));
-                return error.gio;
-            }
-            defer gio.g_variant_unref(read_cursor_size);
-
-            const inner1 = gio.g_variant_get_child_value(read_cursor_size, 0);
-            defer gio.g_variant_unref(inner1);
-            const inner2 = gio.g_variant_get_variant(inner1);
-            defer gio.g_variant_unref(inner2);
-            const inner3 = gio.g_variant_get_variant(inner2);
-            defer gio.g_variant_unref(inner3);
-
-            break :size gio.g_variant_get_int32(inner3);
-        };
-
-        log.debug("xpd: got cursor size: {d}", .{cursor_size});
+        log.debug("xdp: getting cursor size", .{});
+        const cursor_size = try xdp_settings.getCursorSize();
+        log.debug("xdp: got cursor size: {d}", .{cursor_size});
 
         break :manager try CursorManager.initPointerManager(
             gpa,
