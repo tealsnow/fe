@@ -78,225 +78,195 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     // - cu
 
-    const cu = cu: {
-        const mod = b.createModule(.{
-            .root_source_file = b.path("src/cu/cu.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
+    const cu_mod = b.createModule(.{
+        .root_source_file = b.path("src/cu/cu.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
-        if (tracy) |m| {
-            mod.addImport("tracy", m.module("tracy"));
-            if (profile) {
-                mod.linkLibrary(m.artifact("tracy"));
-                mod.link_libcpp = true;
-            }
+    if (tracy) |m| {
+        cu_mod.addImport("tracy", m.module("tracy"));
+        if (profile) {
+            cu_mod.linkLibrary(m.artifact("tracy"));
+            cu_mod.link_libcpp = true;
         }
+    }
 
-        const cu = b.addLibrary(.{
-            .name = "cu",
-            .root_module = mod,
+    const cu_lib = b.addLibrary(.{
+        .name = "cu",
+        .root_module = cu_mod,
 
-            .use_llvm = use_llvm,
-            .use_lld = use_llvm,
-            // .use_lld = false,
-        });
-        b.installArtifact(cu);
-
-        break :cu cu;
-    };
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+        // .use_lld = false,
+    });
+    b.installArtifact(cu_lib);
 
     // -------------------------------------------------------------------------
     // - fe
 
-    const fe = fe: {
-        const mod = b.createModule(.{
-            .root_source_file = b.path("src/fe/fe.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
+    const fe_mod = b.createModule(.{
+        .root_source_file = b.path("src/fe/fe.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
-        const fe = b.addExecutable(.{
-            .name = "fe",
-            .root_module = mod,
+    const fe_exe = b.addExecutable(.{
+        .name = "fe",
+        .root_module = fe_mod,
 
-            .use_llvm = use_llvm,
-            .use_lld = use_llvm,
-            // .use_lld = false,
-        });
-        b.installArtifact(fe);
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+        // .use_lld = false,
+    });
+    b.installArtifact(fe_exe);
 
-        mod.link_libc = true;
-        mod.linkSystemLibrary("fontconfig", .{ .needed = true });
-        mod.linkSystemLibrary("wasmtime", .{ .needed = true });
+    fe_mod.link_libc = true;
+    fe_mod.linkSystemLibrary("fontconfig", .{ .needed = true });
+    fe_mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
-        switch (entry_point) {
-            .sdl => {
-                const sdl3 = b.lazyDependency("sdl3", .{
-                    .target = target,
-                    .optimize = optimize,
-                });
+    switch (entry_point) {
+        .sdl => {
+            const sdl3 = b.lazyDependency("sdl3", .{
+                .target = target,
+                .optimize = optimize,
+            });
 
-                if (sdl3) |m| {
-                    mod.addImport("sdl3", m.module("sdl3"));
+            if (sdl3) |m| {
+                fe_mod.addImport("sdl3", m.module("sdl3"));
 
-                    mod.linkSystemLibrary("sdl3", .{ .needed = true });
-                    mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
-                }
-            },
-            .glfw => {
-                const glfw = b.lazyDependency("glfw", .{
-                    .target = target,
-                    .optimize = optimize,
-                });
-
-                const wgpu = b.lazyDependency("wgpu", .{
-                    .target = target,
-                    .optimize = optimize,
-                });
-
-                if (glfw) |m| {
-                    mod.addImport("glfw", m.module("glfw"));
-                    mod.linkLibrary(m.artifact("glfw"));
-                }
-
-                if (wgpu) |m|
-                    mod.addImport("wgpu", m.module("wgpu"));
-            },
-            .wayland => {
-                const xkbcommon = b.lazyDependency("xkbcommon", .{});
-
-                const scanner = Scanner.create(b, .{});
-
-                const wayland = b.createModule(.{
-                    .root_source_file = scanner.result,
-                });
-
-                scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
-                scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
-                scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
-
-                scanner.generate("wl_compositor", 6);
-                scanner.generate("wl_shm", 2);
-                scanner.generate("xdg_wm_base", 6);
-                scanner.generate("wl_seat", 8);
-                scanner.generate("wp_cursor_shape_manager_v1", 1);
-
-                mod.addImport("wayland", wayland);
-                mod.linkSystemLibrary("wayland-client", .{ .needed = true });
-                mod.linkSystemLibrary("wayland-cursor", .{ .needed = true });
-
-                if (xkbcommon) |m|
-                    mod.addImport("xkbcommon", m.module("xkbcommon"));
-                mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
-
-                mod.addSystemIncludePath(b.path("glib-2.0"));
-                mod.linkSystemLibrary("gio-2", .{ .needed = true });
-            },
-        }
-
-        mod.addImport("cu", cu.root_module);
-        mod.linkLibrary(cu);
-
-        if (tracy) |m| {
-            mod.addImport("tracy", m.module("tracy"));
-            if (profile) {
-                mod.linkLibrary(m.artifact("tracy"));
-                mod.link_libcpp = true;
+                fe_mod.linkSystemLibrary("sdl3", .{ .needed = true });
+                fe_mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
             }
+        },
+        .glfw => {
+            const glfw = b.lazyDependency("glfw", .{
+                .target = target,
+                .optimize = optimize,
+            });
+
+            const wgpu = b.lazyDependency("wgpu", .{
+                .target = target,
+                .optimize = optimize,
+            });
+
+            if (glfw) |m| {
+                fe_mod.addImport("glfw", m.module("glfw"));
+                fe_mod.linkLibrary(m.artifact("glfw"));
+            }
+
+            if (wgpu) |m|
+                fe_mod.addImport("wgpu", m.module("wgpu"));
+        },
+        .wayland => {
+            const xkbcommon = b.lazyDependency("xkbcommon", .{});
+
+            const scanner = Scanner.create(b, .{});
+
+            const wayland = b.createModule(.{
+                .root_source_file = scanner.result,
+            });
+
+            scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+            scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
+            scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+
+            scanner.generate("wl_compositor", 6);
+            scanner.generate("wl_shm", 2);
+            scanner.generate("xdg_wm_base", 6);
+            scanner.generate("wl_seat", 8);
+            scanner.generate("wp_cursor_shape_manager_v1", 1);
+
+            fe_mod.addImport("wayland", wayland);
+            fe_mod.linkSystemLibrary("wayland-client", .{ .needed = true });
+            fe_mod.linkSystemLibrary("wayland-cursor", .{ .needed = true });
+
+            if (xkbcommon) |m|
+                fe_mod.addImport("xkbcommon", m.module("xkbcommon"));
+            fe_mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
+
+            fe_mod.addSystemIncludePath(b.path("glib-2.0"));
+            fe_mod.linkSystemLibrary("gio-2", .{ .needed = true });
+        },
+    }
+
+    fe_mod.addImport("cu", cu_mod);
+    fe_mod.linkLibrary(cu_lib);
+
+    if (tracy) |m| {
+        fe_mod.addImport("tracy", m.module("tracy"));
+        if (profile) {
+            fe_mod.linkLibrary(m.artifact("tracy"));
+            fe_mod.link_libcpp = true;
         }
+    }
 
-        const plugin_schema = getPluginSchema(b);
-        mod.addImport("plugin-schema", plugin_schema);
+    const plugin_schema = getPluginSchema(b);
+    fe_mod.addImport("plugin-schema", plugin_schema);
 
-        const options = b.addOptions();
-        options.addOption(std.log.Level, "log_level", log_level);
-        options.addOption(bool, "poll_event_loop", poll_event_loop);
-        options.addOption(EntryPoint, "entry_point", entry_point);
-        mod.addOptions("build_options", options);
-
-        break :fe fe;
-    };
+    const options = b.addOptions();
+    options.addOption(std.log.Level, "log_level", log_level);
+    options.addOption(bool, "poll_event_loop", poll_event_loop);
+    options.addOption(EntryPoint, "entry_point", entry_point);
+    fe_mod.addOptions("build_options", options);
 
     // -------------------------------------------------------------------------
     // - test plugin
 
-    {
-        const mod = createPluginModule(b, .{
-            .root_source_file = b.path("src/plugins/test/test.zig"),
-            .optimize = optimize,
-            .schema_path = b.path("src/plugins/test/plugin.zon"),
-            .export_symbol_names = &.{
-                // "foo_bar",
-                "helloWorld",
-                "add",
-                "addi64",
-                "runCallback",
-                "takeFooType",
-                "giveString",
-                "returnFunc",
-                "runFunc",
-            },
-        });
+    const plug_test_mod = createPluginModule(b, .{
+        .root_source_file = b.path("src/plugins/test/test.zig"),
+        .optimize = optimize,
+        .schema_path = b.path("src/plugins/test/plugin.zon"),
+        .export_symbol_names = &.{
+            // "foo_bar",
+            "helloWorld",
+            "add",
+            "addi64",
+            "runCallback",
+            "takeFooType",
+            "giveString",
+            "returnFunc",
+            "runFunc",
+        },
+    });
 
-        const bin = addPlugin(b, .{
-            .name = "test-plugin",
-            .root_module = mod,
-        });
+    const plug_test_bin = addPlugin(b, .{
+        .name = "test-plugin",
+        .root_module = plug_test_mod,
+    });
 
-        const install = bin.installPlugin(b, "plugins/test");
+    const install = plug_test_bin.installPlugin(b, "plugins/test");
 
-        fe.step.dependOn(&install.step);
-    }
+    fe_exe.step.dependOn(&install.step);
 
     // -------------------------------------------------------------------------
     // - run
 
-    {
-        const run_cmd = b.addRunArtifact(fe);
-        run_cmd.step.dependOn(b.getInstallStep());
-        if (b.args) |args| run_cmd.addArgs(args);
+    const run_cmd = b.addRunArtifact(fe_exe);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_cmd.addArgs(args);
 
-        const run_step = b.step("run", "Run the app");
-        run_step.dependOn(&run_cmd.step);
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
 
-        if (profile) {
-            // @TODO: Figure out a portable alternative to setsid
-            // @NOTE: setsid used since `addSystemCommand` is blocking
-            //  without it, the build system would launch tracy then wait for
-            //  it to close before running the app
-            const tracy_cmd = b.addSystemCommand(&.{
-                "setsid", //
-                "-f", "tracy", //
-                "-a", "localhost", //
-            });
-            run_cmd.step.dependOn(&tracy_cmd.step);
-        }
+    if (profile) {
+        // @TODO: Figure out a portable alternative to setsid
+        // @NOTE: setsid used since `addSystemCommand` is blocking
+        //  without it, the build system would launch tracy then wait for
+        //  it to close before running the app
+        const tracy_cmd = b.addSystemCommand(&.{
+            "setsid", //
+            "-f", "tracy", //
+            "-a", "localhost", //
+        });
+        run_cmd.step.dependOn(&tracy_cmd.step);
     }
 
     // -------------------------------------------------------------------------
     // - check
 
-    {
-        const check_step = b.step("check", "check");
-        check_step.dependOn(&fe.step);
-    }
-
-    // -------------------------------------------------------------------------
-    // - test
-
-    {
-        const exe_unit_tests = b.addTest(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-
-        const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-        const test_step = b.step("test", "Run unit tests");
-        test_step.dependOn(&run_exe_unit_tests.step);
-    }
+    const check_step = b.step("check", "Run a dry build");
+    check_step.dependOn(&fe_exe.step);
 }
 
 // =============================================================================
@@ -512,21 +482,30 @@ pub fn addPlugin(b: *std.Build, options: PluginOptions) *PluginCompile {
 }
 
 pub fn getPluginLib(b: *std.Build) *std.Build.Module {
-    const mod = b.createModule(.{
-        .root_source_file = b.path("src/plugin-lib/lib.zig"),
-    });
-
-    mod.export_symbol_names = &.{
-        "Allocator_alloc",
-        "Allocator_resize",
-        "Allocator_remap",
-        "Allocator_free",
+    const state = struct {
+        var mod: ?*std.Build.Module = null;
     };
 
-    const plugin_schema = getPluginSchema(b);
-    mod.addImport("plugin-schema", plugin_schema);
+    return if (state.mod) |mod|
+        mod
+    else blk: {
+        const mod = b.createModule(.{
+            .root_source_file = b.path("src/plugin-lib/lib.zig"),
+        });
 
-    return mod;
+        mod.export_symbol_names = &.{
+            "Allocator_alloc",
+            "Allocator_resize",
+            "Allocator_remap",
+            "Allocator_free",
+        };
+
+        const plugin_schema = getPluginSchema(b);
+        mod.addImport("plugin-schema", plugin_schema);
+
+        state.mod = mod;
+        break :blk mod;
+    };
 }
 
 pub fn getPluginSchema(b: *std.Build) *std.Build.Module {
