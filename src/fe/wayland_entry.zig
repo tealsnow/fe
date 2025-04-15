@@ -1897,7 +1897,7 @@ pub const CursorManager = union(enum) {
         wl_compositor: *wl.Compositor,
         wl_pointer: *wl.Pointer,
         wl_cursor_theme: *wl.CursorTheme,
-        cusor_cache: *CursorMap,
+        cursor_cache: *CursorMap,
 
         pub fn init(
             gpa: Allocator,
@@ -1913,28 +1913,28 @@ pub const CursorManager = union(enum) {
                 wl_shm,
             );
 
-            const map = try gpa.create(CursorMap);
-            map.* = .init(gpa);
+            const cache = try gpa.create(CursorMap);
+            cache.* = .init(gpa);
 
             return .{
                 .wl_compositor = wl_compositor,
                 .wl_pointer = wl_pointer,
                 .wl_cursor_theme = wl_cursor_theme,
-                .map = map,
+                .cursor_cache = cache,
             };
         }
 
         pub fn deinit(manager: PointerManager) void {
-            for (manager.cusor_cache.values()) |val| {
+            for (manager.cursor_cache.values()) |val| {
                 val.surface.destroy();
                 // val.buffer.destroy();
             }
 
             manager.wl_cursor_theme.destroy();
 
-            const gpa = manager.cusor_cache.allocator;
-            manager.cusor_cache.deinit();
-            gpa.destroy(manager.cusor_cache);
+            const gpa = manager.cursor_cache.allocator;
+            manager.cursor_cache.deinit();
+            gpa.destroy(manager.cursor_cache);
         }
 
         pub fn setCursor(
@@ -1942,7 +1942,7 @@ pub const CursorManager = union(enum) {
             enter_event_serial: u32,
             kind: CursorKind,
         ) !void {
-            const storage = if (manager.cusor_cache.get(kind)) |storage|
+            const storage = if (manager.cursor_cache.get(kind)) |storage|
                 storage
             else blk: {
                 const name = switch (kind) {
@@ -2017,7 +2017,7 @@ pub const CursorManager = union(enum) {
                     .surface = surface,
                 };
 
-                try manager.cusor_cache.put(kind, storage);
+                try manager.cursor_cache.put(kind, storage);
 
                 break :blk storage;
             };
