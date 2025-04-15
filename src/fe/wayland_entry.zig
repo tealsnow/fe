@@ -24,6 +24,7 @@ const gio = @cImport({
 //
 //   @[ ]: pointer gestures
 //     https://wayland.app/protocols/pointer-gestures-unstable-v1
+//     gonna wait until support has been around for a little longer
 //
 //   @[ ]: xdg-desktop-portal
 //     @[x]: cursor theme and size
@@ -48,7 +49,15 @@ pub fn entry(gpa: Allocator) !void {
 }
 
 fn run(gpa: Allocator) !void {
-    const wl_display = try wl.Display.connect(null);
+    const wl_display_name =
+        if (try getEnvVarOwned(gpa, "WAYLAND_DISPLAY")) |name| blk: {
+            defer gpa.free(name);
+            break :blk try gpa.dupeZ(u8, name);
+        } else null;
+    defer if (wl_display_name) |name| gpa.free(name);
+
+    // the `orelse null` is nessesary for the slice coercion
+    const wl_display = try wl.Display.connect(wl_display_name orelse null);
     defer wl_display.disconnect();
 
     const wl_registry = try wl_display.getRegistry();
@@ -623,6 +632,25 @@ fn run(gpa: Allocator) !void {
             wl_surface.commit();
         }
     }
+}
+
+pub const GetEnvVarOwnedError = error{
+    OutOfMemory,
+
+    /// On Windows, environment variable keys provided by the user must be valid WTF-8.
+    /// https://simonsapin.github.io/wtf-8/
+    InvalidWtf8,
+};
+
+/// Wrapper arround std.process.getEnvVarOwned returning a ?[]u8
+/// for more ergonomic usage when handling not found variables
+fn getEnvVarOwned(allocator: Allocator, key: []const u8) GetEnvVarOwnedError!?[]u8 {
+    return std.process.getEnvVarOwned(allocator, key) catch |err|
+        switch (err) {
+            error.EnvironmentVariableNotFound => null,
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidWtf8 => return error.InvalidWtf8,
+        };
 }
 
 // =============================================================================
@@ -1853,7 +1881,6 @@ pub const CursorManager = union(enum) {
         pub fn deinit(manager: PointerManager) void {
             for (manager.cursor_cache.values()) |val| {
                 val.surface.destroy();
-                // val.buffer.destroy();
             }
 
             manager.wl_cursor_theme.destroy();
@@ -1932,10 +1959,9 @@ pub const CursorManager = union(enum) {
                 const image = images[0];
 
                 const buffer = try image.getBuffer();
-                // defer buffer.destroy();
 
                 const surface = try manager.wl_compositor.createSurface();
-                // defer surface.destroy();
+                errdefer surface.destroy();
 
                 const storage = CursorStorage{
                     .image = image,

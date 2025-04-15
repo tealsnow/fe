@@ -169,13 +169,19 @@ pub fn build(b: *std.Build) void {
 
             scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
             scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
-            scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+            scanner.addSystemProtocol(
+                "staging/cursor-shape/cursor-shape-v1.xml",
+            );
+            // scanner.addSystemProtocol(
+            //     "unstable/pointer-gestures/pointer-gestures-unstable-v1.xml",
+            // );
 
             scanner.generate("wl_compositor", 6);
             scanner.generate("wl_shm", 2);
             scanner.generate("xdg_wm_base", 6);
             scanner.generate("wl_seat", 8);
             scanner.generate("wp_cursor_shape_manager_v1", 1);
+            // scanner.generate("zwp_pointer_gestures_v1", 3);
 
             fe_mod.addImport("wayland", wayland);
             fe_mod.linkSystemLibrary("wayland-client", .{ .needed = true });
