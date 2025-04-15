@@ -132,6 +132,9 @@ fn run(gpa: Allocator) !void {
 
     // @TODO: listen to changes in these settings
     // @TODO: get appearance (theme)
+
+    log.debug("xdp: opening xdg-desktop-portal proxy", .{});
+
     var gio_err: ?*gio.GError = null;
     const xdp_settings_proxy = gio.g_dbus_proxy_new_for_bus_sync(
         gio.G_BUS_TYPE_SESSION,
@@ -165,7 +168,7 @@ fn run(gpa: Allocator) !void {
             manager,
         )
     else manager: {
-        const cursor_theme, const cursor_theme_variant = theme: {
+        const cursor_theme_variant = theme: {
             log.debug("xdp: getting cursor theme", .{});
 
             const read_cursor_theme = gio.g_dbus_proxy_call_sync(
@@ -198,11 +201,11 @@ fn run(gpa: Allocator) !void {
             const inner2 = gio.g_variant_get_variant(inner1);
             defer gio.g_variant_unref(inner2);
             const inner3 = gio.g_variant_get_variant(inner2);
-            const str = gio.g_variant_get_string(inner3, 0);
 
-            break :theme .{ std.mem.span(str), inner3 };
+            break :theme inner3;
         };
         defer gio.g_variant_unref(cursor_theme_variant);
+        const cursor_theme = gio.g_variant_get_string(cursor_theme_variant, 0);
 
         log.debug("xdp: got cursor theme: '{s}'", .{cursor_theme});
 
@@ -241,9 +244,7 @@ fn run(gpa: Allocator) !void {
             const inner3 = gio.g_variant_get_variant(inner2);
             defer gio.g_variant_unref(inner3);
 
-            const i = gio.g_variant_get_int32(inner3);
-
-            break :size i;
+            break :size gio.g_variant_get_int32(inner3);
         };
 
         log.debug("xpd: got cursor size: {d}", .{cursor_size});
@@ -1772,7 +1773,7 @@ pub const CursorManager = union(enum) {
         gpa: Allocator,
         wl_compositor: *wl.Compositor,
         wl_pointer: *wl.Pointer,
-        theme_name: [:0]const u8,
+        theme_name: [*:0]const u8,
         theme_size: i32,
         wl_shm: *wl.Shm,
     ) !CursorManager {
@@ -1828,7 +1829,7 @@ pub const CursorManager = union(enum) {
             gpa: Allocator,
             wl_compositor: *wl.Compositor,
             wl_pointer: *wl.Pointer,
-            theme_name: [:0]const u8,
+            theme_name: [*:0]const u8,
             theme_size: i32,
             wl_shm: *wl.Shm,
         ) !PointerManager {
