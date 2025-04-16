@@ -56,6 +56,7 @@ fn run(gpa: Allocator) !void {
     );
     defer window.deinit(gpa);
     window.inset = 15;
+    window.minimium_size = .{ .width = 200, .height = 100 };
 
     // -------------------------------------------------------------------------
     // - wgpu
@@ -162,20 +163,8 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .toplevel_configure => |conf| {
-                    window.tiling = conf.state;
-
-                    const new_size_inner = conf.size orelse window.size;
-                    const new_size = wl.Window.computeOuterSize(
-                        window.inset,
-                        new_size_inner,
-                        window.tiling,
-                    );
-
-                    if (new_size.width != window.size.width or
-                        new_size.height != window.size.height)
-                    {
-                        window.size = new_size;
-                        surface.reconfigure(new_size);
+                    if (window.handleToplevelConfigureEvent(conf)) |size| {
+                        surface.reconfigure(size);
                     }
 
                     do_render = true;

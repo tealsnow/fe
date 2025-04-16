@@ -16,9 +16,6 @@ const listeners = @import("listeners.zig");
 
 conn: *Connection,
 
-inset: ?u32,
-tiling: Event.ToplevelConfigureState,
-
 wl_surface: *wl.Surface,
 wl_frame_callback_listener_data: *listeners.WlFrameCallbackListenerData,
 
@@ -30,6 +27,11 @@ xdg_toplevel_listener_data: *listeners.XdgToplevelListenerData,
 xdg_toplevel: *xdg.Toplevel,
 
 size: Size(u32),
+
+/// This is in terms of window gemetry - excludes the inset
+minimium_size: ?Size(u32) = null,
+inset: ?u32 = null,
+tiling: Event.ToplevelConfigureState = .{},
 
 pub fn init(
     gpa: Allocator,
@@ -84,9 +86,6 @@ pub fn init(
     const window = try gpa.create(Window);
     window.* = .{
         .conn = conn,
-
-        .inset = null,
-        .tiling = .{},
 
         .wl_surface = wl_surface,
         .wl_frame_callback_listener_data = wl_frame_callback_listener_data,
@@ -185,6 +184,41 @@ pub fn handleSurfaceConfigureEvent(
         gemoetry.size.width,
         gemoetry.size.height,
     );
+}
+
+/// Returns the new size if changed
+pub fn handleToplevelConfigureEvent(
+    window: *Window,
+    conf: Event.ToplevelConfigure,
+) ?Size(u32) {
+    window.tiling = conf.state;
+
+    // This configure event is in terms on window geometry
+    // so we need to add back our inset for the real size
+    const new_size_geometry = conf.size orelse window.size;
+
+    const new_size_wo_inset: Size(u32) = if (window.minimium_size) |min|
+        .{
+            .width = @max(min.width, new_size_geometry.width),
+            .height = @max(min.height, new_size_geometry.height),
+        }
+    else
+        new_size_geometry;
+
+    // add back inset
+    const new_size = computeOuterSize(
+        window.inset,
+        new_size_wo_inset,
+        window.tiling,
+    );
+
+    return if (new_size.width != window.size.width or
+        new_size.height != window.size.height)
+    blk: {
+        window.size = new_size;
+
+        break :blk new_size;
+    } else null;
 }
 
 pub fn computeOuterSize(
