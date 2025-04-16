@@ -196,7 +196,7 @@ pub const Window = struct {
 
 pub const AppState = struct {
     gpa: std.mem.Allocator,
-    dbg_running: if (builtin.mode == .Debug) bool else void = if (builtin.mode == .Debug) true else false,
+    dbg_running: if (builtin.mode == .Debug) bool else void = if (builtin.mode == .Debug) true else void{},
 
     main_window: *Window,
     dbg_window: *Window,
