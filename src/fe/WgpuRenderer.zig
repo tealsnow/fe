@@ -6,15 +6,28 @@ const assert = std.debug.assert;
 
 const log = std.log.scoped(.@"wgpu renderer");
 
-const Size = @import("math.zig").Size;
-
 const wgpu = @import("wgpu");
+
+const pretty = @import("pretty");
+
+const mt = @import("math.zig");
+const Size = mt.Size;
+
+const tri_shader_code = @embedFile("triangle.wgsl");
+// const rect_shader_code = @embedFile("rect.wgsl");
 
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
 device: *wgpu.Device,
 queue: *wgpu.Queue,
+
+bind_group_layout: *wgpu.BindGroupLayout,
+pipeline_layout: *wgpu.PipelineLayout,
 pipeline: *wgpu.RenderPipeline,
+
+shader_globals: ShaderGlobals,
+shader_globals_buffer: *wgpu.Buffer,
+shader_globals_bind_group: *wgpu.BindGroup,
 
 pub const InspectOptions = struct {
     adapter: ?Allocator = null,
@@ -27,9 +40,8 @@ pub fn init(
     initial_size: Size(u32),
     inspect: InspectOptions,
 ) !Renderer {
-    const adapter, const surface = try createAdapaterAndSurface(
-        surface_descriptor_chain,
-    );
+    const adapter, const surface =
+        try createAdapaterAndSurface(surface_descriptor_chain);
     defer {
         log.debug("releasing adapter", .{});
         adapter.release();
@@ -41,13 +53,15 @@ pub fn init(
         try inspectAdapter(alloc, adapter);
     }
 
-    //- device request
+    //- request device
     log.debug("requesting device", .{});
+
+    const required_limits = getRequiredLimits(adapter);
 
     const device_response = adapter.requestDeviceSync(&.{
         .label = "fe device",
         .required_feature_count = 0,
-        .required_limits = null,
+        .required_limits = &required_limits,
         .default_queue = .{ .label = "default queue" },
         .device_lost_callback = &deviceLostCallback,
     });
@@ -77,22 +91,88 @@ pub fn init(
     surface.getCapabilities(adapter, &surface_caps);
     assert(surface_caps.format_count >= 1);
 
-    if (inspect.surface)
+    if (inspect.surface) {
         inspectSurface(surface_caps);
+    }
 
     const surface_format = surface_caps.formats[0];
     log.debug("preffered surface format: {s}", .{@tagName(surface_format)});
 
     configureSurfaceBare(initial_size, device, surface, surface_format);
 
-    const pipeline = try createPipeline(device, surface_format);
+    //- create pipline
+    log.debug("creating render pipeline", .{});
+
+    const bind_group_layout, const pipeline_layout, const pipeline =
+        try createPipeline(device, surface_format);
+
+    //- setup shader globals
+
+    const shader_globals = ShaderGlobals{
+        .res = initial_size.floatFromInt(f32),
+        .color = .hexRgb(0xff0000),
+    };
+
+    const shader_globals_buffer = device.createBuffer(&.{
+        .size = @sizeOf(ShaderGlobals),
+        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.uniform,
+        .mapped_at_creation = @intFromBool(false),
+    }) orelse {
+        log.err("failed to create uniform buffer", .{});
+        return error.wgpu;
+    };
+
+    queue.writeBuffer(
+        shader_globals_buffer,
+        0,
+        &shader_globals,
+        shader_globals_buffer.getSize(),
+    );
+
+    // queue.writeBuffer(
+    //     shader_globals_buffer,
+    //     @offsetOf(ShaderGlobals, "color"),
+    //     &shader_globals.color,
+    //     @sizeOf(mt.RgbaF32),
+    // );
+
+    // queue.writeBuffer(
+    //     shader_globals_buffer,
+    //     @offsetOf(ShaderGlobals, "res"),
+    //     &shader_globals.res,
+    //     @sizeOf(Size(f32)),
+    // );
+
+    const binding = wgpu.BindGroupEntry{
+        .binding = 0,
+        .buffer = shader_globals_buffer,
+        .offset = 0,
+        .size = @sizeOf(ShaderGlobals),
+    };
+
+    const shader_globals_bind_group = device.createBindGroup(&.{
+        .label = "fe bind group",
+        .layout = bind_group_layout,
+        .entry_count = 1,
+        .entries = &.{binding},
+    }) orelse {
+        log.err("failed to create bind group", .{});
+        return error.wgpu;
+    };
 
     return .{
         .surface = surface,
         .surface_format = surface_format,
         .device = device,
         .queue = queue,
+
+        .bind_group_layout = bind_group_layout,
+        .pipeline_layout = pipeline_layout,
         .pipeline = pipeline,
+
+        .shader_globals = shader_globals,
+        .shader_globals_buffer = shader_globals_buffer,
+        .shader_globals_bind_group = shader_globals_bind_group,
     };
 }
 
@@ -100,7 +180,11 @@ pub fn deinit(renderer: Renderer) void {
     defer renderer.surface.unconfigure();
     defer renderer.queue.release();
     defer renderer.device.release();
+    defer renderer.bind_group_layout.release();
+    defer renderer.pipeline_layout.release();
     defer renderer.pipeline.release();
+    defer renderer.shader_globals_buffer.release();
+    defer renderer.shader_globals_bind_group.release();
 }
 
 fn createAdapaterAndSurface(
@@ -146,27 +230,82 @@ fn createAdapaterAndSurface(
     return .{ adapter, surface };
 }
 
+fn getRequiredLimits(adapter: *wgpu.Adapter) wgpu.RequiredLimits {
+    _ = adapter;
+    // const supported_limits: wgpu.SupportedLimits = undefined;
+    // if (!adapter.getLimits(&supported_limits)) return error.wgpu;
+
+    return wgpu.RequiredLimits{
+        .limits = .{
+            .max_vertex_attributes = 2,
+            .max_vertex_buffers = 1,
+            .max_buffer_size = 4 * @sizeOf(Vertex2D),
+            .max_vertex_buffer_array_stride = @sizeOf(Vertex2D),
+            .max_inter_stage_shader_components = 4,
+
+            .max_bind_groups = 1,
+            .max_uniform_buffers_per_shader_stage = 1,
+            .max_uniform_buffer_binding_size = @sizeOf(ShaderGlobals),
+        },
+    };
+}
+
 fn createPipeline(
     device: *wgpu.Device,
     surface_format: wgpu.TextureFormat,
-) !*wgpu.RenderPipeline {
+) !struct {
+    *wgpu.BindGroupLayout,
+    *wgpu.PipelineLayout,
+    *wgpu.RenderPipeline,
+} {
     //- create shader module
-    log.debug("creating shader module", .{});
+    log.debug("compiling shader module", .{});
 
     const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
-        .code = @embedFile("triangle.wgsl"),
+        .code = tri_shader_code,
     };
     const shader_module =
         device.createShaderModule(&.{
+            .label = "fe shader",
             .next_in_chain = &shader_code_desc.chain,
         }) orelse {
             log.err("failed to create shader module", .{});
             return error.wgpu;
         };
 
-    //- create pipline
-    log.debug("creating pipeline", .{});
+    //- uniform binding
+    const binding_layout = wgpu.BindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
+        .buffer = .{
+            .type = .uniform,
+            .min_binding_size = @sizeOf(ShaderGlobals),
+        },
 
+        .sampler = .{},
+        .texture = .{},
+        .storage_texture = .{},
+    };
+
+    //- bind group
+    const bind_group_layout = device.createBindGroupLayout(&.{
+        .label = "fe bind group layout",
+        .entry_count = 1,
+        .entries = &.{binding_layout},
+    }) orelse {
+        log.err("failed to create bind group layout", .{});
+        return error.wgpu;
+    };
+
+    //- vertex buffer
+    const vertex_buffer_layout = wgpu.VertexBufferLayout{
+        .attribute_count = Vertex2D.attributes.len,
+        .attributes = &Vertex2D.attributes,
+        .array_stride = @sizeOf(Vertex2D),
+        .step_mode = .vertex,
+    };
+
+    //- fragment state
     const blend_state = wgpu.BlendState{
         .color = .{
             .src_factor = .src_alpha,
@@ -193,13 +332,28 @@ fn createPipeline(
         .targets = &.{color_target_state},
     };
 
-    const render_pipline_desc = wgpu.RenderPipelineDescriptor{
+    //- pipeline layout
+    const pipeline_layout = device.createPipelineLayout(&.{
+        .label = "fe pipeline layout",
+        .bind_group_layout_count = 1,
+        .bind_group_layouts = &.{bind_group_layout},
+    }) orelse {
+        log.err("failed to create pipeline layout", .{});
+        return error.wgpu;
+    };
+
+    //- pipeline desc
+    const pipline_desc = wgpu.RenderPipelineDescriptor{
+        .label = "fe pipeline",
         .vertex = .{
             .module = shader_module,
             .entry_point = "vsMain",
+
+            .buffer_count = 1,
+            .buffers = &.{vertex_buffer_layout},
         },
         .primitive = .{
-            .topology = .triangle_list, // every 3 vertices are a tri
+            .topology = .triangle_list,
             .strip_index_format = .undefined, // sequential
             .front_face = .ccw, // counter-clockwise
             .cull_mode = .none,
@@ -210,18 +364,27 @@ fn createPipeline(
             .count = 1,
             .mask = 0xffffffff,
         },
-        .layout = null,
+        .layout = pipeline_layout,
     };
 
     const pipeline =
-        device.createRenderPipeline(&render_pipline_desc) orelse {
+        device.createRenderPipeline(&pipline_desc) orelse {
             log.debug("failed to create render pipeline", .{});
             return error.wgpu;
         };
-    return pipeline;
+
+    return .{ bind_group_layout, pipeline_layout, pipeline };
 }
 
-pub fn reconfigure(renderer: Renderer, size: Size(u32)) void {
+pub fn reconfigure(renderer: *Renderer, size: Size(u32)) void {
+    renderer.shader_globals.res = size.floatFromInt(f32);
+    renderer.queue.writeBuffer(
+        renderer.shader_globals_buffer,
+        @offsetOf(ShaderGlobals, "res"),
+        &renderer.shader_globals.res,
+        @sizeOf(Size(f32)),
+    );
+
     configureSurfaceBare(
         size,
         renderer.device,
@@ -262,22 +425,7 @@ fn inspectAdapter(gpa: Allocator, adapter: *wgpu.Adapter) !void {
     const limits = supported_limits.limits;
 
     log.debug("Adapter limits:", .{});
-    log.debug(
-        "- maxTextureDimension1D: {d}",
-        .{limits.max_texture_dimension_1d},
-    );
-    log.debug(
-        "- maxTextureDimension2D: {d}",
-        .{limits.max_texture_dimension_2d},
-    );
-    log.debug(
-        "- maxTextureDimension3D: {d}",
-        .{limits.max_texture_dimension_3d},
-    );
-    log.debug(
-        "- maxTextureArrayLayers: {d}",
-        .{limits.max_texture_array_layers},
-    );
+    try printLimits(gpa, limits);
 
     //- feature listing
     log.debug("getting adapter features", .{});
@@ -306,22 +454,7 @@ fn inspectDevice(gpa: Allocator, device: *wgpu.Device) !void {
     const limits = supported_limits.limits;
 
     log.debug("Device limits:", .{});
-    log.debug(
-        "- maxTextureDimension1D: {d}",
-        .{limits.max_texture_dimension_1d},
-    );
-    log.debug(
-        "- maxTextureDimension2D: {d}",
-        .{limits.max_texture_dimension_2d},
-    );
-    log.debug(
-        "- maxTextureDimension3D: {d}",
-        .{limits.max_texture_dimension_3d},
-    );
-    log.debug(
-        "- maxTextureArrayLayers: {d}",
-        .{limits.max_texture_array_layers},
-    );
+    try printLimits(gpa, limits);
 
     //- features
     log.debug("getting device features", .{});
@@ -336,6 +469,16 @@ fn inspectDevice(gpa: Allocator, device: *wgpu.Device) !void {
     for (feature_list) |feature| {
         log.debug("- {s}", .{@tagName(feature)});
     }
+}
+
+fn printLimits(gpa: Allocator, limits: wgpu.Limits) !void {
+    const limits_str = try pretty.dump(gpa, limits, .{
+        .show_type_names = true,
+        .struct_max_len = 40, // limits has 31
+    });
+    defer gpa.free(limits_str);
+
+    log.debug("{s}", .{limits_str});
 }
 
 fn inspectSurface(surface_caps: wgpu.SurfaceCapabilities) void {
@@ -382,3 +525,33 @@ fn queueWorkDoneCallback(
     _ = userdata;
     log.debug("Queue work finished with status: {}", .{status});
 }
+
+// fields should be 16 bit aligned
+pub const ShaderGlobals = extern struct {
+    color: mt.RgbaF32, // 16
+    res: Size(f32), // 8
+
+    _padding: [2]u32 = @splat(0), // 8
+};
+
+pub const Vertex2D = extern struct {
+    point: mt.Point(f32),
+    color: mt.RgbaF32,
+
+    pub fn vert(point: mt.Point(f32), color: mt.RgbaF32) Vertex2D {
+        return .{ .point = point, .color = color };
+    }
+
+    pub const attributes = [_]wgpu.VertexAttribute{
+        .{
+            .shader_location = 0,
+            .format = .float32x2,
+            .offset = 0,
+        },
+        .{
+            .shader_location = 1,
+            .format = .float32x4,
+            .offset = @sizeOf(mt.Point(f32)),
+        },
+    };
+};

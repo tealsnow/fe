@@ -7,6 +7,7 @@ const log = std.log.scoped(.@"fe[wl]");
 
 const xkb = @import("xkbcommon");
 
+const mt = @import("math.zig");
 const Point = @import("math.zig").Point;
 const Size = @import("math.zig").Size;
 
@@ -71,7 +72,7 @@ fn run(gpa: Allocator) !void {
         .surface = window.wl_surface,
     };
 
-    const renderer = try WgpuRenderer.init(
+    var renderer = try WgpuRenderer.init(
         &wgpu_wl_surface.chain,
         window.size,
         .{
@@ -82,11 +83,55 @@ fn run(gpa: Allocator) !void {
     );
     defer renderer.deinit();
 
+    //- vertex/index buffers
+
+    const vertex_buffer_data = [_]WgpuRenderer.Vertex2D{
+        .vert(.point(-0.5, -0.5), .hexRgb(0xff0000)),
+        .vert(.point(0.5, -0.5), .hexRgb(0x00ff00)),
+        .vert(.point(0.5, 0.5), .hexRgb(0x0000ff)),
+        .vert(.point(-0.5, 0.5), .hexRgba(0xffff00)),
+    };
+
+    const index_buffer_data = [_]u16{
+        0, 1, 2, //
+        0, 2, 3,
+    };
+
+    const vertex_buffer = renderer.device.createBuffer(&.{
+        .size = vertex_buffer_data.len * @sizeOf(WgpuRenderer.Vertex2D),
+        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
+        .mapped_at_creation = @intFromBool(false),
+    }) orelse {
+        log.err("failed to create vertex buffer", .{});
+        return error.wgpu;
+    };
+    defer vertex_buffer.release();
+
+    const index_buffer = renderer.device.createBuffer(&.{
+        .size = index_buffer_data.len * @sizeOf(u16),
+        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.index,
+        .mapped_at_creation = @intFromBool(false),
+    }) orelse {
+        log.err("failed to create index buffer", .{});
+        return error.wgpu;
+    };
+    defer index_buffer.release();
+
+    renderer.queue.writeBuffer(
+        vertex_buffer,
+        0,
+        &vertex_buffer_data,
+        vertex_buffer.getSize(),
+    );
+    renderer.queue.writeBuffer(
+        index_buffer,
+        0,
+        &index_buffer_data,
+        index_buffer.getSize(),
+    );
+
     // -------------------------------------------------------------------------
     // - main loop
-
-    // var surface = try window.createSurface();
-    // defer surface.deinit();
 
     var pointer_pos = Point(f64){ .x = -1, .y = -1 };
     var pointer_enter_serial: u32 = 0;
@@ -128,23 +173,24 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .keyboard_focus => |focus| {
-                    log.debug(
-                        "keyboard_focus: state: {s}, serial: {d}",
-                        .{ @tagName(focus.state), focus.serial },
-                    );
+                    _ = focus;
+                    // log.debug(
+                    //     "keyboard_focus: state: {s}, serial: {d}",
+                    //     .{ @tagName(focus.state), focus.serial },
+                    // );
                 },
 
                 .key => |key| key: {
-                    log.debug(
-                        "key: state: {s}, scancode: {d}, keysym: {}," ++
-                            " codepoint: 0x{x}",
-                        .{
-                            @tagName(key.state),
-                            key.scancode,
-                            key.keysym,
-                            key.codepoint,
-                        },
-                    );
+                    // log.debug(
+                    //     "key: state: {s}, scancode: {d}, keysym: {}," ++
+                    //         " codepoint: 0x{x}",
+                    //     .{
+                    //         @tagName(key.state),
+                    //         key.scancode,
+                    //         key.keysym,
+                    //         key.codepoint,
+                    //     },
+                    // );
 
                     if (key.state != .pressed) break :key;
 
@@ -160,36 +206,38 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .modifier => |mods| {
-                    log.debug(
-                        "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}," ++
-                            " gui: {}, serial: {d}",
-                        .{
-                            mods.state.shift,
-                            mods.state.caps_lock,
-                            mods.state.ctrl,
-                            mods.state.alt,
-                            mods.state.logo,
-                            mods.serial,
-                        },
-                    );
+                    _ = mods;
+                    // log.debug(
+                    //     "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}," ++
+                    //         " gui: {}, serial: {d}",
+                    //     .{
+                    //         mods.state.shift,
+                    //         mods.state.caps_lock,
+                    //         mods.state.ctrl,
+                    //         mods.state.alt,
+                    //         mods.state.logo,
+                    //         mods.serial,
+                    //     },
+                    // );
                 },
 
                 .text => |text| {
-                    const utf8 = text.sliceZ();
-                    log.debug(
-                        "text: codepoint: 0x{x}, text: '{s}'",
-                        .{
-                            text.codepoint,
-                            std.fmt.fmtSliceEscapeLower(utf8),
-                        },
-                    );
+                    _ = text;
+                    // const utf8 = text.sliceZ();
+                    // log.debug(
+                    //     "text: codepoint: 0x{x}, text: '{s}'",
+                    //     .{
+                    //         text.codepoint,
+                    //         std.fmt.fmtSliceEscapeLower(utf8),
+                    //     },
+                    // );
                 },
 
                 .pointer_focus => |focus| {
-                    log.debug(
-                        "pointer_focus: state: {s}, serial: {d}",
-                        .{ @tagName(focus.state), focus.serial },
-                    );
+                    // log.debug(
+                    //     "pointer_focus: state: {s}, serial: {d}",
+                    //     .{ @tagName(focus.state), focus.serial },
+                    // );
 
                     switch (focus.state) {
                         .enter => {
@@ -223,14 +271,14 @@ fn run(gpa: Allocator) !void {
                     );
                 },
                 .pointer_button => |button| button: {
-                    log.debug(
-                        "pointer_button: state: {s}, button: {s}, serial: {d}",
-                        .{
-                            @tagName(button.state),
-                            @tagName(button.button),
-                            button.serial,
-                        },
-                    );
+                    // log.debug(
+                    //     "pointer_button: state: {s}, button: {s}, serial: {d}",
+                    //     .{
+                    //         @tagName(button.state),
+                    //         @tagName(button.button),
+                    //         button.serial,
+                    //     },
+                    // );
 
                     if (button.state != .pressed) break :button;
 
@@ -243,14 +291,15 @@ fn run(gpa: Allocator) !void {
                     }
                 },
                 .pointer_scroll => |scroll| {
-                    log.debug(
-                        "pointer_scroll: axis: {s}, source: {s}, value: {?d}",
-                        .{
-                            @tagName(scroll.axis),
-                            @tagName(scroll.source),
-                            scroll.value,
-                        },
-                    );
+                    _ = scroll;
+                    // log.debug(
+                    //     "pointer_scroll: axis: {s}, source: {s}, value: {?d}",
+                    //     .{
+                    //         @tagName(scroll.axis),
+                    //         @tagName(scroll.source),
+                    //         scroll.value,
+                    //     },
+                    // );
                 },
             }
         }
@@ -337,7 +386,27 @@ fn run(gpa: Allocator) !void {
 
                     render_pass.setPipeline(renderer.pipeline);
 
-                    render_pass.draw(3, 1, 0, 0);
+                    render_pass.setVertexBuffer(
+                        0,
+                        vertex_buffer,
+                        0,
+                        vertex_buffer.getSize(),
+                    );
+                    render_pass.setIndexBuffer(
+                        index_buffer,
+                        .uint16,
+                        0,
+                        index_buffer.getSize(),
+                    );
+
+                    render_pass.setBindGroup(
+                        0,
+                        renderer.shader_globals_bind_group,
+                        0,
+                        null,
+                    );
+
+                    render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
 
                     render_pass.end();
                 }

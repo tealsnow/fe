@@ -32,6 +32,11 @@
             .hash = "xkbcommon-0.3.0-VDqIe3K9AQB2fG5ZeRcMC9i7kfrp5m2rWgLrmdNn9azr",
             .lazy = true,
         },
+        .pretty = .{
+            .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
+            .hash = "pretty-0.10.4-AAAAAM9GAQATvLkzFJ6-Y9r_NWCAC2Q4hOKxHSnJXQLD",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",

@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
             "switch to use llvm or not " ++
                 "(defaults to false for debug and true for release)",
         ) orelse
-        if (optimize == .Debug) profile else true;
+        if (optimize == .Debug) profile else false;
 
     const log_level: std.log.Level =
         b.option(
@@ -73,6 +73,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .tracy_enable = profile,
         .shared = false,
+    });
+
+    // -------------------------------------------------------------------------
+    // - pretty printing
+
+    const pretty_print = b.lazyDependency("pretty", .{
+        .target = target,
+        .optimize = optimize,
     });
 
     // -------------------------------------------------------------------------
@@ -213,6 +221,9 @@ pub fn build(b: *std.Build) void {
             fe_mod.link_libcpp = true;
         }
     }
+
+    if (pretty_print) |m|
+        fe_mod.addImport("pretty", m.module("pretty"));
 
     const plugin_schema = getPluginSchema(b);
     fe_mod.addImport("plugin-schema", plugin_schema);
