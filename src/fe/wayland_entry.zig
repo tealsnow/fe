@@ -17,9 +17,6 @@ const wgpu = @import("wgpu");
 
 const WgpuRenderer = @import("WgpuRenderer.zig");
 
-// renderer log only use for err/warn unless testing
-const rlog = std.log.scoped(.@"wgpu render");
-
 // @TODO:
 //   @[ ]: setup cu
 //
@@ -52,6 +49,9 @@ pub fn entry(gpa: Allocator) !void {
 }
 
 fn run(gpa: Allocator) !void {
+    // -------------------------------------------------------------------------
+    // - window
+
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
 
@@ -82,53 +82,6 @@ fn run(gpa: Allocator) !void {
         },
     );
     defer renderer.deinit();
-
-    //- vertex/index buffers
-
-    const vertex_buffer_data = [_]WgpuRenderer.Vertex2D{
-        .vert(.point(-0.5, -0.5), .hexRgb(0xff0000)),
-        .vert(.point(0.5, -0.5), .hexRgb(0x00ff00)),
-        .vert(.point(0.5, 0.5), .hexRgb(0x0000ff)),
-        .vert(.point(-0.5, 0.5), .hexRgba(0xffff00)),
-    };
-
-    const index_buffer_data = [_]u16{
-        0, 1, 2, //
-        0, 2, 3,
-    };
-
-    const vertex_buffer = renderer.device.createBuffer(&.{
-        .size = vertex_buffer_data.len * @sizeOf(WgpuRenderer.Vertex2D),
-        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
-        .mapped_at_creation = @intFromBool(false),
-    }) orelse {
-        log.err("failed to create vertex buffer", .{});
-        return error.wgpu;
-    };
-    defer vertex_buffer.release();
-
-    const index_buffer = renderer.device.createBuffer(&.{
-        .size = index_buffer_data.len * @sizeOf(u16),
-        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.index,
-        .mapped_at_creation = @intFromBool(false),
-    }) orelse {
-        log.err("failed to create index buffer", .{});
-        return error.wgpu;
-    };
-    defer index_buffer.release();
-
-    renderer.queue.writeBuffer(
-        vertex_buffer,
-        0,
-        &vertex_buffer_data,
-        vertex_buffer.getSize(),
-    );
-    renderer.queue.writeBuffer(
-        index_buffer,
-        0,
-        &index_buffer_data,
-        index_buffer.getSize(),
-    );
 
     // -------------------------------------------------------------------------
     // - main loop
@@ -304,129 +257,10 @@ fn run(gpa: Allocator) !void {
             }
         }
 
-        if (!do_render) continue :main_loop;
+        if (do_render) {
+            renderer.draw();
 
-        {
-            //- get next surface texture
-            const target_view = target_view: {
-                var surface_texture: wgpu.SurfaceTexture = undefined;
-                renderer.surface.getCurrentTexture(&surface_texture);
-
-                if (surface_texture.status != .success)
-                    break :target_view null;
-
-                const target_view =
-                    surface_texture.texture.createView(&.{
-                        .label = "fe texture view",
-                        .format = surface_texture.texture.getFormat(),
-                        .dimension = .@"2d",
-                        .base_mip_level = 0,
-                        .mip_level_count = 1,
-                        .base_array_layer = 0,
-                        .array_layer_count = 1,
-                        .aspect = .all,
-                    }) orelse
-                    break :target_view null;
-
-                break :target_view target_view;
-            } orelse {
-                rlog.err(
-                    "failed to get next surface texture view",
-                    .{},
-                );
-                return;
-            };
-            defer target_view.release();
-
-            const command_buffer = command_buffer: {
-                //- command encoder
-                const encoder =
-                    renderer.device.createCommandEncoder(&.{
-                        .label = "fe command encoder",
-                    }) orelse {
-                        rlog.err(
-                            "failed to create command encoder",
-                            .{},
-                        );
-                        return;
-                    };
-                defer encoder.release();
-
-                {
-                    //- render pass
-                    const render_pass =
-                        encoder.beginRenderPass(&.{
-                            .label = "fe render pass",
-                            .color_attachment_count = 1,
-                            .color_attachments = &.{
-                                .{
-                                    .view = target_view,
-                                    .resolve_target = null,
-                                    .load_op = .clear,
-                                    .store_op = .store,
-                                    .clear_value = .{
-                                        .r = 0.9,
-                                        .g = 0.1,
-                                        .b = 0.2,
-                                        .a = 1.0,
-                                    },
-                                    .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
-                                },
-                            },
-                            .depth_stencil_attachment = null,
-                            .timestamp_writes = null,
-                        }) orelse {
-                            rlog.err(
-                                "failed to begin render pass",
-                                .{},
-                            );
-                            return;
-                        };
-                    defer render_pass.release();
-
-                    render_pass.setPipeline(renderer.pipeline);
-
-                    render_pass.setVertexBuffer(
-                        0,
-                        vertex_buffer,
-                        0,
-                        vertex_buffer.getSize(),
-                    );
-                    render_pass.setIndexBuffer(
-                        index_buffer,
-                        .uint16,
-                        0,
-                        index_buffer.getSize(),
-                    );
-
-                    render_pass.setBindGroup(
-                        0,
-                        renderer.shader_globals_bind_group,
-                        0,
-                        null,
-                    );
-
-                    render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
-
-                    render_pass.end();
-                }
-
-                //- command
-                const command_buffer =
-                    encoder.finish(&.{ .label = "fe command buffer" }) orelse {
-                        rlog.err("failed to finish encoding", .{});
-                        return;
-                    };
-
-                break :command_buffer command_buffer;
-            };
-            defer command_buffer.release();
-
-            //- submit command
-            renderer.queue.submit(&.{command_buffer});
+            renderer.surface.present();
         }
-
-        //- present surface
-        renderer.surface.present();
     }
 }

@@ -14,7 +14,7 @@ const mt = @import("math.zig");
 const Size = mt.Size;
 
 const tri_shader_code = @embedFile("triangle.wgsl");
-// const rect_shader_code = @embedFile("rect.wgsl");
+const rect_shader_code = @embedFile("rect.wgsl");
 
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
@@ -28,6 +28,9 @@ pipeline: *wgpu.RenderPipeline,
 shader_globals: ShaderGlobals,
 shader_globals_buffer: *wgpu.Buffer,
 shader_globals_bind_group: *wgpu.BindGroup,
+
+rect_buffer_data_len: u32,
+rect_buffer: *wgpu.Buffer,
 
 pub const InspectOptions = struct {
     adapter: ?Allocator = null,
@@ -160,6 +163,80 @@ pub fn init(
         return error.wgpu;
     };
 
+    // -------------------------------------------------------------------------
+
+    //- vertex/index buffers
+
+    // const vertex_buffer_data = [_]WgpuRenderer.Vertex2D{
+    //     .vert(.point(-0.5, -0.5), .hexRgb(0xff0000)),
+    //     .vert(.point(0.5, -0.5), .hexRgb(0x00ff00)),
+    //     .vert(.point(0.5, 0.5), .hexRgb(0x0000ff)),
+    //     .vert(.point(-0.5, 0.5), .hexRgba(0xffff00)),
+    // };
+
+    // const index_buffer_data = [_]u16{
+    //     0, 1, 2, //
+    //     0, 2, 3,
+    // };
+
+    // const vertex_buffer = renderer.device.createBuffer(&.{
+    //     .size = vertex_buffer_data.len * @sizeOf(WgpuRenderer.Vertex2D),
+    //     .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
+    //     .mapped_at_creation = @intFromBool(false),
+    // }) orelse {
+    //     log.err("failed to create vertex buffer", .{});
+    //     return error.wgpu;
+    // };
+    // defer vertex_buffer.release();
+
+    // const index_buffer = renderer.device.createBuffer(&.{
+    //     .size = index_buffer_data.len * @sizeOf(u16),
+    //     .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.index,
+    //     .mapped_at_creation = @intFromBool(false),
+    // }) orelse {
+    //     log.err("failed to create index buffer", .{});
+    //     return error.wgpu;
+    // };
+    // defer index_buffer.release();
+
+    // renderer.queue.writeBuffer(
+    //     vertex_buffer,
+    //     0,
+    //     &vertex_buffer_data,
+    //     vertex_buffer.getSize(),
+    // );
+    // renderer.queue.writeBuffer(
+    //     index_buffer,
+    //     0,
+    //     &index_buffer_data,
+    //     index_buffer.getSize(),
+    // );
+
+    //- rect test
+
+    const rect_buffer_data = [_]GpuRect{
+        .gpuRect(.rect(.point(40, 40), .point(100, 100)), .hexRgb(0xff0000)),
+        // .gpuRect(.rect(.point(-0.5, -0.5), .point(0.5, 0.5)), .hexRgb(0xff0000)),
+    };
+
+    const rect_buffer = device.createBuffer(&.{
+        .size = rect_buffer_data.len * @sizeOf(GpuRect),
+        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
+        .mapped_at_creation = @intFromBool(false),
+    }) orelse {
+        log.err("failed to create rect buffer", .{});
+        return error.wgpu;
+    };
+
+    queue.writeBuffer(
+        rect_buffer,
+        0,
+        &rect_buffer_data,
+        rect_buffer.getSize(),
+    );
+
+    // -------------------------------------------------------------------------
+
     return .{
         .surface = surface,
         .surface_format = surface_format,
@@ -173,6 +250,9 @@ pub fn init(
         .shader_globals = shader_globals,
         .shader_globals_buffer = shader_globals_buffer,
         .shader_globals_bind_group = shader_globals_bind_group,
+
+        .rect_buffer_data_len = rect_buffer_data.len,
+        .rect_buffer = rect_buffer,
     };
 }
 
@@ -185,6 +265,7 @@ pub fn deinit(renderer: Renderer) void {
     defer renderer.pipeline.release();
     defer renderer.shader_globals_buffer.release();
     defer renderer.shader_globals_bind_group.release();
+    defer renderer.rect_buffer.release();
 }
 
 fn createAdapaterAndSurface(
@@ -237,15 +318,15 @@ fn getRequiredLimits(adapter: *wgpu.Adapter) wgpu.RequiredLimits {
 
     return wgpu.RequiredLimits{
         .limits = .{
-            .max_vertex_attributes = 2,
-            .max_vertex_buffers = 1,
-            .max_buffer_size = 4 * @sizeOf(Vertex2D),
-            .max_vertex_buffer_array_stride = @sizeOf(Vertex2D),
-            .max_inter_stage_shader_components = 4,
+            // .max_vertex_attributes = 2,
+            // .max_vertex_buffers = 1,
+            // .max_buffer_size = 4 * @sizeOf(Vertex2D),
+            // .max_vertex_buffer_array_stride = @sizeOf(Vertex2D),
+            // .max_inter_stage_shader_components = 4,
 
-            .max_bind_groups = 1,
-            .max_uniform_buffers_per_shader_stage = 1,
-            .max_uniform_buffer_binding_size = @sizeOf(ShaderGlobals),
+            // .max_bind_groups = 1,
+            // .max_uniform_buffers_per_shader_stage = 1,
+            // .max_uniform_buffer_binding_size = @sizeOf(ShaderGlobals),
         },
     };
 }
@@ -262,7 +343,7 @@ fn createPipeline(
     log.debug("compiling shader module", .{});
 
     const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
-        .code = tri_shader_code,
+        .code = rect_shader_code,
     };
     const shader_module =
         device.createShaderModule(&.{
@@ -299,10 +380,16 @@ fn createPipeline(
 
     //- vertex buffer
     const vertex_buffer_layout = wgpu.VertexBufferLayout{
-        .attribute_count = Vertex2D.attributes.len,
-        .attributes = &Vertex2D.attributes,
-        .array_stride = @sizeOf(Vertex2D),
+        // .attribute_count = Vertex2D.attributes.len,
+        // .attributes = &Vertex2D.attributes,
+        // .array_stride = @sizeOf(Vertex2D),
+        // .step_mode = .vertex,
+
+        .attribute_count = GpuRect.attributes.len,
+        .attributes = &GpuRect.attributes,
+        .array_stride = @sizeOf(GpuRect),
         .step_mode = .vertex,
+        // .step_mode = .instance,
     };
 
     //- fragment state
@@ -353,9 +440,10 @@ fn createPipeline(
             .buffers = &.{vertex_buffer_layout},
         },
         .primitive = .{
-            .topology = .triangle_list,
+            // .topology = .triangle_list,
+            .topology = .triangle_strip,
             .strip_index_format = .undefined, // sequential
-            .front_face = .ccw, // counter-clockwise
+            .front_face = .cw, // counter-clockwise
             .cull_mode = .none,
         },
         .fragment = &fragment_state,
@@ -555,3 +643,170 @@ pub const Vertex2D = extern struct {
         },
     };
 };
+
+pub const GpuRect = extern struct {
+    rect: mt.Rect(f32),
+    color: mt.RgbaF32,
+
+    pub fn gpuRect(rect: mt.Rect(f32), color: mt.RgbaF32) GpuRect {
+        return .{ .rect = rect, .color = color };
+    }
+
+    pub const attributes = [_]wgpu.VertexAttribute{
+        .{ // p0
+            .shader_location = 0,
+            .format = .float32x2,
+            .offset = 0,
+        },
+        .{ // p1
+            .shader_location = 1,
+            .format = .float32x2,
+            .offset = 2 * @sizeOf(f32),
+        },
+        .{ // color
+            .shader_location = 2,
+            .format = .float32x4,
+            .offset = 4 * @sizeOf(f32),
+        },
+    };
+};
+
+pub fn draw(renderer: Renderer) void {
+    // renderer log only use for err/warn unless testing
+    const rlog = std.log.scoped(.@"wgpu render");
+
+    //- get next surface texture
+    const target_view = target_view: {
+        var surface_texture: wgpu.SurfaceTexture = undefined;
+        renderer.surface.getCurrentTexture(&surface_texture);
+
+        if (surface_texture.status != .success)
+            break :target_view null;
+
+        const target_view =
+            surface_texture.texture.createView(&.{
+                .label = "fe texture view",
+                .format = surface_texture.texture.getFormat(),
+                .dimension = .@"2d",
+                .base_mip_level = 0,
+                .mip_level_count = 1,
+                .base_array_layer = 0,
+                .array_layer_count = 1,
+                .aspect = .all,
+            }) orelse
+            break :target_view null;
+
+        break :target_view target_view;
+    } orelse {
+        rlog.err(
+            "failed to get next surface texture view",
+            .{},
+        );
+        return;
+    };
+    defer target_view.release();
+
+    const command_buffer = command_buffer: {
+        //- command encoder
+        const encoder =
+            renderer.device.createCommandEncoder(&.{
+                .label = "fe command encoder",
+            }) orelse {
+                rlog.err(
+                    "failed to create command encoder",
+                    .{},
+                );
+                return;
+            };
+        defer encoder.release();
+
+        {
+            //- render pass
+            const render_pass =
+                encoder.beginRenderPass(&.{
+                    .label = "rect? render pass",
+                    .color_attachment_count = 1,
+                    .color_attachments = &.{
+                        .{
+                            .view = target_view,
+                            .resolve_target = null,
+                            .load_op = .clear,
+                            .store_op = .store,
+                            .clear_value = .{
+                                .r = 0.9,
+                                .g = 0.1,
+                                .b = 0.2,
+                                .a = 1.0,
+                            },
+                            .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                        },
+                    },
+                    .depth_stencil_attachment = null,
+                    .timestamp_writes = null,
+                }) orelse {
+                    rlog.err(
+                        "failed to begin render pass",
+                        .{},
+                    );
+                    return;
+                };
+            defer render_pass.release();
+
+            render_pass.setPipeline(renderer.pipeline);
+
+            // render_pass.setVertexBuffer(
+            //     0,
+            //     vertex_buffer,
+            //     0,
+            //     vertex_buffer.getSize(),
+            // );
+            // render_pass.setIndexBuffer(
+            //     index_buffer,
+            //     .uint16,
+            //     0,
+            //     index_buffer.getSize(),
+            // );
+
+            render_pass.setVertexBuffer(
+                0,
+                renderer.rect_buffer,
+                0,
+                renderer.rect_buffer.getSize(),
+            );
+
+            render_pass.setBindGroup(
+                0,
+                renderer.shader_globals_bind_group,
+                0,
+                null,
+            );
+
+            // render_pass.setViewport(
+            //     0,
+            //     0,
+            //     renderer.shader_globals.res.width,
+            //     renderer.shader_globals.res.height,
+            //     0,
+            //     1,
+            // );
+
+            // render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
+            render_pass.draw(renderer.rect_buffer_data_len, 4, 0, 0);
+
+            render_pass.end();
+        }
+
+        //- command
+        const command_buffer =
+            encoder.finish(&.{ .label = "fe command buffer" }) orelse {
+                rlog.err("failed to finish encoding", .{});
+                return;
+            };
+
+        break :command_buffer command_buffer;
+    };
+    defer command_buffer.release();
+
+    //- submit command
+    renderer.queue.submit(&.{command_buffer});
+}
