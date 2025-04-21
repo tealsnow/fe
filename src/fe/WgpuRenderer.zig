@@ -4,7 +4,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
-const log = std.log.scoped(.@"wgpu renderer");
+const log_scope = .@"wgpu renderer";
+const log = std.log.scoped(log_scope);
 
 const wgpu = @import("wgpu");
 
@@ -14,37 +15,39 @@ const mt = @import("math.zig");
 const Size = mt.Size;
 
 const tri_shader_code = @embedFile("triangle.wgsl");
-const rect_shader_code = @embedFile("rect.wgsl");
 
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
 device: *wgpu.Device,
 queue: *wgpu.Queue,
 
-bind_group_layout: *wgpu.BindGroupLayout,
-pipeline_layout: *wgpu.PipelineLayout,
-pipeline: *wgpu.RenderPipeline,
+// bind_group_layout: *wgpu.BindGroupLayout,
+// pipeline_layout: *wgpu.PipelineLayout,
+// pipeline: *wgpu.RenderPipeline,
+//
+// shader_globals: ShaderGlobals,
+// shader_globals_buffer: *wgpu.Buffer,
+// shader_globals_bind_group: *wgpu.BindGroup,
+//
+// rect_buffer_data_len: u32,
+// rect_buffer: *wgpu.Buffer,
 
-shader_globals: ShaderGlobals,
-shader_globals_buffer: *wgpu.Buffer,
-shader_globals_bind_group: *wgpu.BindGroup,
-
-rect_buffer_data_len: u32,
-rect_buffer: *wgpu.Buffer,
+rect_pass: RenderPassRect,
 
 pub const InspectOptions = struct {
+    instance: ?Allocator = null,
     adapter: ?Allocator = null,
     device: ?Allocator = null,
     surface: bool = false,
 };
 
 pub fn init(
-    surface_descriptor_chain: *const wgpu.ChainedStruct,
+    surface_descriptor: wgpu.SurfaceDescriptor,
     initial_size: Size(u32),
     inspect: InspectOptions,
 ) !Renderer {
     const adapter, const surface =
-        try createAdapaterAndSurface(surface_descriptor_chain);
+        try createAdapaterAndSurface(surface_descriptor, inspect.instance);
     defer {
         log.debug("releasing adapter", .{});
         adapter.release();
@@ -99,38 +102,38 @@ pub fn init(
     }
 
     const surface_format = surface_caps.formats[0];
-    log.debug("preffered surface format: {s}", .{@tagName(surface_format)});
+    log.info("using surface format: {s}", .{@tagName(surface_format)});
 
     configureSurfaceBare(initial_size, device, surface, surface_format);
 
-    //- create pipline
-    log.debug("creating render pipeline", .{});
+    // //- create pipline
+    // log.debug("creating render pipeline", .{});
 
-    const bind_group_layout, const pipeline_layout, const pipeline =
-        try createPipeline(device, surface_format);
+    // const bind_group_layout, const pipeline_layout, const pipeline =
+    //     try createPipeline(device, surface_format);
 
     //- setup shader globals
 
-    const shader_globals = ShaderGlobals{
-        .res = initial_size.floatFromInt(f32),
-        .color = .hexRgb(0xff0000),
-    };
-
-    const shader_globals_buffer = device.createBuffer(&.{
-        .size = @sizeOf(ShaderGlobals),
-        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.uniform,
-        .mapped_at_creation = @intFromBool(false),
-    }) orelse {
-        log.err("failed to create uniform buffer", .{});
-        return error.wgpu;
-    };
-
-    queue.writeBuffer(
-        shader_globals_buffer,
-        0,
-        &shader_globals,
-        shader_globals_buffer.getSize(),
-    );
+    // const shader_globals = ShaderGlobals{
+    //     .res = initial_size.floatFromInt(f32),
+    //     .color = .hexRgb(0xff0000),
+    // };
+    //
+    // const shader_globals_buffer = device.createBuffer(&.{
+    //     .size = @sizeOf(ShaderGlobals),
+    //     .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.uniform,
+    //     .mapped_at_creation = @intFromBool(false),
+    // }) orelse {
+    //     log.err("failed to create uniform buffer", .{});
+    //     return error.wgpu;
+    // };
+    //
+    // queue.writeBuffer(
+    //     shader_globals_buffer,
+    //     0,
+    //     &shader_globals,
+    //     shader_globals_buffer.getSize(),
+    // );
 
     // queue.writeBuffer(
     //     shader_globals_buffer,
@@ -146,24 +149,24 @@ pub fn init(
     //     @sizeOf(Size(f32)),
     // );
 
-    const binding = wgpu.BindGroupEntry{
-        .binding = 0,
-        .buffer = shader_globals_buffer,
-        .offset = 0,
-        .size = @sizeOf(ShaderGlobals),
-    };
+    // const binding = wgpu.BindGroupEntry{
+    //     .binding = 0,
+    //     .buffer = shader_globals_buffer,
+    //     .offset = 0,
+    //     .size = @sizeOf(ShaderGlobals),
+    // };
+    //
+    // const shader_globals_bind_group = device.createBindGroup(&.{
+    //     .label = "fe bind group",
+    //     .layout = bind_group_layout,
+    //     .entry_count = 1,
+    //     .entries = &.{binding},
+    // }) orelse {
+    //     log.err("failed to create bind group", .{});
+    //     return error.wgpu;
+    // };
 
-    const shader_globals_bind_group = device.createBindGroup(&.{
-        .label = "fe bind group",
-        .layout = bind_group_layout,
-        .entry_count = 1,
-        .entries = &.{binding},
-    }) orelse {
-        log.err("failed to create bind group", .{});
-        return error.wgpu;
-    };
-
-    // -------------------------------------------------------------------------
+    //-
 
     //- vertex/index buffers
 
@@ -214,28 +217,38 @@ pub fn init(
 
     //- rect test
 
-    const rect_buffer_data = [_]GpuRect{
-        .gpuRect(.rect(.point(40, 40), .point(100, 100)), .hexRgb(0xff0000)),
-        // .gpuRect(.rect(.point(-0.5, -0.5), .point(0.5, 0.5)), .hexRgb(0xff0000)),
-    };
+    // const rect_buffer_data = [_]GpuRect{
+    //     .gpuRect(.rect(.point(40, 40), .point(60, 60)), .hexRgb(0xff0000)),
+    //     // .gpuRect(.rect(.point(40, 40), .point(60, 60)), .hexRgb(0xff0000)),
+    //     // .gpuRect(.rect(.point(40, 40), .point(60, 60)), .hexRgb(0xff0000)),
+    //     // .gpuRect(.rect(.point(40, 40), .point(60, 60)), .hexRgb(0xff0000)),
+    // };
+    //
+    // const rect_buffer = device.createBuffer(&.{
+    //     .size = rect_buffer_data.len * @sizeOf(GpuRect),
+    //     .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
+    //     .mapped_at_creation = @intFromBool(false),
+    // }) orelse {
+    //     log.err("failed to create rect buffer", .{});
+    //     return error.wgpu;
+    // };
+    //
+    // queue.writeBuffer(
+    //     rect_buffer,
+    //     0,
+    //     &rect_buffer_data,
+    //     rect_buffer.getSize(),
+    // );
 
-    const rect_buffer = device.createBuffer(&.{
-        .size = rect_buffer_data.len * @sizeOf(GpuRect),
-        .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
-        .mapped_at_creation = @intFromBool(false),
-    }) orelse {
-        log.err("failed to create rect buffer", .{});
-        return error.wgpu;
-    };
+    //-
 
-    queue.writeBuffer(
-        rect_buffer,
-        0,
-        &rect_buffer_data,
-        rect_buffer.getSize(),
-    );
-
-    // -------------------------------------------------------------------------
+    const rect_pass =
+        try RenderPassRect.init(
+            device,
+            queue,
+            surface_format,
+            initial_size.floatFromInt(f32),
+        );
 
     return .{
         .surface = surface,
@@ -243,16 +256,18 @@ pub fn init(
         .device = device,
         .queue = queue,
 
-        .bind_group_layout = bind_group_layout,
-        .pipeline_layout = pipeline_layout,
-        .pipeline = pipeline,
+        // .bind_group_layout = bind_group_layout,
+        // .pipeline_layout = pipeline_layout,
+        // .pipeline = pipeline,
+        //
+        // .shader_globals = shader_globals,
+        // .shader_globals_buffer = shader_globals_buffer,
+        // .shader_globals_bind_group = shader_globals_bind_group,
+        //
+        // .rect_buffer_data_len = rect_buffer_data.len,
+        // .rect_buffer = rect_buffer,
 
-        .shader_globals = shader_globals,
-        .shader_globals_buffer = shader_globals_buffer,
-        .shader_globals_bind_group = shader_globals_bind_group,
-
-        .rect_buffer_data_len = rect_buffer_data.len,
-        .rect_buffer = rect_buffer,
+        .rect_pass = rect_pass,
     };
 }
 
@@ -260,21 +275,34 @@ pub fn deinit(renderer: Renderer) void {
     defer renderer.surface.unconfigure();
     defer renderer.queue.release();
     defer renderer.device.release();
-    defer renderer.bind_group_layout.release();
-    defer renderer.pipeline_layout.release();
-    defer renderer.pipeline.release();
-    defer renderer.shader_globals_buffer.release();
-    defer renderer.shader_globals_bind_group.release();
-    defer renderer.rect_buffer.release();
+
+    // defer renderer.bind_group_layout.release();
+    // defer renderer.pipeline_layout.release();
+    // defer renderer.pipeline.release();
+    // defer renderer.shader_globals_buffer.release();
+    // defer renderer.shader_globals_bind_group.release();
+    // defer renderer.rect_buffer.release();
 }
 
 fn createAdapaterAndSurface(
-    surface_descriptor_chain: *const wgpu.ChainedStruct,
+    surface_descriptor: wgpu.SurfaceDescriptor,
+    instance_report_alloc: ?Allocator,
 ) !struct { *wgpu.Adapter, *wgpu.Surface } {
     //- instance creation
     log.debug("creating instance", .{});
 
-    const instance = wgpu.Instance.create(&.{}) orelse {
+    var instance_desc_extras = wgpu.InstanceExtras{
+        .backends = wgpu.InstanceBackend.all,
+        .flags = wgpu.InstanceFlag.debug | wgpu.InstanceFlag.validation,
+        .dx12_shader_compiler = .undefined,
+        .gles3_minor_version = .automatic,
+    };
+
+    const instance_desc = wgpu.InstanceDescriptor{
+        .next_in_chain = &instance_desc_extras.chain,
+    };
+
+    const instance = wgpu.Instance.create(&instance_desc) orelse {
         log.err("failed to create wgpu instance", .{});
         return error.wgpu;
     };
@@ -283,13 +311,28 @@ fn createAdapaterAndSurface(
         instance.release();
     }
 
+    var report: wgpu.GlobalReport = undefined;
+    instance.generateReport(&report);
+
+    if (instance_report_alloc) |alloc| debug: {
+        log.info("using backend: {s}", .{@tagName(report.backend_type)});
+
+        if (!std.log.logEnabled(.debug, log_scope)) break :debug;
+
+        const report_dump = try pretty.dump(alloc, report, .{
+            .show_type_names = true,
+            // .struct_max_len = 40,
+        });
+        defer alloc.free(report_dump);
+
+        log.debug("instance report: ", .{});
+        std.debug.print("{s}", .{report_dump});
+    }
+
     //- create surface
     log.debug("creating surface", .{});
 
-    const surface = instance.createSurface(&.{
-        .next_in_chain = surface_descriptor_chain,
-        .label = "fe surface",
-    }) orelse {
+    const surface = instance.createSurface(&surface_descriptor) orelse {
         log.err("failed to create wgpu surface", .{});
         return error.wgpu;
     };
@@ -331,147 +374,150 @@ fn getRequiredLimits(adapter: *wgpu.Adapter) wgpu.RequiredLimits {
     };
 }
 
-fn createPipeline(
-    device: *wgpu.Device,
-    surface_format: wgpu.TextureFormat,
-) !struct {
-    *wgpu.BindGroupLayout,
-    *wgpu.PipelineLayout,
-    *wgpu.RenderPipeline,
-} {
-    //- create shader module
-    log.debug("compiling shader module", .{});
-
-    const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
-        .code = rect_shader_code,
-    };
-    const shader_module =
-        device.createShaderModule(&.{
-            .label = "fe shader",
-            .next_in_chain = &shader_code_desc.chain,
-        }) orelse {
-            log.err("failed to create shader module", .{});
-            return error.wgpu;
-        };
-
-    //- uniform binding
-    const binding_layout = wgpu.BindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
-        .buffer = .{
-            .type = .uniform,
-            .min_binding_size = @sizeOf(ShaderGlobals),
-        },
-
-        .sampler = .{},
-        .texture = .{},
-        .storage_texture = .{},
-    };
-
-    //- bind group
-    const bind_group_layout = device.createBindGroupLayout(&.{
-        .label = "fe bind group layout",
-        .entry_count = 1,
-        .entries = &.{binding_layout},
-    }) orelse {
-        log.err("failed to create bind group layout", .{});
-        return error.wgpu;
-    };
-
-    //- vertex buffer
-    const vertex_buffer_layout = wgpu.VertexBufferLayout{
-        // .attribute_count = Vertex2D.attributes.len,
-        // .attributes = &Vertex2D.attributes,
-        // .array_stride = @sizeOf(Vertex2D),
-        // .step_mode = .vertex,
-
-        .attribute_count = GpuRect.attributes.len,
-        .attributes = &GpuRect.attributes,
-        .array_stride = @sizeOf(GpuRect),
-        .step_mode = .vertex,
-        // .step_mode = .instance,
-    };
-
-    //- fragment state
-    const blend_state = wgpu.BlendState{
-        .color = .{
-            .src_factor = .src_alpha,
-            .dst_factor = .one_minus_src_alpha,
-            .operation = .add,
-        },
-        .alpha = .{
-            .src_factor = .zero,
-            .dst_factor = .one,
-            .operation = .add,
-        },
-    };
-
-    const color_target_state = wgpu.ColorTargetState{
-        .format = surface_format,
-        .blend = &blend_state,
-        .write_mask = wgpu.ColorWriteMask.all,
-    };
-
-    const fragment_state = wgpu.FragmentState{
-        .module = shader_module,
-        .entry_point = "fsMain",
-        .target_count = 1,
-        .targets = &.{color_target_state},
-    };
-
-    //- pipeline layout
-    const pipeline_layout = device.createPipelineLayout(&.{
-        .label = "fe pipeline layout",
-        .bind_group_layout_count = 1,
-        .bind_group_layouts = &.{bind_group_layout},
-    }) orelse {
-        log.err("failed to create pipeline layout", .{});
-        return error.wgpu;
-    };
-
-    //- pipeline desc
-    const pipline_desc = wgpu.RenderPipelineDescriptor{
-        .label = "fe pipeline",
-        .vertex = .{
-            .module = shader_module,
-            .entry_point = "vsMain",
-
-            .buffer_count = 1,
-            .buffers = &.{vertex_buffer_layout},
-        },
-        .primitive = .{
-            // .topology = .triangle_list,
-            .topology = .triangle_strip,
-            .strip_index_format = .undefined, // sequential
-            .front_face = .cw, // counter-clockwise
-            .cull_mode = .none,
-        },
-        .fragment = &fragment_state,
-        .depth_stencil = null,
-        .multisample = .{
-            .count = 1,
-            .mask = 0xffffffff,
-        },
-        .layout = pipeline_layout,
-    };
-
-    const pipeline =
-        device.createRenderPipeline(&pipline_desc) orelse {
-            log.debug("failed to create render pipeline", .{});
-            return error.wgpu;
-        };
-
-    return .{ bind_group_layout, pipeline_layout, pipeline };
-}
+// fn createPipeline(
+//     device: *wgpu.Device,
+//     surface_format: wgpu.TextureFormat,
+// ) !struct {
+//     *wgpu.BindGroupLayout,
+//     *wgpu.PipelineLayout,
+//     *wgpu.RenderPipeline,
+// } {
+//     //- create shader module
+//     log.debug("compiling shader module", .{});
+//
+//     const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
+//         .code = rect_shader_code,
+//     };
+//     const shader_module =
+//         device.createShaderModule(&.{
+//             .label = "fe shader",
+//             .next_in_chain = &shader_code_desc.chain,
+//         }) orelse {
+//             log.err("failed to create shader module", .{});
+//             return error.wgpu;
+//         };
+//
+//     //- uniform binding
+//     const binding_layout = wgpu.BindGroupLayoutEntry{
+//         .binding = 0,
+//         .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
+//         .buffer = .{
+//             .type = .uniform,
+//             .min_binding_size = @sizeOf(ShaderGlobals),
+//         },
+//
+//         .sampler = .{},
+//         .texture = .{},
+//         .storage_texture = .{},
+//     };
+//
+//     //- bind group
+//     const bind_group_layout = device.createBindGroupLayout(&.{
+//         .label = "fe bind group layout",
+//         .entry_count = 1,
+//         .entries = &.{binding_layout},
+//     }) orelse {
+//         log.err("failed to create bind group layout", .{});
+//         return error.wgpu;
+//     };
+//
+//     //- vertex buffer
+//     const vertex_buffer_layout = wgpu.VertexBufferLayout{
+//         // .attribute_count = Vertex2D.attributes.len,
+//         // .attributes = &Vertex2D.attributes,
+//         // .array_stride = @sizeOf(Vertex2D),
+//         // .step_mode = .vertex,
+//
+//         .attribute_count = GpuRect.attributes.len,
+//         .attributes = &GpuRect.attributes,
+//         .array_stride = @sizeOf(GpuRect),
+//         .step_mode = .vertex,
+//         // .step_mode = .instance,
+//     };
+//
+//     //- fragment state
+//     const blend_state = wgpu.BlendState{
+//         .color = .{
+//             .src_factor = .src_alpha,
+//             .dst_factor = .one_minus_src_alpha,
+//             .operation = .add,
+//         },
+//         .alpha = .{
+//             .src_factor = .zero,
+//             .dst_factor = .one,
+//             .operation = .add,
+//         },
+//     };
+//
+//     const color_target_state = wgpu.ColorTargetState{
+//         .format = surface_format,
+//         .blend = &blend_state,
+//         .write_mask = wgpu.ColorWriteMask.all,
+//     };
+//
+//     const fragment_state = wgpu.FragmentState{
+//         .module = shader_module,
+//         .entry_point = "fsMain",
+//         .target_count = 1,
+//         .targets = &.{color_target_state},
+//     };
+//
+//     //- pipeline layout
+//     const pipeline_layout = device.createPipelineLayout(&.{
+//         .label = "fe pipeline layout",
+//         .bind_group_layout_count = 1,
+//         .bind_group_layouts = &.{bind_group_layout},
+//     }) orelse {
+//         log.err("failed to create pipeline layout", .{});
+//         return error.wgpu;
+//     };
+//
+//     //- pipeline desc
+//     const pipline_desc = wgpu.RenderPipelineDescriptor{
+//         .label = "fe pipeline",
+//         .vertex = .{
+//             .module = shader_module,
+//             .entry_point = "vsMain",
+//
+//             .buffer_count = 1,
+//             .buffers = &.{vertex_buffer_layout},
+//         },
+//         .primitive = .{
+//             // .topology = .triangle_list,
+//             .topology = .triangle_strip,
+//             .strip_index_format = .undefined, // sequential
+//             .front_face = .ccw, // counter-clockwise
+//             .cull_mode = .none,
+//         },
+//         .fragment = &fragment_state,
+//         .depth_stencil = null,
+//         .multisample = .{
+//             .count = 1,
+//             .mask = 0xffffffff,
+//         },
+//         .layout = pipeline_layout,
+//     };
+//
+//     const pipeline =
+//         device.createRenderPipeline(&pipline_desc) orelse {
+//             log.debug("failed to create render pipeline", .{});
+//             return error.wgpu;
+//         };
+//
+//     return .{ bind_group_layout, pipeline_layout, pipeline };
+// }
 
 pub fn reconfigure(renderer: *Renderer, size: Size(u32)) void {
-    renderer.shader_globals.res = size.floatFromInt(f32);
-    renderer.queue.writeBuffer(
-        renderer.shader_globals_buffer,
-        @offsetOf(ShaderGlobals, "res"),
-        &renderer.shader_globals.res,
-        @sizeOf(Size(f32)),
-    );
+    // renderer.shader_globals.res = size.floatFromInt(f32);
+    // renderer.queue.writeBuffer(
+    //     renderer.shader_globals_buffer,
+    //     @offsetOf(ShaderGlobals, "res"),
+    //     &renderer.shader_globals.res,
+    //     @sizeOf(Size(f32)),
+    // );
+
+    renderer.rect_pass
+        .updateSurfaceSize(renderer.queue, size.floatFromInt(f32));
 
     configureSurfaceBare(
         size,
@@ -480,6 +526,8 @@ pub fn reconfigure(renderer: *Renderer, size: Size(u32)) void {
         renderer.surface_format,
     );
 }
+
+//= Helpers
 
 fn configureSurfaceBare(
     size: Size(u32),
@@ -505,10 +553,7 @@ fn inspectAdapter(gpa: Allocator, adapter: *wgpu.Adapter) !void {
     //- limit listing
     log.debug("getting adapter limits", .{});
 
-    var supported_limits = wgpu.SupportedLimits{
-        .next_in_chain = null,
-        .limits = .{},
-    };
+    var supported_limits = wgpu.SupportedLimits{ .limits = .{} };
     _ = adapter.getLimits(&supported_limits) or return error.wgpu;
     const limits = supported_limits.limits;
 
@@ -614,6 +659,8 @@ fn queueWorkDoneCallback(
     log.debug("Queue work finished with status: {}", .{status});
 }
 
+//= Types
+
 // fields should be 16 bit aligned
 pub const ShaderGlobals = extern struct {
     color: mt.RgbaF32, // 16
@@ -644,15 +691,110 @@ pub const Vertex2D = extern struct {
     };
 };
 
-pub const GpuRect = extern struct {
+//= rendering
+
+// renderer log - only use for err/warn unless testing
+const rlog = std.log.scoped(.@"wgpu render");
+
+pub fn render(renderer: Renderer) void {
+    //- get next surface texture
+    const target_view = getTargetTextureView(renderer.surface) catch |err| {
+        switch (err) {
+            error.GetCurrentTextureFailed => //
+            rlog.err("failed to get current target texture", .{}),
+            error.CreateTextureViewFailed => //
+            rlog.err("failed to create target texture view", .{}),
+        }
+        return;
+    };
+    defer target_view.release();
+
+    //- encode draw commands
+    const command_buffer = renderer.encodeCommands(target_view) catch |err| {
+        switch (err) {
+            error.CreateCommandEncoderFailed => //
+            rlog.err("failed to create command encoder", .{}),
+            error.FinishEncoderFailed => //
+            rlog.err("failed to finish command encoding", .{}),
+        }
+        return;
+    };
+    defer command_buffer.release();
+
+    //- submit command
+    renderer.queue.submit(&.{command_buffer});
+}
+
+const GetTargetTextureViewError = error{
+    GetCurrentTextureFailed,
+    CreateTextureViewFailed,
+};
+
+fn getTargetTextureView(
+    surface: *wgpu.Surface,
+) GetTargetTextureViewError!*wgpu.TextureView {
+    var surface_texture: wgpu.SurfaceTexture = undefined;
+    surface.getCurrentTexture(&surface_texture);
+
+    if (surface_texture.status != .success)
+        return error.GetCurrentTextureFailed;
+
+    const target_view =
+        surface_texture.texture.createView(&.{
+            .label = "fe texture view",
+            .format = surface_texture.texture.getFormat(),
+            .dimension = .@"2d",
+            .base_mip_level = 0,
+            .mip_level_count = 1,
+            .base_array_layer = 0,
+            .array_layer_count = 1,
+            .aspect = .all,
+        }) orelse
+        return error.CreateTextureViewFailed;
+
+    return target_view;
+}
+
+const EncodeCommandsError = error{
+    CreateCommandEncoderFailed,
+    FinishEncoderFailed,
+};
+
+fn encodeCommands(
+    renderer: *const Renderer,
+    target_view: *wgpu.TextureView,
+) EncodeCommandsError!*wgpu.CommandBuffer {
+    //- command encoder
+    const encoder =
+        renderer.device.createCommandEncoder(&.{
+            .label = "fe command encoder",
+        }) orelse
+        return error.CreateCommandEncoderFailed;
+    defer encoder.release();
+
+    //- render pass
+    // renderer.renderPassRect(target_view, encoder);
+    renderPassRect(renderer.rect_pass, target_view, encoder);
+
+    //- command
+    const command_buffer =
+        encoder.finish(&.{ .label = "fe command buffer" }) orelse
+        return error.FinishEncoderFailed;
+
+    return command_buffer;
+}
+
+//= rect rendering
+
+pub const RectVert = extern struct {
     rect: mt.Rect(f32),
     color: mt.RgbaF32,
 
-    pub fn gpuRect(rect: mt.Rect(f32), color: mt.RgbaF32) GpuRect {
+    pub fn rectVert(rect: mt.Rect(f32), color: mt.RgbaF32) RectVert {
         return .{ .rect = rect, .color = color };
     }
 
-    pub const attributes = [_]wgpu.VertexAttribute{
+    const attributes = [_]wgpu.VertexAttribute{
         .{ // p0
             .shader_location = 0,
             .format = .float32x2,
@@ -669,144 +811,373 @@ pub const GpuRect = extern struct {
             .offset = 4 * @sizeOf(f32),
         },
     };
+
+    pub const vertex_buffer_layout = wgpu.VertexBufferLayout{
+        .attribute_count = attributes.len,
+        .attributes = &attributes,
+        .array_stride = @sizeOf(RectVert),
+        .step_mode = .instance,
+    };
 };
 
-pub fn draw(renderer: Renderer) void {
-    // renderer log only use for err/warn unless testing
-    const rlog = std.log.scoped(.@"wgpu render");
+// fields should be 16 bit aligned
+const RenderPassRectUniform = extern struct {
+    surface_size_px: Size(f32), // 8
+    _padding: [2]u32 = @splat(0), // 8
 
-    //- get next surface texture
-    const target_view = target_view: {
-        var surface_texture: wgpu.SurfaceTexture = undefined;
-        renderer.surface.getCurrentTexture(&surface_texture);
+    const binding_layout = wgpu.BindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu.ShaderStage.vertex,
+        .buffer = .{
+            .type = .uniform,
+            .min_binding_size = @sizeOf(RenderPassRectUniform),
+        },
 
-        if (surface_texture.status != .success)
-            break :target_view null;
+        .sampler = .{},
+        .texture = .{},
+        .storage_texture = .{},
+    };
 
-        const target_view =
-            surface_texture.texture.createView(&.{
-                .label = "fe texture view",
-                .format = surface_texture.texture.getFormat(),
-                .dimension = .@"2d",
-                .base_mip_level = 0,
-                .mip_level_count = 1,
-                .base_array_layer = 0,
-                .array_layer_count = 1,
-                .aspect = .all,
-            }) orelse
-            break :target_view null;
+    pub fn createBindGroupLayout(device: *wgpu.Device) !*wgpu.BindGroupLayout {
+        return device.createBindGroupLayout(&.{
+            .label = "rect uniform bind group layout",
+            .entry_count = 1,
+            .entries = &.{binding_layout},
+        }) orelse {
+            log.err("failed to create rect bind group layout", .{});
+            return error.wgpu;
+        };
+    }
 
-        break :target_view target_view;
-    } orelse {
-        rlog.err(
-            "failed to get next surface texture view",
-            .{},
+    fn createBinding(buffer: *wgpu.Buffer) wgpu.BindGroupEntry {
+        return .{
+            .binding = 0,
+            .buffer = buffer,
+            .offset = 0,
+            .size = @sizeOf(RenderPassRectUniform),
+        };
+    }
+
+    fn createBindGroup(
+        device: *wgpu.Device,
+        layout: *wgpu.BindGroupLayout,
+        buffer: *wgpu.Buffer,
+    ) !*wgpu.BindGroup {
+        const binding = createBinding(buffer);
+
+        return device.createBindGroup(&.{
+            .label = "rect bind group",
+            .layout = layout,
+            .entry_count = 1,
+            .entries = &.{binding},
+        }) orelse {
+            log.err("failed to create rect bind group", .{});
+            return error.wgpu;
+        };
+    }
+
+    pub fn init(
+        device: *wgpu.Device,
+        bind_group_layout: *wgpu.BindGroupLayout,
+        surface_size_px: Size(f32),
+    ) !struct {
+        RenderPassRectUniform,
+        *wgpu.Buffer,
+        *wgpu.BindGroup,
+    } {
+        const uniform = RenderPassRectUniform{
+            .surface_size_px = surface_size_px,
+        };
+
+        const buffer = device.createBuffer(&.{
+            .size = @sizeOf(RenderPassRectUniform),
+            .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.uniform,
+            .mapped_at_creation = @intFromBool(false),
+        }) orelse {
+            log.err("failed to create rect uniform buffer", .{});
+            return error.wgpu;
+        };
+
+        const bind_group =
+            try createBindGroup(device, bind_group_layout, buffer);
+
+        return .{ uniform, buffer, bind_group };
+    }
+
+    pub fn write(
+        uniform: RenderPassRectUniform,
+        buffer: *wgpu.Buffer,
+        queue: *wgpu.Queue,
+    ) void {
+        queue.writeBuffer(buffer, 0, &uniform, buffer.getSize());
+    }
+};
+
+const RenderPassRect = struct {
+    bind_group_layout: *wgpu.BindGroupLayout,
+    pipeline_layout: *wgpu.PipelineLayout,
+    pipeline: *wgpu.RenderPipeline,
+
+    uniform: RenderPassRectUniform,
+    uniform_buffer: *wgpu.Buffer,
+    uniform_bind_group: *wgpu.BindGroup,
+
+    rect_buffer_data_len: u32,
+    rect_buffer: *wgpu.Buffer,
+
+    pub fn init(
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        surface_format: wgpu.TextureFormat,
+        surface_size_px: Size(f32),
+    ) !RenderPassRect {
+        const bind_group_layout, const pipeline_layout, const pipeline =
+            try createPipeline(device, surface_format);
+
+        const uniform, const uniform_buffer, const uniform_bind_group =
+            try RenderPassRectUniform.init(
+                device,
+                bind_group_layout,
+                surface_size_px,
+            );
+
+        uniform.write(uniform_buffer, queue);
+
+        const red = mt.RgbaF32.hexRgb(0xff0000);
+        const rect_buffer_data = [_]RectVert{
+            .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+            .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+            .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+            .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+        };
+
+        const rect_buffer = device.createBuffer(&.{
+            .size = rect_buffer_data.len * @sizeOf(RectVert),
+            .usage = wgpu.BufferUsage.copy_dst | wgpu.BufferUsage.vertex,
+            .mapped_at_creation = @intFromBool(false),
+        }) orelse {
+            log.err("failed to create rect buffer", .{});
+            return error.wgpu;
+        };
+
+        queue.writeBuffer(
+            rect_buffer,
+            0,
+            &rect_buffer_data,
+            rect_buffer.getSize(),
         );
-        return;
-    };
-    defer target_view.release();
 
-    const command_buffer = command_buffer: {
-        //- command encoder
-        const encoder =
-            renderer.device.createCommandEncoder(&.{
-                .label = "fe command encoder",
-            }) orelse {
-                rlog.err(
-                    "failed to create command encoder",
-                    .{},
-                );
-                return;
+        return .{
+            .bind_group_layout = bind_group_layout,
+            .pipeline_layout = pipeline_layout,
+            .pipeline = pipeline,
+
+            .uniform = uniform,
+            .uniform_buffer = uniform_buffer,
+            .uniform_bind_group = uniform_bind_group,
+
+            .rect_buffer_data_len = rect_buffer_data.len,
+            .rect_buffer = rect_buffer,
+        };
+    }
+
+    pub fn deinit(pass: RenderPassRect) void {
+        defer pass.bind_group_layout.release();
+        defer pass.pipeline_layout.release();
+        defer pass.pipeline.release();
+
+        defer pass.uniform_buffer.release();
+        defer pass.uniform_bind_group.release();
+
+        defer pass.rect_buffer.release();
+    }
+
+    pub fn updateSurfaceSize(
+        pass: *RenderPassRect,
+        queue: *wgpu.Queue,
+        size: Size(f32),
+    ) void {
+        pass.uniform.surface_size_px = size;
+        pass.uniform.write(pass.uniform_buffer, queue);
+    }
+
+    const shader_code = @embedFile("rect.wgsl");
+
+    fn createShaderModule(device: *wgpu.Device) !*wgpu.ShaderModule {
+        const shader_code_desc =
+            wgpu.ShaderModuleWGSLDescriptor{ .code = shader_code };
+        return device.createShaderModule(&.{
+            .label = "rect shader",
+            .next_in_chain = &shader_code_desc.chain,
+        }) orelse {
+            log.err("failed to create rect shader module", .{});
+            return error.wgpu;
+        };
+    }
+
+    fn createPipeline(
+        device: *wgpu.Device,
+        surface_format: wgpu.TextureFormat,
+    ) !struct {
+        *wgpu.BindGroupLayout,
+        *wgpu.PipelineLayout,
+        *wgpu.RenderPipeline,
+    } {
+        const shader_module = try createShaderModule(device);
+
+        const blend_state = wgpu.BlendState{
+            .color = .{
+                .src_factor = .src_alpha,
+                .dst_factor = .one_minus_src_alpha,
+                .operation = .add,
+            },
+            .alpha = .{
+                .src_factor = .zero,
+                .dst_factor = .one,
+                .operation = .add,
+            },
+        };
+
+        const color_target_state = wgpu.ColorTargetState{
+            .format = surface_format,
+            .blend = &blend_state,
+            .write_mask = wgpu.ColorWriteMask.all,
+        };
+
+        const fragment_state = wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = "fsMain",
+            .target_count = 1,
+            .targets = &.{color_target_state},
+        };
+
+        const uniform_bind_group_layout =
+            try RenderPassRectUniform.createBindGroupLayout(device);
+
+        // const instance_bind_group_layout =
+        //     device.createBindGroupLayout(&.{}) orelse {
+        //     log.err("failed to create instance bind group layout", .{});
+        //
+        // };
+        //
+        // const bind_group_layouts = [_]{}
+
+        //- pipeline layout
+        const pipeline_layout = device.createPipelineLayout(&.{
+            .label = "fe pipeline layout",
+            .bind_group_layout_count = 1,
+            .bind_group_layouts = &.{uniform_bind_group_layout},
+        }) orelse {
+            log.err("failed to create pipeline layout", .{});
+            return error.wgpu;
+        };
+
+        //- pipeline desc
+        const pipline_desc = wgpu.RenderPipelineDescriptor{
+            .label = "fe pipeline",
+            .vertex = .{
+                .module = shader_module,
+                .entry_point = "vsMain",
+
+                .buffer_count = 1,
+                .buffers = &.{RectVert.vertex_buffer_layout},
+            },
+            .primitive = .{
+                .topology = .triangle_strip,
+                .strip_index_format = .undefined, // sequential
+                .front_face = .ccw, // counter-clockwise
+                .cull_mode = .none,
+            },
+            .fragment = &fragment_state,
+            .depth_stencil = null,
+            .multisample = .{
+                .count = 1,
+                .mask = 0xffffffff,
+            },
+            .layout = pipeline_layout,
+        };
+
+        const pipeline =
+            device.createRenderPipeline(&pipline_desc) orelse {
+                log.debug("failed to create render pipeline", .{});
+                return error.wgpu;
             };
-        defer encoder.release();
 
-        {
-            //- render pass
-            const render_pass =
-                encoder.beginRenderPass(&.{
-                    .label = "rect? render pass",
-                    .color_attachment_count = 1,
-                    .color_attachments = &.{
-                        .{
-                            .view = target_view,
-                            .resolve_target = null,
-                            .load_op = .clear,
-                            .store_op = .store,
-                            .clear_value = .{
-                                .r = 0.9,
-                                .g = 0.1,
-                                .b = 0.2,
-                                .a = 1.0,
-                            },
-                            .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
-                        },
+        return .{ uniform_bind_group_layout, pipeline_layout, pipeline };
+    }
+};
+
+fn renderPassRect(
+    rect_pass: RenderPassRect,
+    target_view: *wgpu.TextureView,
+    encoder: *wgpu.CommandEncoder,
+) void {
+    const render_pass =
+        encoder.beginRenderPass(&.{
+            .label = "rect render pass",
+            .color_attachment_count = 1,
+            .color_attachments = &.{
+                .{
+                    .view = target_view,
+                    .resolve_target = null,
+                    .load_op = .clear,
+                    .store_op = .store,
+                    .clear_value = .{
+                        .r = 0.9,
+                        .g = 0.1,
+                        .b = 0.2,
+                        .a = 1.0,
                     },
-                    .depth_stencil_attachment = null,
-                    .timestamp_writes = null,
-                }) orelse {
-                    rlog.err(
-                        "failed to begin render pass",
-                        .{},
-                    );
-                    return;
-                };
-            defer render_pass.release();
-
-            render_pass.setPipeline(renderer.pipeline);
-
-            // render_pass.setVertexBuffer(
-            //     0,
-            //     vertex_buffer,
-            //     0,
-            //     vertex_buffer.getSize(),
-            // );
-            // render_pass.setIndexBuffer(
-            //     index_buffer,
-            //     .uint16,
-            //     0,
-            //     index_buffer.getSize(),
-            // );
-
-            render_pass.setVertexBuffer(
-                0,
-                renderer.rect_buffer,
-                0,
-                renderer.rect_buffer.getSize(),
+                    .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                },
+            },
+            .depth_stencil_attachment = null,
+            .timestamp_writes = null,
+        }) orelse {
+            rlog.err(
+                "failed to begin render pass",
+                .{},
             );
+            return;
+        };
+    defer render_pass.release();
 
-            render_pass.setBindGroup(
-                0,
-                renderer.shader_globals_bind_group,
-                0,
-                null,
-            );
+    render_pass.setPipeline(rect_pass.pipeline);
 
-            // render_pass.setViewport(
-            //     0,
-            //     0,
-            //     renderer.shader_globals.res.width,
-            //     renderer.shader_globals.res.height,
-            //     0,
-            //     1,
-            // );
+    // render_pass.setVertexBuffer(
+    //     0,
+    //     vertex_buffer,
+    //     0,
+    //     vertex_buffer.getSize(),
+    // );
+    // render_pass.setIndexBuffer(
+    //     index_buffer,
+    //     .uint16,
+    //     0,
+    //     index_buffer.getSize(),
+    // );
 
-            // render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
-            render_pass.draw(renderer.rect_buffer_data_len, 4, 0, 0);
+    render_pass.setVertexBuffer(
+        0,
+        rect_pass.rect_buffer,
+        0,
+        rect_pass.rect_buffer.getSize(),
+    );
 
-            render_pass.end();
-        }
+    render_pass.setBindGroup(
+        0,
+        rect_pass.uniform_bind_group,
+        0,
+        null,
+    );
 
-        //- command
-        const command_buffer =
-            encoder.finish(&.{ .label = "fe command buffer" }) orelse {
-                rlog.err("failed to finish encoding", .{});
-                return;
-            };
+    // render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
+    // render_pass.draw(renderer.rect_buffer_data_len, 1, 0, 0);
+    // render_pass.draw(renderer.rect_buffer_data_len, 1, 0, 0);
+    // render_pass.draw(1, 4, 0, 0);
 
-        break :command_buffer command_buffer;
-    };
-    defer command_buffer.release();
+    // // unoptimized duplicated draw
+    render_pass.draw(4, 1, 0, 0);
 
-    //- submit command
-    renderer.queue.submit(&.{command_buffer});
+    render_pass.end();
 }

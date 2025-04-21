@@ -62,6 +62,8 @@
             wayland-scanner
 
             glib
+
+            wgpu-native
           ];
 
           env = {

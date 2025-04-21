@@ -67,15 +67,20 @@ fn run(gpa: Allocator) !void {
     // -------------------------------------------------------------------------
     // - wgpu
 
-    const wgpu_wl_surface = wgpu.SurfaceDescriptorFromWaylandSurface{
+    const wgpu_surface_wl = wgpu.SurfaceDescriptorFromWaylandSurface{
         .display = window.conn.wl_display,
         .surface = window.wl_surface,
     };
+    const wgpu_surface = wgpu.SurfaceDescriptor{
+        .next_in_chain = &wgpu_surface_wl.chain,
+        .label = "wayland surface",
+    };
 
     var renderer = try WgpuRenderer.init(
-        &wgpu_wl_surface.chain,
+        wgpu_surface,
         window.size,
         .{
+            .instance = gpa,
             .adapter = gpa,
             .device = gpa,
             .surface = true,
@@ -258,7 +263,7 @@ fn run(gpa: Allocator) !void {
         }
 
         if (do_render) {
-            renderer.draw();
+            renderer.render();
 
             renderer.surface.present();
         }

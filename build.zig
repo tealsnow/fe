@@ -12,8 +12,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // -------------------------------------------------------------------------
-    // - options
+    //- options
 
     const entry_point =
         b.option(
@@ -56,8 +55,7 @@ pub fn build(b: *std.Build) void {
             "Whether to poll for events or have a timeout (default: false)",
         ) orelse false;
 
-    // -------------------------------------------------------------------------
-    // - fmt
+    //- fmt
 
     const fmt_step = b.addFmt(.{
         .check = true,
@@ -65,8 +63,7 @@ pub fn build(b: *std.Build) void {
     });
     b.getInstallStep().dependOn(&fmt_step.step);
 
-    // -------------------------------------------------------------------------
-    // - tracy
+    //- tracy
 
     const tracy = b.lazyDependency("tracy", .{
         .target = target,
@@ -75,16 +72,14 @@ pub fn build(b: *std.Build) void {
         .shared = false,
     });
 
-    // -------------------------------------------------------------------------
-    // - pretty printing
+    //- pretty printing
 
     const pretty_print = b.lazyDependency("pretty", .{
         .target = target,
         .optimize = optimize,
     });
 
-    // -------------------------------------------------------------------------
-    // - cu
+    //- cu
 
     const cu_mod = b.createModule(.{
         .root_source_file = b.path("src/cu/cu.zig"),
@@ -110,8 +105,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(cu_lib);
 
-    // -------------------------------------------------------------------------
-    // - fe
+    //- fe
 
     const fe_mod = b.createModule(.{
         .root_source_file = b.path("src/fe/fe.zig"),
@@ -163,8 +157,10 @@ pub fn build(b: *std.Build) void {
                 fe_mod.linkLibrary(m.artifact("glfw"));
             }
 
-            if (wgpu) |m|
+            if (wgpu) |m| {
                 fe_mod.addImport("wgpu", m.module("wgpu"));
+                fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
+            }
         },
         .wayland => {
             const xkbcommon = b.lazyDependency("xkbcommon", .{});
@@ -206,8 +202,10 @@ pub fn build(b: *std.Build) void {
                 .target = target,
                 .optimize = optimize,
             });
-            if (wgpu) |m|
+            if (wgpu) |m| {
                 fe_mod.addImport("wgpu", m.module("wgpu"));
+                fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
+            }
         },
     }
 
@@ -234,8 +232,7 @@ pub fn build(b: *std.Build) void {
     options.addOption(EntryPoint, "entry_point", entry_point);
     fe_mod.addOptions("build_options", options);
 
-    // -------------------------------------------------------------------------
-    // - test plugin
+    //- test plugin
 
     const plug_test_mod = createPluginModule(b, .{
         .root_source_file = b.path("src/plugins/test/test.zig"),
@@ -263,8 +260,7 @@ pub fn build(b: *std.Build) void {
 
     fe_exe.step.dependOn(&install.step);
 
-    // -------------------------------------------------------------------------
-    // - run
+    //- run
 
     const run_cmd = b.addRunArtifact(fe_exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -286,15 +282,13 @@ pub fn build(b: *std.Build) void {
         run_cmd.step.dependOn(&tracy_cmd.step);
     }
 
-    // -------------------------------------------------------------------------
-    // - check
+    //- check
 
     const check_step = b.step("check", "Run a dry build");
     check_step.dependOn(&fe_exe.step);
 }
 
-// =============================================================================
-// = Plugin build helpers
+//= Plugin build helpers
 
 /// This should mostly mirror `std.Build.Module.CreateOptions`
 /// and thus its documentation applies

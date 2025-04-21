@@ -1,7 +1,5 @@
 struct Globals { // fields are 16 bit aligned
-    color: vec4f, // 16
-    res: vec2f, // 8
-
+    surface_size_px: vec2f, // 8
     // _padding: vec2f, // 8
 };
 
@@ -24,8 +22,7 @@ struct VertexOutput {
 @vertex
 fn vsMain(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // let ratio = 1024.0 / 576.0;
-    let ratio = globals.res.x / globals.res.y;
+    let ratio = globals.surface_size_px.x / globals.surface_size_px.y;
     out.position = vec4f(in.position.x, in.position.y * ratio, 0.0, 1.0);
     out.color = in.color;
     return out;
@@ -33,14 +30,12 @@ fn vsMain(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fsMain(in: VertexOutput) -> @location(0) vec4f {
-    let color = in.color.rgb * globals.color.rgb;
+    let rgb = in.color.rgb;
+    let a = in.color.a;
 
     // gamma correction
     // this is an approximation
-    let linear_color = pow(color, vec3f(2.2));
+    let linear_rgb = pow(rgb, vec3f(2.2));
 
-    // let a = lerp(globals.color.a, in.color.a);
-    let a = in.color.a;
-
-    return vec4f(linear_color, a);
+    return vec4f(linear_rgb, a);
 }
