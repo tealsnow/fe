@@ -12,7 +12,7 @@ const wgpu = @import("wgpu");
 
 const mt = @import("math.zig");
 
-const WgpuRenderer = @import("WgpuRenderer.zig");
+const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
 
 pub fn entry(gpa: Allocator) !void {
     //- app init

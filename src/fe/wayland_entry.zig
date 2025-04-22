@@ -13,10 +13,6 @@ const Size = @import("math.zig").Size;
 
 const wl = @import("platform/linux/wayland/wayland.zig");
 
-const wgpu = @import("wgpu");
-
-const WgpuRenderer = @import("WgpuRenderer.zig");
-
 // @TODO:
 //   @[ ]: setup cu
 //
@@ -39,8 +35,6 @@ const WgpuRenderer = @import("WgpuRenderer.zig");
 //     https://wayland.app/protocols/cursor-shape-v1
 //
 //   @[x]: out of window resizing
-//
-//   @[x]: wgpu intergration
 
 pub fn entry(gpa: Allocator) !void {
     try run(gpa);
@@ -64,29 +58,8 @@ fn run(gpa: Allocator) !void {
     window.inset = 15;
     window.minimium_size = .{ .width = 200, .height = 100 };
 
-    // -------------------------------------------------------------------------
-    // - wgpu
-
-    const wgpu_surface_wl = wgpu.SurfaceDescriptorFromWaylandSurface{
-        .display = window.conn.wl_display,
-        .surface = window.wl_surface,
-    };
-    const wgpu_surface = wgpu.SurfaceDescriptor{
-        .next_in_chain = &wgpu_surface_wl.chain,
-        .label = "wayland surface",
-    };
-
-    var renderer = try WgpuRenderer.init(
-        wgpu_surface,
-        window.size,
-        .{
-            // .instance = gpa,
-            .adapter = gpa,
-            .device = gpa,
-            .surface = true,
-        },
-    );
-    defer renderer.deinit();
+    var surface = try window.createSurface();
+    defer surface.deinit();
 
     // -------------------------------------------------------------------------
     // - main loop
@@ -112,7 +85,10 @@ fn run(gpa: Allocator) !void {
 
                 .toplevel_configure => |conf| {
                     if (window.handleToplevelConfigureEvent(conf)) |size| {
-                        renderer.reconfigure(size);
+                        // window was resized
+                        _ = size;
+
+                        try surface.reconfigure();
                     }
 
                     do_render = true;
@@ -153,11 +129,7 @@ fn run(gpa: Allocator) !void {
                     if (key.state != .pressed) break :key;
 
                     switch (@intFromEnum(key.keysym)) {
-                        xkb.Keysym.q => break :main_loop,
-
-                        xkb.Keysym.w => {
-                            std.Thread.sleep(std.time.ns_per_s * 2);
-                        },
+                        xkb.Keysym.q, xkb.Keysym.Escape => break :main_loop,
 
                         else => {},
                     }
@@ -263,9 +235,10 @@ fn run(gpa: Allocator) !void {
         }
 
         if (do_render) {
-            renderer.render();
+            @memset(surface.pixels, 255);
 
-            renderer.surface.present();
+            surface.attach();
+            window.commit();
         }
     }
 }

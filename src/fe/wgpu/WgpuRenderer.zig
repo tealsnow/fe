@@ -11,7 +11,7 @@ const wgpu = @import("wgpu");
 
 const pretty = @import("pretty");
 
-const mt = @import("math.zig");
+const mt = @import("../math.zig");
 const Size = mt.Size;
 
 const tri_shader_code = @embedFile("triangle.wgsl");
@@ -542,9 +542,8 @@ fn configureSurfaceBare(
         .device = device,
         .usage = wgpu.TextureUsage.render_attachment,
         .format = format,
-        .view_format_count = 1,
-        .view_formats = &.{format},
-        .alpha_mode = .@"opaque",
+        .view_format_count = 0,
+        .alpha_mode = .auto,
         .width = size.width,
         .height = size.height,
         .present_mode = .fifo,
@@ -924,11 +923,8 @@ const RenderPassRect = struct {
     uniform: RenderPassRectUniform,
     uniform_buffer: *wgpu.Buffer,
 
-    rect_vertex_buffer_data_len: u32,
-    rect_vertex_buffer: *wgpu.Buffer,
-
-    unused_instance_buffer_data_len: u32,
-    unused_instance_buffer: *wgpu.Buffer,
+    rect_instance_buffer_data_len: u32,
+    rect_instance_buffer: *wgpu.Buffer,
 
     bind_group: *wgpu.BindGroup,
 
@@ -971,21 +967,19 @@ const RenderPassRect = struct {
         //- rect steup
 
         const red = mt.RgbaF32.hexRgb(0xff0000);
-        const rect_vertex_buffer_data = [_]RectInstance{
+        const rect_instance_buffer_data = [_]RectInstance{
             .inst(.rect(.point(40, 40), .point(60, 60)), red),
-            .inst(.rect(.point(40, 40), .point(60, 60)), red),
-            .inst(.rect(.point(40, 40), .point(60, 60)), red),
-            .inst(.rect(.point(40, 40), .point(60, 60)), red),
+            // .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+            // .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
+            // .rectVert(.rect(.point(40, 40), .point(60, 60)), red),
         };
 
-        const rect_vertex_buffer = device.createBuffer(&.{
-            .label = "rect vertex buffer",
-            .size = rect_vertex_buffer_data.len * @sizeOf(RectInstance),
-            // .usage = wgpu.BufferUsage.copy_dst |
-            //     wgpu.BufferUsage.vertex |
-            //     wgpu.BufferUsage.storage,
+        const rect_instance_buffer = device.createBuffer(&.{
+            .label = "rect instance buffer",
+            .size = rect_instance_buffer_data.len * @sizeOf(RectInstance),
             .usage = wgpu.BufferUsage.copy_dst |
-                wgpu.BufferUsage.vertex,
+                wgpu.BufferUsage.vertex |
+                wgpu.BufferUsage.storage,
             .mapped_at_creation = @intFromBool(false),
         }) orelse {
             log.err("failed to create rect buffer", .{});
@@ -993,39 +987,10 @@ const RenderPassRect = struct {
         };
 
         queue.writeBuffer(
-            rect_vertex_buffer,
+            rect_instance_buffer,
             0,
-            &rect_vertex_buffer_data,
-            rect_vertex_buffer.getSize(),
-        );
-
-        //- unused instance data
-        // This should be 4x the number of rect vertices
-
-        const unused_instance_buffer_data: //
-        [4 * rect_vertex_buffer_data.len]u32 = .{
-            0, 1, 2, 3,
-            0, 1, 2, 3,
-            0, 1, 2, 3,
-            0, 1, 2, 3,
-        };
-
-        const unused_instance_buffer = device.createBuffer(&.{
-            .label = "unused instance buffer",
-            .size = unused_instance_buffer_data.len * @sizeOf(u32),
-            .usage = wgpu.BufferUsage.copy_dst |
-                wgpu.BufferUsage.vertex,
-            .mapped_at_creation = @intFromBool(false),
-        }) orelse {
-            log.err("failed to create ununsed instance buffer", .{});
-            return error.wgpu;
-        };
-
-        queue.writeBuffer(
-            unused_instance_buffer,
-            0,
-            &unused_instance_buffer_data,
-            unused_instance_buffer.getSize(),
+            &rect_instance_buffer_data,
+            rect_instance_buffer.getSize(),
         );
 
         //- bind group
@@ -1037,17 +1002,17 @@ const RenderPassRect = struct {
             .size = @sizeOf(RenderPassRectUniform),
         };
 
-        // const rect_instance_bind_group_entry = wgpu.BindGroupEntry{
-        //     .binding = 1,
-        //     .buffer = rect_instance_buffer,
-        //     .offset = @sizeOf(RenderPassRectUniform),
-        //     // .offset = 256,
-        //     .size = rect_instance_buffer.getSize(),
-        // };
+        const rect_instance_bind_group_entry = wgpu.BindGroupEntry{
+            .binding = 1,
+            .buffer = rect_instance_buffer,
+            // .offset = @sizeOf(RenderPassRectUniform),
+            .offset = 256,
+            .size = rect_instance_buffer.getSize(),
+        };
 
-        const bind_group_entries = [_]wgpu.BindGroupEntry{
+        const bind_group_entries = [2]wgpu.BindGroupEntry{
             uniform_bind_group_entry,
-            // rect_instance_bind_group_entry,
+            rect_instance_bind_group_entry,
         };
 
         const bind_group = device.createBindGroup(&.{
@@ -1060,7 +1025,7 @@ const RenderPassRect = struct {
             return error.wgpu;
         };
 
-        return RenderPassRect{
+        return .{
             .bind_group_layout = bind_group_layout,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
@@ -1068,11 +1033,8 @@ const RenderPassRect = struct {
             .uniform = uniform,
             .uniform_buffer = uniform_buffer,
 
-            .rect_vertex_buffer_data_len = rect_vertex_buffer_data.len,
-            .rect_vertex_buffer = rect_vertex_buffer,
-
-            .unused_instance_buffer_data_len = unused_instance_buffer_data.len,
-            .unused_instance_buffer = unused_instance_buffer,
+            .rect_instance_buffer_data_len = rect_instance_buffer_data.len,
+            .rect_instance_buffer = rect_instance_buffer,
 
             .bind_group = bind_group,
         };
@@ -1084,8 +1046,7 @@ const RenderPassRect = struct {
         defer pass.pipeline.release();
 
         defer pass.uniform_buffer.release();
-        defer pass.rect_vertex_buffer.release();
-        defer pass.unused_instance_buffer.release();
+        defer pass.rect_instance_buffer.release();
         defer pass.bind_group.release();
     }
 
@@ -1120,8 +1081,6 @@ const RenderPassRect = struct {
         *wgpu.PipelineLayout,
         *wgpu.RenderPipeline,
     } {
-        log.debug("creating rect pipeline", .{});
-
         const shader_module = try createShaderModule(device);
 
         const blend_state = wgpu.BlendState{
@@ -1181,35 +1140,34 @@ const RenderPassRect = struct {
         //     rect_instance_bind_group_layout,
         // };
 
-        const uniform_bind_group_entry_layout =
+        const uniform_bind_group_entry_layout = wgpu.BindGroupLayoutEntry{
+            .binding = 0,
+            .visibility = wgpu.ShaderStage.vertex,
+            .buffer = .{
+                .type = .uniform,
+                .min_binding_size = @sizeOf(RenderPassRectUniform),
+            },
+            .sampler = .{},
+            .texture = .{},
+            .storage_texture = .{},
+        };
+
+        const rect_instance_bind_group_entry_layout =
             wgpu.BindGroupLayoutEntry{
-                .binding = 0,
+                .binding = 1,
                 .visibility = wgpu.ShaderStage.vertex,
                 .buffer = .{
-                    .type = .uniform,
-                    .min_binding_size = @sizeOf(RenderPassRectUniform),
+                    .type = .read_only_storage,
+                    .min_binding_size = 4 * @sizeOf(RectInstance),
                 },
                 .sampler = .{},
                 .texture = .{},
                 .storage_texture = .{},
             };
 
-        // const rect_instance_bind_group_entry_layout =
-        //     wgpu.BindGroupLayoutEntry{
-        //         .binding = 1,
-        //         .visibility = wgpu.ShaderStage.vertex,
-        //         .buffer = .{
-        //             .type = .read_only_storage,
-        //             .min_binding_size = @sizeOf(RectInstance),
-        //         },
-        //         .sampler = .{},
-        //         .texture = .{},
-        //         .storage_texture = .{},
-        //     };
-
-        const bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
+        const bind_group_layout_entries = [2]wgpu.BindGroupLayoutEntry{
             uniform_bind_group_entry_layout,
-            // rect_instance_bind_group_entry_layout,
+            rect_instance_bind_group_entry_layout,
         };
 
         const bind_group_layout = device.createBindGroupLayout(&.{
@@ -1231,53 +1189,6 @@ const RenderPassRect = struct {
             return error.wgpu;
         };
 
-        //- vertex layout
-
-        const rect_vertex_attributes = [_]wgpu.VertexAttribute{
-            .{ // p0
-                .shader_location = 0,
-                .format = .float32x2,
-                .offset = 0,
-            },
-            .{ // p1
-                .shader_location = 1,
-                .format = .float32x2,
-                .offset = 2 * @sizeOf(f32),
-            },
-            .{ // color
-                .shader_location = 2,
-                .format = .float32x4,
-                .offset = 2 * 2 * @sizeOf(f32),
-            },
-        };
-
-        const rect_vertex_buffer_layout = wgpu.VertexBufferLayout{
-            .array_stride = @sizeOf(RectInstance),
-            .step_mode = .vertex,
-            .attribute_count = rect_vertex_attributes.len,
-            .attributes = &rect_vertex_attributes,
-        };
-
-        const unused_instance_attributes = [_]wgpu.VertexAttribute{
-            .{ // _unsued
-                .shader_location = 3,
-                .format = .uint32,
-                .offset = 0,
-            },
-        };
-
-        const unused_instance_buffer_layout = wgpu.VertexBufferLayout{
-            .array_stride = @sizeOf(u32),
-            .step_mode = .instance,
-            .attribute_count = unused_instance_attributes.len,
-            .attributes = &unused_instance_attributes,
-        };
-
-        const vertex_buffer_layouts = [_]wgpu.VertexBufferLayout{
-            rect_vertex_buffer_layout,
-            unused_instance_buffer_layout,
-        };
-
         //- pipeline desc
         const pipline_desc = wgpu.RenderPipelineDescriptor{
             .label = "fe pipeline",
@@ -1287,11 +1198,8 @@ const RenderPassRect = struct {
 
                 // .buffer_count = 1,
                 // .buffers = &.{RectVert.vertex_buffer_layout},
-
-                // .buffer_count = 0,
-
-                .buffer_count = vertex_buffer_layouts.len,
-                .buffers = &vertex_buffer_layouts,
+                .buffer_count = 0,
+                // .buffers = &.{RectVert.vertex_buffer_layout},
             },
             .primitive = .{
                 .topology = .triangle_strip,
@@ -1386,20 +1294,6 @@ fn renderPassRect(
         null,
     );
 
-    render_pass.setVertexBuffer(
-        0,
-        rect_pass.rect_vertex_buffer,
-        0,
-        rect_pass.rect_vertex_buffer.getSize(),
-    );
-
-    render_pass.setVertexBuffer(
-        1,
-        rect_pass.unused_instance_buffer,
-        0,
-        rect_pass.unused_instance_buffer.getSize(),
-    );
-
     // render_pass.setVertexBuffer
 
     // render_pass.drawIndexed(index_buffer_data.len, 1, 0, 0, 0);
@@ -1410,12 +1304,7 @@ fn renderPassRect(
     // // unoptimized duplicated draw
     // render_pass.draw(4, 1, 0, 0);
 
-    render_pass.draw(
-        4,
-        4,
-        0,
-        0,
-    );
+    render_pass.draw(1, 4, 0, 0);
 
     render_pass.end();
 }
