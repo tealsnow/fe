@@ -17,26 +17,9 @@ const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
 
 // @TODO:
 //   @[ ]: setup cu
-//
-//   @[ ]: pointer gestures
-//     https://wayland.app/protocols/pointer-gestures-unstable-v1
-//     gonna wait until support has been around for a little longer
-//
-//   @[ ]: xdg-desktop-portal
-//     @[x]: cursor theme and size
-//     @[ ]: desktop theme / appearance
-//     @[ ]: listen to changes
-//
-//   @[ ]: window rounding - cu?
-//
-//   @[ ]: window shadows - cu?
-//
 //   @[ ]: cu: window border
-//
-//   @[x]: cursor shape
-//     https://wayland.app/protocols/cursor-shape-v1
-//
-//   @[x]: out of window resizing
+//   @[ ]: window rounding - cu?
+//   @[ ]: window shadows - cu?
 
 pub fn entry(gpa: Allocator) !void {
     try run(gpa);
@@ -76,9 +59,9 @@ fn run(gpa: Allocator) !void {
         window.size,
         .{
             // .instance = gpa,
-            .adapter = gpa,
-            .device = gpa,
-            .surface = true,
+            // .adapter = gpa,
+            // .device = gpa,
+            // .surface = true,
         },
     );
     defer renderer.deinit();

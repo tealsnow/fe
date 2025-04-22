@@ -830,7 +830,6 @@ fn renderPassRect(
     );
 
     render_pass.setVertexBuffer(
-        // 1,
         0,
         rect_pass.rect_instance_buffer,
         0,
