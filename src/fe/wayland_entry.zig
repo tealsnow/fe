@@ -13,6 +13,8 @@ const Size = @import("math.zig").Size;
 
 const wl = @import("platform/linux/wayland/wayland.zig");
 
+const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
+
 // @TODO:
 //   @[ ]: setup cu
 //
@@ -43,8 +45,7 @@ pub fn entry(gpa: Allocator) !void {
 }
 
 fn run(gpa: Allocator) !void {
-    // -------------------------------------------------------------------------
-    // - window
+    //- window
 
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
@@ -58,11 +59,31 @@ fn run(gpa: Allocator) !void {
     window.inset = 15;
     window.minimium_size = .{ .width = 200, .height = 100 };
 
-    var surface = try window.createSurface();
-    defer surface.deinit();
+    //- wpgu
 
-    // -------------------------------------------------------------------------
-    // - main loop
+    const wgpu_surface_wl =
+        WgpuRenderer.wgpu.SurfaceDescriptorFromWaylandSurface{
+            .display = window.conn.wl_display,
+            .surface = window.wl_surface,
+        };
+    const wgpu_surface = WgpuRenderer.wgpu.SurfaceDescriptor{
+        .next_in_chain = &wgpu_surface_wl.chain,
+        .label = "wayland surface",
+    };
+
+    var renderer = try WgpuRenderer.init(
+        wgpu_surface,
+        window.size,
+        .{
+            // .instance = gpa,
+            .adapter = gpa,
+            .device = gpa,
+            .surface = true,
+        },
+    );
+    defer renderer.deinit();
+
+    //- main loop
 
     var pointer_pos = Point(f64){ .x = -1, .y = -1 };
     var pointer_enter_serial: u32 = 0;
@@ -86,9 +107,7 @@ fn run(gpa: Allocator) !void {
                 .toplevel_configure => |conf| {
                     if (window.handleToplevelConfigureEvent(conf)) |size| {
                         // window was resized
-                        _ = size;
-
-                        try surface.reconfigure();
+                        renderer.reconfigure(size);
                     }
 
                     do_render = true;
@@ -235,10 +254,8 @@ fn run(gpa: Allocator) !void {
         }
 
         if (do_render) {
-            @memset(surface.pixels, 255);
-
-            surface.attach();
-            window.commit();
+            renderer.render();
+            renderer.surface.present();
         }
     }
 }

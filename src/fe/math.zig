@@ -5,7 +5,7 @@ pub fn Point(comptime T: type) type {
 
         const Self = @This();
 
-        pub fn point(x: T, y: T) Self {
+        pub fn pt(x: T, y: T) Self {
             return .{ .x = x, .y = y };
         }
 

@@ -198,6 +198,8 @@ pub fn build(b: *std.Build) void {
             fe_mod.addSystemIncludePath(b.path("glib-2.0"));
             fe_mod.linkSystemLibrary("gio-2", .{ .needed = true });
 
+            //- wgpu
+
             const wgpu = b.lazyDependency("wgpu", .{
                 .target = target,
                 .optimize = optimize,

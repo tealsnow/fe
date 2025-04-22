@@ -141,7 +141,7 @@ pub const Application = struct {
     }
 
     pub fn runLoop(app: *Application) !void {
-        app.renderer.draw();
+        app.renderer.render();
 
         app.renderer.surface.present();
     }
