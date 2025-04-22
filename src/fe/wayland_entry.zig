@@ -80,7 +80,7 @@ fn run(gpa: Allocator) !void {
         wgpu_surface,
         window.size,
         .{
-            .instance = gpa,
+            // .instance = gpa,
             .adapter = gpa,
             .device = gpa,
             .surface = true,
