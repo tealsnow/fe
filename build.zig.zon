@@ -7,6 +7,39 @@
         .tracy = .{
             .url = "https://github.com/tealsnow/zig-tracy/archive/refs/tags/v0.0.9.zip",
             .hash = "tracy-0.0.9-Dn49mw9SAACCtNBeyyb3EOipVIAhYuoDI9bLBi3LDJh6",
+            .lazy = true,
+        },
+        .sdl3 = .{
+            .path = "./pkg/sdl3",
+            .lazy = true,
+        },
+        .glfw = .{
+            .path = "./pkg/glfw",
+            .lazy = true,
+        },
+        .freetype = .{
+            .path = "./pkg/freetype",
+            .lazy = true,
+        },
+        .wgpu = .{
+            .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.0.0.tar.gz",
+            .hash = "wgpu_native_zig-5.0.0-B9jeDOGZAgAkyePsJjgwsgHgo0guYS7S9cQqDcZx9kXL",
+            .lazy = true,
+        },
+        .wayland = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.3.0.tar.gz",
+            .hash = "wayland-0.3.0-lQa1kjPIAQDmhGYpY-zxiRzQJFHQ2VqhJkQLbKKdt5wl",
+            .lazy = false, // generates lazily
+        },
+        .xkbcommon = .{
+            .url = "https://codeberg.org/ifreund/zig-xkbcommon/archive/v0.3.0.tar.gz",
+            .hash = "xkbcommon-0.3.0-VDqIe3K9AQB2fG5ZeRcMC9i7kfrp5m2rWgLrmdNn9azr",
+            .lazy = true,
+        },
+        .pretty = .{
+            .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
+            .hash = "pretty-0.10.4-AAAAAM9GAQATvLkzFJ6-Y9r_NWCAC2Q4hOKxHSnJXQLD",
+            .lazy = true,
         },
     },
     .paths = .{

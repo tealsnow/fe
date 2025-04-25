@@ -31,6 +31,7 @@
             zig
             zls
             lldb
+            gdb
             pkg-config
             valgrind
             wabt
@@ -45,6 +46,26 @@
             fontconfig
 
             wasmtime-c-api
+
+            # glfw
+            glfw-wayland
+            wayland
+            libxkbcommon
+            xorg.libXcursor.dev
+            xorg.libXrandr.dev
+            xorg.libXinerama.dev
+            xorg.libXi.dev
+
+            # wayland
+            wayland
+            wayland-protocols
+            wayland-scanner
+
+            glib
+
+            wgpu-native
+
+            freetype
           ];
 
           env = {
