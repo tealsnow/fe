@@ -208,6 +208,17 @@ pub fn build(b: *std.Build) void {
                 fe_mod.addImport("wgpu", m.module("wgpu"));
                 fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
             }
+
+            //- freetype
+
+            const freetype = b.lazyDependency("freetype", .{
+                .target = target,
+                .optimize = optimize,
+            });
+            if (freetype) |m| {
+                fe_mod.addImport("freetype", m.module("freetype"));
+                fe_mod.linkLibrary(m.artifact("freetype"));
+            }
         },
     }
 

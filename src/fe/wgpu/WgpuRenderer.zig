@@ -14,7 +14,9 @@ const pretty = @import("pretty");
 const mt = @import("../math.zig");
 const Size = mt.Size;
 
-const tri_shader_code = @embedFile("triangle.wgsl");
+const FontAtlas = @import("../wayland_entry.zig").FontAtlas;
+
+// const tri_shader_code = @embedFile("triangle.wgsl");
 
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
@@ -34,6 +36,7 @@ pub fn init(
     surface_descriptor: wgpu.SurfaceDescriptor,
     initial_size: Size(u32),
     inspect: InspectOptions,
+    font_atlas: *FontAtlas,
 ) !Renderer {
     const adapter, const surface =
         try createAdapaterAndSurface(surface_descriptor, inspect.instance);
@@ -101,6 +104,7 @@ pub fn init(
             queue,
             surface_format,
             initial_size.floatFromInt(f32),
+            font_atlas,
         );
 
     return .{
@@ -482,11 +486,16 @@ fn encodeCommands(
 //= rect rendering
 
 pub const RectInstance = extern struct {
-    rect: mt.Rect(f32),
+    dst: mt.Rect(f32),
+    tex: mt.Rect(f32),
     color: mt.RgbaF32,
 
-    pub fn inst(rect: mt.Rect(f32), color: mt.RgbaF32) RectInstance {
-        return .{ .rect = rect, .color = color };
+    pub fn rect(
+        dst: mt.Rect(f32),
+        tex: mt.Rect(f32),
+        color: mt.RgbaF32,
+    ) RectInstance {
+        return .{ .dst = dst, .tex = tex, .color = color };
     }
 };
 
@@ -515,6 +524,10 @@ const RenderPassRect = struct {
     rect_instance_buffer_data_len: u32,
     rect_instance_buffer: *wgpu.Buffer,
 
+    atlas_texture: *wgpu.Texture,
+    atlas_texture_view: *wgpu.TextureView,
+    atlas_texture_sampler: *wgpu.Sampler,
+
     bind_group: *wgpu.BindGroup,
 
     pub fn init(
@@ -522,11 +535,64 @@ const RenderPassRect = struct {
         queue: *wgpu.Queue,
         surface_format: wgpu.TextureFormat,
         surface_size_px: Size(f32),
+        font_atlas: *FontAtlas,
     ) !RenderPassRect {
         const bind_group_layout, //
         const pipeline_layout, //
         const pipeline =
             try createPipeline(device, surface_format);
+
+        //- font texture setup
+
+        const atlas_texture_size = wgpu.Extent3D{
+            .width = font_atlas.size.width,
+            .height = font_atlas.size.height,
+            .depth_or_array_layers = 1,
+        };
+
+        const atlas_texture_desc = wgpu.TextureDescriptor{
+            .label = "font atlas",
+            .usage = wgpu.TextureUsage.texture_binding |
+                wgpu.TextureUsage.copy_dst,
+            .dimension = .@"2d",
+            .size = atlas_texture_size,
+            .format = .r8_unorm,
+        };
+        const atlas_texture =
+            device.createTexture(&atlas_texture_desc) orelse {
+                log.err("Failed to create atlas texture", .{});
+                return error.wgpu;
+            };
+
+        queue.writeTexture(
+            &.{
+                .texture = atlas_texture,
+                .origin = .{},
+            },
+            font_atlas.bytes.ptr,
+            font_atlas.bytes.len,
+            &.{
+                .offset = 0,
+                .bytes_per_row = font_atlas.size.width,
+                .rows_per_image = font_atlas.size.height,
+            },
+            &atlas_texture_size,
+        );
+
+        const atlas_texture_view = atlas_texture.createView(&.{
+            .label = "atlas texture view",
+        }) orelse {
+            log.err("failed to create atlas texture view", .{});
+            return error.wgpu;
+        };
+        const atlas_texture_sampler = device.createSampler(&.{
+            .label = "atlas texture sampler",
+            .mag_filter = .linear,
+            .min_filter = .nearest,
+        }) orelse {
+            log.err("failed to create atlas texture sampler", .{});
+            return error.wgpu;
+        };
 
         //- uniform setup
 
@@ -548,9 +614,26 @@ const RenderPassRect = struct {
 
         //- rect steup
 
+        const l_tex_u32 = font_atlas.getRectForCodepoint('l') orelse
+            @panic("no rect");
+        const o_tex_u32 = font_atlas.getRectForCodepoint('o') orelse
+            @panic("no rect");
+
+        const l_tex = l_tex_u32.floatFromInt(f32);
+        const o_tex = o_tex_u32.floatFromInt(f32);
+
+        const r1 = mt.Bounds(f32).bounds(.pt(120, 120), l_tex.size());
+        const r2 = mt.Bounds(f32).bounds(.pt(140, 130), o_tex.size());
+        const r3 = mt.Bounds(f32).bounds(.pt(190, 120), l_tex.size());
+
+        const red = mt.RgbaF32.hexRgb(0xff0000);
+        const green = mt.RgbaF32.hexRgb(0x00ff00);
+        const blue = mt.RgbaF32.hexRgb(0x0000ff);
+
         const rect_instance_buffer_data = [_]RectInstance{
-            .inst(.rect(.pt(40, 40), .pt(100, 100)), .hexRgb(0xff0000)),
-            .inst(.rect(.pt(200, 200), .pt(300, 300)), .hexRgb(0x00ff00)),
+            .rect(.fromBounds(r1), l_tex, red),
+            .rect(.fromBounds(r2), o_tex, green),
+            .rect(.fromBounds(r3), l_tex, blue),
         };
 
         const rect_instance_buffer = device.createBuffer(&.{
@@ -558,7 +641,6 @@ const RenderPassRect = struct {
             .size = rect_instance_buffer_data.len * @sizeOf(RectInstance),
             .usage = wgpu.BufferUsage.copy_dst |
                 wgpu.BufferUsage.vertex,
-            // wgpu.BufferUsage.storage,
             .mapped_at_creation = @intFromBool(false),
         }) orelse {
             log.err("failed to create rect instance buffer", .{});
@@ -581,8 +663,19 @@ const RenderPassRect = struct {
             .size = @sizeOf(RenderPassRectUniform),
         };
 
+        const texture_bind_group_entry = wgpu.BindGroupEntry{
+            .binding = 1,
+            .texture_view = atlas_texture_view,
+        };
+        const sampler_bind_group_entry = wgpu.BindGroupEntry{
+            .binding = 2,
+            .sampler = atlas_texture_sampler,
+        };
+
         const bind_group_entries = [_]wgpu.BindGroupEntry{
             uniform_bind_group_entry,
+            texture_bind_group_entry,
+            sampler_bind_group_entry,
         };
 
         const bind_group = device.createBindGroup(&.{
@@ -606,6 +699,10 @@ const RenderPassRect = struct {
             .rect_instance_buffer_data_len = rect_instance_buffer_data.len,
             .rect_instance_buffer = rect_instance_buffer,
 
+            .atlas_texture = atlas_texture,
+            .atlas_texture_view = atlas_texture_view,
+            .atlas_texture_sampler = atlas_texture_sampler,
+
             .bind_group = bind_group,
         };
     }
@@ -616,8 +713,13 @@ const RenderPassRect = struct {
         defer pass.pipeline.release();
 
         defer pass.uniform_buffer.release();
-        // defer pass.positioning_vertex_buffer.release();
+
         defer pass.rect_instance_buffer.release();
+
+        defer pass.atlas_texture.release();
+        defer pass.atlas_texture_view.release();
+        defer pass.atlas_texture_sampler.release();
+
         defer pass.bind_group.release();
     }
 
@@ -682,7 +784,7 @@ const RenderPassRect = struct {
 
         const uniform_bind_group_entry_layout = wgpu.BindGroupLayoutEntry{
             .binding = 0,
-            .visibility = wgpu.ShaderStage.vertex,
+            .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
             .buffer = .{
                 .type = .uniform,
                 .min_binding_size = @sizeOf(RenderPassRectUniform),
@@ -692,8 +794,32 @@ const RenderPassRect = struct {
             .storage_texture = .{},
         };
 
+        const texture_bind_group_entry_layout = wgpu.BindGroupLayoutEntry{
+            .binding = 1,
+            .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
+            .texture = .{
+                .multisampled = @intFromBool(false),
+                .view_dimension = .@"2d",
+                .sample_type = .float,
+            },
+            .buffer = .{},
+            .sampler = .{},
+            .storage_texture = .{},
+        };
+
+        const sampler_bind_group_entry_layout = wgpu.BindGroupLayoutEntry{
+            .binding = 2,
+            .visibility = wgpu.ShaderStage.fragment,
+            .sampler = .{ .type = .filtering },
+            .buffer = .{},
+            .texture = .{},
+            .storage_texture = .{},
+        };
+
         const bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
             uniform_bind_group_entry_layout,
+            texture_bind_group_entry_layout,
+            sampler_bind_group_entry_layout,
         };
 
         const bind_group_layout = device.createBindGroupLayout(&.{
@@ -708,20 +834,30 @@ const RenderPassRect = struct {
         //- vertex layout
 
         const rect_instance_layout_attributes = [_]wgpu.VertexAttribute{
-            .{
+            .{ // dst_p0
                 .shader_location = 0,
                 .format = .float32x2,
                 .offset = 0,
             },
-            .{
+            .{ // dst_p1
                 .shader_location = 1,
                 .format = .float32x2,
                 .offset = @sizeOf([2]f32),
             },
-            .{
+            .{ // tex_p0
                 .shader_location = 2,
-                .format = .float32x4,
+                .format = .float32x2,
                 .offset = 2 * @sizeOf([2]f32),
+            },
+            .{ // tex_p0
+                .shader_location = 3,
+                .format = .float32x2,
+                .offset = 3 * @sizeOf([2]f32),
+            },
+            .{ // color
+                .shader_location = 4,
+                .format = .float32x4,
+                .offset = 4 * @sizeOf([2]f32),
             },
         };
 

@@ -33,13 +33,13 @@ pub fn version(self: Library) Version {
 }
 
 /// Call FT_New_Face to open a font from a file.
-pub fn initFace(self: Library, path: [:0]const u8, index: i32) Error!Face {
-    var face: Face = undefined;
+pub fn initFace(self: Library, path: [:0]const u8, index: i32) Error!*Face {
+    var face: *Face = undefined;
     try intToError(c.FT_New_Face(
         self.handle,
         path.ptr,
         index,
-        &face.handle,
+        @ptrCast(&face),
     ));
     return face;
 }

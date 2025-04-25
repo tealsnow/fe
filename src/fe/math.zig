@@ -9,6 +9,10 @@ pub fn Point(comptime T: type) type {
             return .{ .x = x, .y = y };
         }
 
+        pub fn all(v: T) Self {
+            return .pt(v, v);
+        }
+
         pub fn intCast(self: Self, comptime NT: type) Point(NT) {
             return .{
                 .x = @intCast(self.x),
@@ -36,6 +40,10 @@ pub fn Size(comptime T: type) type {
             return .{ .width = width, .height = height };
         }
 
+        pub fn square(len: T) Self {
+            return .{ .width = len, .height = len };
+        }
+
         pub fn intCast(self: Self, comptime NT: type) Size(NT) {
             return @bitCast(@as(Point(T), @bitCast(self)).intCast(NT));
         }
@@ -55,6 +63,10 @@ pub fn Bounds(comptime T: type) type {
 
         pub fn bounds(origin: Point(T), size: Size(T)) Self {
             return .{ .origin = origin, .size = size };
+        }
+
+        pub fn fromRect(rect: Rect(T)) Self {
+            return .bounds(rect.p0, rect.size());
         }
 
         pub fn intCast(self: Self, comptime NT: type) Bounds(NT) {
@@ -82,6 +94,23 @@ pub fn Rect(comptime T: type) type {
 
         pub fn rect(p0: Point(T), p1: Point(T)) Self {
             return .{ .p0 = p0, .p1 = p1 };
+        }
+
+        pub fn size(self: Self) Size(T) {
+            return .size(
+                self.p1.x - self.p0.x,
+                self.p1.y - self.p0.y,
+            );
+        }
+
+        pub fn fromBounds(bounds: Bounds(T)) Self {
+            return .rect(
+                bounds.origin,
+                .pt(
+                    bounds.origin.x + bounds.size.width,
+                    bounds.origin.y + bounds.size.height,
+                ),
+            );
         }
 
         pub fn intCast(self: Self, comptime NT: type) Rect(NT) {

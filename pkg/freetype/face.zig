@@ -7,64 +7,167 @@ const Tag = @import("tag.zig").Tag;
 const Error = errors.Error;
 const intToError = errors.intToError;
 
-pub const Face = struct {
-    handle: c.FT_Face,
+pub const Fixed = c_long;
+pub const Pos = c_long;
 
-    pub fn deinit(self: Face) void {
-        _ = c.FT_Done_Face(self.handle);
+pub const GlyphSlot = extern struct {
+    library: c.FT_Library,
+    face: *Face,
+    next: ?*GlyphSlot,
+    glyph_index: c_uint,
+    generic: c.FT_Generic,
+    metrics: c.FT_Glyph_Metrics,
+    linearHoriAdvance: Fixed,
+    linearVertAdvance: Fixed,
+    advance: c.FT_Vector,
+    format: GlyphFormat,
+    bitmap: Bitmap,
+    bitmap_left: c_int,
+    bitmap_top: c_int,
+    outline: c.FT_Outline,
+    num_subglyphs: c_uint,
+    subglyphs: c.FT_SubGlyph,
+    control_data: ?*anyopaque,
+    control_len: c_long,
+    lsb_delta: Pos,
+    rsb_delta: Pos,
+    other: ?*anyopaque,
+    internal: c.FT_Slot_Internal,
+
+    /// Convert a given glyph image to a bitmap.
+    pub fn render(
+        glyph: *GlyphSlot,
+        render_mode: RenderMode,
+    ) Error!void {
+        return intToError(c.FT_Render_Glyph(
+            @ptrCast(glyph),
+            @intFromEnum(render_mode),
+        ));
+    }
+};
+
+pub const GlyphFormat = enum(c.FT_Glyph_Format) {
+    none = c.FT_GLYPH_FORMAT_NONE,
+    composite = c.FT_GLYPH_FORMAT_COMPOSITE,
+    bitmap = c.FT_GLYPH_FORMAT_BITMAP,
+    outline = c.FT_GLYPH_FORMAT_OUTLINE,
+    plotter = c.FT_GLYPH_FORMAT_PLOTTER,
+    svg = c.FT_GLYPH_FORMAT_SVG,
+    _,
+};
+
+pub const Bitmap = extern struct {
+    rows: c_uint,
+    width: c_uint,
+    pitch: c_int,
+    buffer: [*]u8,
+    num_grays: c_ushort,
+    pixel_mode: PixelMode,
+    palette_mode: u8,
+    palette: ?*anyopaque,
+};
+
+pub const PixelMode = enum(u8) {
+    none = c.FT_PIXEL_MODE_NONE,
+    mono = c.FT_PIXEL_MODE_MONO,
+    gray = c.FT_PIXEL_MODE_GRAY,
+    gray2 = c.FT_PIXEL_MODE_GRAY2,
+    gray4 = c.FT_PIXEL_MODE_GRAY4,
+    lcd = c.FT_PIXEL_MODE_LCD,
+    lcd_v = c.FT_PIXEL_MODE_LCD_V,
+    bgra = c.FT_PIXEL_MODE_BGRA,
+    max = c.FT_PIXEL_MODE_MAX,
+    _,
+};
+
+pub const Face = extern struct {
+    num_faces: c_long,
+    face_index: c_long,
+    face_flags: c_long,
+    style_flags: c_long,
+    num_glyphs: c_long,
+    family_name: [*:0]u8,
+    style_name: [*:0]u8,
+    num_fixed_sizes: c_int,
+    available_sizes: [*]c.FT_Bitmap_Size,
+    num_charmaps: c_int,
+    charmaps: [*]c.FT_CharMap,
+    generic: c.FT_Generic,
+    bbox: c.FT_BBox,
+    units_per_EM: c_ushort,
+    ascender: c_short,
+    descender: c_short,
+    height: c_short,
+    max_advance_width: c_short,
+    max_advance_height: c_short,
+    underline_position: c_short,
+    underline_thickness: c_short,
+    glyph: *GlyphSlot,
+    size: c.FT_Size,
+    charmap: c.FT_CharMap,
+    driver: c.FT_Driver,
+    memory: c.FT_Memory,
+    stream: c.FT_Stream,
+    sizes_list: c.FT_ListRec,
+    autohint: c.FT_Generic,
+    extensions: ?*anyopaque,
+    internal: c.FT_Face_Internal,
+
+    pub fn deinit(face: *Face) void {
+        _ = c.FT_Done_Face(@ptrCast(face));
     }
 
     /// Increment the counter of the face.
-    pub fn ref(self: Face) void {
-        _ = c.FT_Reference_Face(self.handle);
+    pub fn ref(face: Face) void {
+        _ = c.FT_Reference_Face(@ptrCast(face));
     }
 
     /// A macro that returns true whenever a face object contains some
     /// embedded bitmaps. See the available_sizes field of the FT_FaceRec structure.
-    pub fn hasFixedSizes(self: Face) bool {
-        return c.FT_HAS_FIXED_SIZES(self.handle);
+    pub fn hasFixedSizes(face: *Face) bool {
+        return c.FT_HAS_FIXED_SIZES(@as(c.FT_Face, @ptrCast(face)));
     }
 
     /// A macro that returns true whenever a face object contains tables for
     /// color glyphs.
-    pub fn hasColor(self: Face) bool {
-        return c.FT_HAS_COLOR(self.handle);
+    pub fn hasColor(face: *Face) bool {
+        return c.FT_HAS_COLOR(@as(c.FT_Face, @ptrCast(face)));
     }
 
     /// A macro that returns true whenever a face object contains an ‘sbix’
     /// OpenType table and outline glyphs.
-    pub fn hasSBIX(self: Face) bool {
-        return c.FT_HAS_SBIX(self.handle);
+    pub fn hasSBIX(face: *Face) bool {
+        return c.FT_HAS_SBIX(@as(c.FT_Face, @ptrCast(face)));
     }
 
     /// A macro that returns true whenever a face object contains some
     /// multiple masters.
-    pub fn hasMultipleMasters(self: Face) bool {
-        return c.FT_HAS_MULTIPLE_MASTERS(self.handle);
+    pub fn hasMultipleMasters(face: *Face) bool {
+        return c.FT_HAS_MULTIPLE_MASTERS(@as(c.FT_Face, @ptrCast(face)));
     }
 
     /// A macro that returns true whenever a face object contains a scalable
     /// font face (true for TrueType, Type 1, Type 42, CID, OpenType/CFF,
     /// and PFR font formats).
-    pub fn isScalable(self: Face) bool {
-        return c.FT_IS_SCALABLE(self.handle);
+    pub fn isScalable(face: *Face) bool {
+        return c.FT_IS_SCALABLE(@as(c.FT_Face, @ptrCast(face)));
     }
 
     /// Select a given charmap by its encoding tag (as listed in freetype.h).
-    pub fn selectCharmap(self: Face, encoding: Encoding) Error!void {
-        return intToError(c.FT_Select_Charmap(self.handle, @intFromEnum(encoding)));
+    pub fn selectCharmap(face: *Face, encoding: Encoding) Error!void {
+        return intToError(c.FT_Select_Charmap(@ptrCast(face), @intFromEnum(encoding)));
     }
 
     /// Call FT_Request_Size to request the nominal size (in points).
     pub fn setCharSize(
-        self: Face,
+        face: *Face,
         char_width: i32,
         char_height: i32,
         horz_resolution: u16,
         vert_resolution: u16,
     ) Error!void {
         return intToError(c.FT_Set_Char_Size(
-            self.handle,
+            @ptrCast(face),
             char_width,
             char_height,
             horz_resolution,
@@ -72,60 +175,64 @@ pub const Face = struct {
         ));
     }
 
+    pub fn setPixelSizes(
+        face: *Face,
+        pixel_width: u32,
+        pixel_height: u32,
+    ) Error!void {
+        return intToError(c.FT_Set_Pixel_Sizes(
+            @ptrCast(face),
+            pixel_width,
+            pixel_height,
+        ));
+    }
+
     /// Select a bitmap strike. To be more precise, this function sets the
     /// scaling factors of the active FT_Size object in a face so that bitmaps
     /// from this particular strike are taken by FT_Load_Glyph and friends.
-    pub fn selectSize(self: Face, idx: i32) Error!void {
-        return intToError(c.FT_Select_Size(self.handle, idx));
+    pub fn selectSize(face: *Face, idx: i32) Error!void {
+        return intToError(c.FT_Select_Size(@ptrCast(face), idx));
     }
 
     /// Return the glyph index of a given character code. This function uses
     /// the currently selected charmap to do the mapping.
-    pub fn getCharIndex(self: Face, char: u32) ?u32 {
-        const i = c.FT_Get_Char_Index(self.handle, char);
+    pub fn getCharIndex(face: *Face, char: u32) ?u32 {
+        const i = c.FT_Get_Char_Index(@ptrCast(face), char);
         return if (i == 0) null else i;
     }
 
     /// Load a glyph into the glyph slot of a face object.
-    pub fn loadGlyph(self: Face, glyph_index: u32, load_flags: LoadFlags) Error!void {
+    pub fn loadGlyph(face: *Face, glyph_index: u32, load_flags: LoadFlags) Error!void {
         return intToError(c.FT_Load_Glyph(
-            self.handle,
+            @ptrCast(face),
             glyph_index,
             @bitCast(load_flags),
         ));
     }
 
-    /// Convert a given glyph image to a bitmap.
-    pub fn renderGlyph(self: Face, render_mode: RenderMode) Error!void {
-        return intToError(c.FT_Render_Glyph(
-            self.handle.*.glyph,
-            @intFromEnum(render_mode),
-        ));
-    }
-
     /// Return a pointer to a given SFNT table stored within a face.
-    pub fn getSfntTable(self: Face, comptime tag: SfntTag) ?*tag.DataType() {
+    pub fn getSfntTable(face: *Face, comptime tag: SfntTag) ?*tag.DataType() {
         return @ptrCast(@alignCast(c.FT_Get_Sfnt_Table(
-            self.handle,
+            @ptrCast(face),
             @intFromEnum(tag),
         )));
     }
 
     /// Retrieve the number of name strings in the SFNT ‘name’ table.
-    pub fn getSfntNameCount(self: Face) usize {
-        return @intCast(c.FT_Get_Sfnt_Name_Count(self.handle));
+    pub fn getSfntNameCount(face: *Face) usize {
+        return @intCast(c.FT_Get_Sfnt_Name_Count(@ptrCast(face)));
     }
 
     /// Retrieve a string of the SFNT ‘name’ table for a given index.
-    pub fn getSfntName(self: Face, i: usize) Error!c.FT_SfntName {
+    pub fn getSfntName(face: *Face, i: usize) Error!c.FT_SfntName {
         var name: c.FT_SfntName = undefined;
-        const res = c.FT_Get_Sfnt_Name(self.handle, @intCast(i), &name);
+        const res = c.FT_Get_Sfnt_Name(@ptrCast(face), @intCast(i), &name);
         return if (intToError(res)) |_| name else |err| err;
     }
 
     /// Load any SFNT font table into client memory.
     pub fn loadSfntTable(
-        self: Face,
+        face: *Face,
         alloc: Allocator,
         tag: Tag,
     ) (Allocator.Error || Error)!?[]u8 {
@@ -133,7 +240,7 @@ pub const Face = struct {
 
         // Get the length of the table in bytes
         var len: c_ulong = 0;
-        var res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
+        var res = c.FT_Load_Sfnt_Table(@ptrCast(face), tag_c, 0, null, &len);
         _ = intToError(res) catch |err| return err;
 
         // If our length is zero we don't have a table.
@@ -142,32 +249,32 @@ pub const Face = struct {
         // Allocate a buffer to hold the table and load it
         const buf = try alloc.alloc(u8, len);
         errdefer alloc.free(buf);
-        res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, buf.ptr, &len);
+        res = c.FT_Load_Sfnt_Table(@ptrCast(face), tag_c, 0, buf.ptr, &len);
         _ = intToError(res) catch |err| return err;
 
         return buf;
     }
 
     /// Check whether a given SFNT table is available in a face.
-    pub fn hasSfntTable(self: Face, tag: Tag) bool {
+    pub fn hasSfntTable(face: *Face, tag: Tag) bool {
         const tag_c: c_ulong = @intCast(@as(u32, @bitCast(tag)));
         var len: c_ulong = 0;
-        const res = c.FT_Load_Sfnt_Table(self.handle, tag_c, 0, null, &len);
+        const res = c.FT_Load_Sfnt_Table(@ptrCast(face), tag_c, 0, null, &len);
         _ = intToError(res) catch return false;
         return len != 0;
     }
 
     /// Retrieve the font variation descriptor for a font.
-    pub fn getMMVar(self: Face) Error!*c.FT_MM_Var {
+    pub fn getMMVar(face: *Face) Error!*c.FT_MM_Var {
         var result: *c.FT_MM_Var = undefined;
-        const res = c.FT_Get_MM_Var(self.handle, @ptrCast(&result));
+        const res = c.FT_Get_MM_Var(@ptrCast(face), @ptrCast(&result));
         return if (intToError(res)) |_| result else |err| err;
     }
 
     /// Get the design coordinates of the currently selected interpolated font.
-    pub fn getVarDesignCoordinates(self: Face, coords: []c.FT_Fixed) Error!void {
+    pub fn getVarDesignCoordinates(face: *Face, coords: []c.FT_Fixed) Error!void {
         const res = c.FT_Get_Var_Design_Coordinates(
-            self.handle,
+            @ptrCast(face),
             @intCast(coords.len),
             coords.ptr,
         );
@@ -175,9 +282,9 @@ pub const Face = struct {
     }
 
     /// Choose an interpolated font design through design coordinates.
-    pub fn setVarDesignCoordinates(self: Face, coords: []c.FT_Fixed) Error!void {
+    pub fn setVarDesignCoordinates(face: *Face, coords: []c.FT_Fixed) Error!void {
         const res = c.FT_Set_Var_Design_Coordinates(
-            self.handle,
+            @ptrCast(face),
             @intCast(coords.len),
             coords.ptr,
         );
@@ -187,12 +294,12 @@ pub const Face = struct {
     /// Set the transformation that is applied to glyph images when they are
     /// loaded into a glyph slot through FT_Load_Glyph.
     pub fn setTransform(
-        self: Face,
+        face: *Face,
         matrix: ?*const c.FT_Matrix,
         delta: ?*const c.FT_Vector,
     ) void {
         c.FT_Set_Transform(
-            self.handle,
+            @ptrCast(face),
             @constCast(@ptrCast(matrix)),
             @constCast(@ptrCast(delta)),
         );
@@ -254,7 +361,7 @@ pub const RenderMode = enum(c_uint) {
 
 /// A list of bit field constants for FT_Load_Glyph to indicate what kind of
 /// operations to perform during glyph loading.
-pub const LoadFlags = packed struct {
+pub const LoadFlags = packed struct(i32) {
     no_scale: bool = false,
     no_hinting: bool = false,
     render: bool = false,
@@ -281,12 +388,6 @@ pub const LoadFlags = packed struct {
     _padding2: u1 = 0,
     no_svg: bool = false,
     _padding3: u7 = 0,
-
-    test {
-        // This must always be an i32 size so we can bitcast directly.
-        const testing = std.testing;
-        try testing.expectEqual(@sizeOf(i32), @sizeOf(LoadFlags));
-    }
 
     test "bitcast" {
         const testing = std.testing;

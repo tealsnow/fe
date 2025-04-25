@@ -64,6 +64,8 @@
             glib
 
             wgpu-native
+
+            freetype
           ];
 
           env = {
