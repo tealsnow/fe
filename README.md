@@ -4,7 +4,7 @@
 
 <img src="./Fe.png" align="right" width="64" />
 
-[License](LICENSE) | [Changelog](CHANGELOG.md)
+[License](LICENSE) 
 
 ## License
 
