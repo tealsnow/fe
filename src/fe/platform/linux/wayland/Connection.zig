@@ -16,6 +16,8 @@ const xdp = @import("xdg_desktop_portal.zig");
 
 const CursorManager = @import("cursor_manager.zig").CursorManager;
 
+//- fields
+
 wl_display: *wl.Display,
 
 wl_registry_listener_data: *listeners.WlRegistryListenerData,
@@ -23,9 +25,8 @@ wl_registry: *wl.Registry,
 
 wl_compositor: *wl.Compositor,
 wl_shm: *wl.Shm,
-
-wl_seat_listener_data: *listeners.WlSeatListenerData,
 wl_seat: *wl.Seat,
+wl_output: *wl.Output,
 
 event_queue: *events.EventQueue,
 
@@ -40,6 +41,11 @@ wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
 cursor_manager: CursorManager,
 
 xdg_wm_base: *xdg.WmBase,
+
+hdpi: f32,
+vdpi: f32,
+
+//- methods
 
 pub fn init(gpa: Allocator) !*Connection {
     const wl_display_name =
@@ -56,6 +62,7 @@ pub fn init(gpa: Allocator) !*Connection {
 
     const wl_registry_listener_data =
         try gpa.create(listeners.WlRegistryListenerData);
+    errdefer gpa.destroy(wl_registry_listener_data);
     wl_registry_listener_data.* = .empty;
     wl_registry.setListener(
         *listeners.WlRegistryListenerData,
@@ -63,7 +70,7 @@ pub fn init(gpa: Allocator) !*Connection {
         wl_registry_listener_data,
     );
 
-    // gather globals
+    //- gather globals
     if (wl_display.roundtrip() != .SUCCESS) return error.wl;
 
     const wl_compositor = wl_registry_listener_data.wl_compositor orelse {
@@ -81,22 +88,57 @@ pub fn init(gpa: Allocator) !*Connection {
         return error.wl;
     };
 
+    const wl_output = wl_registry_listener_data.wl_output orelse {
+        log.err("failed to get wl_output", .{});
+        return error.wl;
+    };
+
+    //- output
+    var wl_output_listener_data = listeners.WlOutputListenerData.empty;
+    wl_output.setListener(
+        *listeners.WlOutputListenerData,
+        listeners.wlOutputListener,
+        &wl_output_listener_data,
+    );
+
+    //- wl_seat setup
+
     const xkb_context = xkb.Context.new(.no_flags) orelse return error.xkb;
 
     const event_queue = try gpa.create(events.EventQueue);
+    errdefer gpa.destroy(event_queue);
     event_queue.* = .empty;
 
-    const wl_seat_listener_data =
-        try gpa.create(listeners.WlSeatListenerData);
-    wl_seat_listener_data.* = .empty;
+    var wl_seat_listener_data = listeners.WlSeatListenerData.empty;
     wl_seat.setListener(
         *listeners.WlSeatListenerData,
         listeners.wlSeatListener,
-        wl_seat_listener_data,
+        &wl_seat_listener_data,
     );
 
-    // gather wl_seat items
+    //- gather wl_seat and wl_output data
     if (wl_display.roundtrip() != .SUCCESS) return error.wl;
+
+    //- output calculations
+    const hdpi, const vdpi = dpi: {
+        const width: f32 = @floatFromInt(wl_output_listener_data.width);
+        const height: f32 = @floatFromInt(wl_output_listener_data.height);
+
+        const physical_width_mm: f32 =
+            @floatFromInt(wl_output_listener_data.physical_width_mm);
+        const physical_height_mm: f32 =
+            @floatFromInt(wl_output_listener_data.physical_height_mm);
+
+        const physical_width_inch = physical_width_mm / 25.4;
+        const physical_height_inch = physical_height_mm / 25.4;
+
+        const hdpi = width / physical_width_inch;
+        const vdpi = height / physical_height_inch;
+
+        break :dpi .{ hdpi, vdpi };
+    };
+
+    //- input setup
 
     const wl_keyboard = wl_seat_listener_data.wl_keyboard orelse {
         log.err("failed to get wl_keyboard", .{});
@@ -105,6 +147,7 @@ pub fn init(gpa: Allocator) !*Connection {
 
     const wl_keyboard_listener_data =
         try gpa.create(listeners.WlKeyboardListenerData);
+    errdefer gpa.destroy(wl_keyboard_listener_data);
     wl_keyboard_listener_data.* = .{
         .event_queue = event_queue,
         .xkb_context = xkb_context,
@@ -122,6 +165,7 @@ pub fn init(gpa: Allocator) !*Connection {
 
     const wl_pointer_listener_data =
         try gpa.create(listeners.WlPointerListenerData);
+    errdefer gpa.destroy(wl_pointer_listener_data);
     wl_pointer_listener_data.* = .{
         .event_queue = event_queue,
     };
@@ -131,6 +175,7 @@ pub fn init(gpa: Allocator) !*Connection {
         wl_pointer_listener_data,
     );
 
+    //- xdp
     log.debug("xdp: opening xdg-desktop-portal settings proxy", .{});
     const xdp_settings = try xdp.XdpSettings.init();
 
@@ -161,6 +206,9 @@ pub fn init(gpa: Allocator) !*Connection {
             wl_shm,
         );
     };
+    errdefer cursor_manager.deinit();
+
+    //- xdg wm base
 
     const xdg_wm_base = wl_registry_listener_data.xdg_wm_base orelse {
         log.err("failed to get xdg_wm_base", .{});
@@ -173,6 +221,8 @@ pub fn init(gpa: Allocator) !*Connection {
         null,
     );
 
+    if (wl_display.roundtrip() != .SUCCESS) return error.wl;
+
     const con = try gpa.create(Connection);
     con.* = .{
         .wl_display = wl_display,
@@ -182,9 +232,8 @@ pub fn init(gpa: Allocator) !*Connection {
 
         .wl_compositor = wl_compositor,
         .wl_shm = wl_shm,
-
-        .wl_seat_listener_data = wl_seat_listener_data,
         .wl_seat = wl_seat,
+        .wl_output = wl_output,
 
         .event_queue = event_queue,
 
@@ -199,6 +248,9 @@ pub fn init(gpa: Allocator) !*Connection {
         .cursor_manager = cursor_manager,
 
         .xdg_wm_base = xdg_wm_base,
+
+        .hdpi = hdpi,
+        .vdpi = vdpi,
     };
     return con;
 }
@@ -213,9 +265,8 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
 
     defer conn.wl_compositor.destroy();
     defer conn.wl_shm.destroy();
-
-    defer gpa.destroy(conn.wl_seat_listener_data);
     defer conn.wl_seat.destroy();
+    defer conn.wl_output.destroy();
 
     defer gpa.destroy(conn.event_queue);
 

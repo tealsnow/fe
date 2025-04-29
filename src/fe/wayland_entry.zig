@@ -241,13 +241,18 @@ fn run(gpa: Allocator) !void {
     defer ft_face.deinit();
 
     // @FIXME: Just a temporary solution until I figure out proper sizing
-    try ft_face.setPixelSizes(0, 64);
+    // try ft_face.setPixelSizes(0, 64);
+    {
+        const pt = 22;
+        const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
+        const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
+        try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
+    }
 
-    var font_atlas = try FontAtlas.init(gpa, .square(1024), ft_face);
+    var font_atlas = try FontAtlas.init(gpa, .square(512), ft_face);
     defer font_atlas.deinit(gpa);
 
     // 0, 32..128
-
     try font_atlas.cacheGlyph(gpa, font_atlas.getGlyphIndexForCodepoint(0));
     for (32..128) |ascii| {
         const codepoint = @as(u21, @intCast(ascii));
@@ -257,21 +262,21 @@ fn run(gpa: Allocator) !void {
 
     // try font_atlas.writeToBmp("text.bmp");
 
-    const text_string = "Hello, World!";
-    const utf8_view = try std.unicode.Utf8View.init(text_string);
-    var utf8_iter = utf8_view.iterator();
-    while (utf8_iter.nextCodepoint()) |codepoint| {
-        const rect = font_atlas.getRectForCodepoint(codepoint) orelse
-            @panic("TODO: no rect");
-
-        log.debug("char: {u} - rect: {d}x{d}-{d}x{d} ", .{
-            codepoint,
-            rect.p0.x,
-            rect.p0.y,
-            rect.p1.x,
-            rect.p1.y,
-        });
-    }
+    // const text_string = "Hello, World!";
+    // const utf8_view = try std.unicode.Utf8View.init(text_string);
+    // var utf8_iter = utf8_view.iterator();
+    // while (utf8_iter.nextCodepoint()) |codepoint| {
+    //     const rect = font_atlas.getRectForCodepoint(codepoint) orelse
+    //         @panic("TODO: no rect");
+    //
+    //     log.debug("char: {u} - rect: {d}x{d}-{d}x{d} ", .{
+    //         codepoint,
+    //         rect.p0.x,
+    //         rect.p0.y,
+    //         rect.p1.x,
+    //         rect.p1.y,
+    //     });
+    // }
 
     // if (true) return;
 

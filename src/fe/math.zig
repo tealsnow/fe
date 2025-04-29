@@ -1,3 +1,5 @@
+const mem = @import("std").mem;
+
 pub fn Point(comptime T: type) type {
     return extern struct {
         x: T,
@@ -5,12 +7,18 @@ pub fn Point(comptime T: type) type {
 
         const Self = @This();
 
+        pub const zero = mem.zeroes(Self);
+
         pub fn pt(x: T, y: T) Self {
             return .{ .x = x, .y = y };
         }
 
         pub fn all(v: T) Self {
             return .pt(v, v);
+        }
+
+        pub fn fromSize(size: Size(T)) Self {
+            return .pt(size.width, size.height);
         }
 
         pub fn intCast(self: Self, comptime NT: type) Point(NT) {
@@ -36,6 +44,8 @@ pub fn Size(comptime T: type) type {
 
         const Self = @This();
 
+        pub const zero = mem.zeroes(Self);
+
         pub fn size(width: T, height: T) Self {
             return .{ .width = width, .height = height };
         }
@@ -44,8 +54,15 @@ pub fn Size(comptime T: type) type {
             return .{ .width = len, .height = len };
         }
 
+        pub fn fromPoint(p: Point(T)) Self {
+            return .size(p.x, p.y);
+        }
+
         pub fn intCast(self: Self, comptime NT: type) Size(NT) {
-            return @bitCast(@as(Point(T), @bitCast(self)).intCast(NT));
+            return .{
+                .width = @intCast(self.width),
+                .height = @intCast(self.height),
+            };
         }
 
         pub fn floatFromInt(self: Self, comptime NT: type) Size(NT) {
@@ -60,6 +77,8 @@ pub fn Bounds(comptime T: type) type {
         size: Size(T),
 
         const Self = @This();
+
+        pub const zero = mem.zeroes(Self);
 
         pub fn bounds(origin: Point(T), size: Size(T)) Self {
             return .{ .origin = origin, .size = size };
@@ -91,6 +110,8 @@ pub fn Rect(comptime T: type) type {
         p1: Point(T),
 
         const Self = @This();
+
+        pub const zero = mem.zeroes(Self);
 
         pub fn rect(p0: Point(T), p1: Point(T)) Self {
             return .{ .p0 = p0, .p1 = p1 };

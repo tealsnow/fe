@@ -16,8 +16,6 @@ const Size = mt.Size;
 
 const FontAtlas = @import("../wayland_entry.zig").FontAtlas;
 
-// const tri_shader_code = @embedFile("triangle.wgsl");
-
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
 device: *wgpu.Device,
@@ -490,7 +488,7 @@ pub const RectInstance = extern struct {
     tex: mt.Rect(f32),
     color: mt.RgbaF32,
 
-    pub fn rect(
+    pub fn recti(
         dst: mt.Rect(f32),
         tex: mt.Rect(f32),
         color: mt.RgbaF32,
@@ -629,11 +627,16 @@ const RenderPassRect = struct {
         const red = mt.RgbaF32.hexRgb(0xff0000);
         const green = mt.RgbaF32.hexRgb(0x00ff00);
         const blue = mt.RgbaF32.hexRgb(0x0000ff);
+        const white = mt.RgbaF32.hexRgb(0xffffff);
+
+        const atlas_rect = mt.Rect(f32)
+            .rect(.zero, .fromSize(font_atlas.size.floatFromInt(f32)));
 
         const rect_instance_buffer_data = [_]RectInstance{
-            .rect(.fromBounds(r1), l_tex, red),
-            .rect(.fromBounds(r2), o_tex, green),
-            .rect(.fromBounds(r3), l_tex, blue),
+            .recti(.fromBounds(r1), l_tex, red),
+            .recti(.fromBounds(r2), o_tex, green),
+            .recti(.fromBounds(r3), l_tex, blue),
+            .recti(.rect(.pt(300, 300), .pt(800, 800)), atlas_rect, white),
         };
 
         const rect_instance_buffer = device.createBuffer(&.{

@@ -1,5 +1,5 @@
 <div align="center">
-  <h1><i>F</i>ile <i>E</i>ditor<h1>
+  <h1>Fe</h1>
 </div>
 
 <img src="./Fe.png" align="right" width="64" />

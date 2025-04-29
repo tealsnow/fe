@@ -14,12 +14,12 @@ const Size = @import("../../../math.zig").Size;
 const EventQueue = @import("events.zig").EventQueue;
 const Event = @import("events.zig").Event;
 
-// =============================================================================
-// = wl registry
+//= wl registry
 
 pub const WlRegistryListenerData = struct {
     wl_compositor: ?*wl.Compositor,
     wl_shared_memory: ?*wl.Shm,
+    wl_output: ?*wl.Output,
     wl_seat: ?*wl.Seat,
     xdg_wm_base: ?*xdg.WmBase,
     wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
@@ -27,6 +27,7 @@ pub const WlRegistryListenerData = struct {
     pub const empty = WlRegistryListenerData{
         .wl_compositor = null,
         .wl_shared_memory = null,
+        .wl_output = null,
         .wl_seat = null,
         .xdg_wm_base = null,
         .wp_cursor_shape_manager = null,
@@ -40,14 +41,18 @@ pub fn wlRegistryListener(
 ) void {
     const global = switch (event) {
         .global => |global| global,
-        .global_remove => return,
+        .global_remove => |remove| {
+            log.warn("got registry remove event for: {d}", .{remove.name});
+            return;
+        },
     };
 
     log.debug(
-        "got global interface: '{s}', version: {d}",
-        .{ global.interface, global.version },
+        "got global interface: '{s}', version: {d}, 'name': {d}",
+        .{ global.interface, global.version, global.name },
     );
 
+    // wl_compositor
     if (mem.orderZ(
         u8,
         global.interface,
@@ -60,7 +65,9 @@ pub fn wlRegistryListener(
         ) catch @panic("could not bind wayland compositor");
 
         log.debug("bound interface: '{s}'", .{global.interface});
-    } else if (mem.orderZ(
+    }
+    // wl_shm
+    else if (mem.orderZ(
         u8,
         global.interface,
         wl.Shm.interface.name,
@@ -72,7 +79,23 @@ pub fn wlRegistryListener(
         ) catch @panic("could not bind wayland shared memory");
 
         log.debug("bound interface: '{s}'", .{global.interface});
-    } else if (mem.orderZ(
+    }
+    // wl_output
+    else if (mem.orderZ(
+        u8,
+        global.interface,
+        wl.Output.interface.name,
+    ) == .eq) {
+        data.wl_output = registry.bind(
+            global.name,
+            wl.Output,
+            4,
+        ) catch @panic("could not bind wayland output");
+
+        log.debug("bound interface: '{s}'", .{global.interface});
+    }
+    // wl_seat
+    else if (mem.orderZ(
         u8,
         global.interface,
         wl.Seat.interface.name,
@@ -84,7 +107,9 @@ pub fn wlRegistryListener(
         ) catch @panic("could not bind wayland seat");
 
         log.debug("bound interface: '{s}'", .{global.interface});
-    } else if (mem.orderZ(
+    }
+    // xdg_wm_base
+    else if (mem.orderZ(
         u8,
         global.interface,
         xdg.WmBase.interface.name,
@@ -96,7 +121,9 @@ pub fn wlRegistryListener(
         ) catch @panic("could not bind xdg wm_base");
 
         log.debug("bound interface: '{s}'", .{global.interface});
-    } else if (mem.orderZ(
+    }
+    // wp_cursor_shape_manager
+    else if (mem.orderZ(
         u8,
         global.interface,
         wp.CursorShapeManagerV1.interface.name,
@@ -111,8 +138,82 @@ pub fn wlRegistryListener(
     }
 }
 
-// =============================================================================
-// = xdg wm base
+//= wl output
+
+pub const WlOutputListenerData = struct {
+    width: i32,
+    height: i32,
+    physical_width_mm: i32,
+    physical_height_mm: i32,
+
+    // @TODO: scale
+
+    pub const empty = std.mem.zeroes(WlOutputListenerData);
+};
+
+pub fn wlOutputListener(
+    wl_output: *wl.Output,
+    event: wl.Output.Event,
+    data: *WlOutputListenerData,
+) void {
+    _ = wl_output;
+
+    switch (event) {
+        .geometry => |geometry| {
+            log.debug(
+                "wl_output geometry: x: {d}, y: {d}, " ++
+                    "physical_width: {d}mm, physical_height: {d}mm, " ++
+                    "subpixel: {}, make: '{s}', model: '{s}', transform: {}",
+                .{
+                    geometry.x,
+                    geometry.y,
+                    geometry.physical_width,
+                    geometry.physical_height,
+                    geometry.subpixel,
+                    geometry.make,
+                    geometry.model,
+                    geometry.transform,
+                },
+            );
+
+            data.physical_width_mm = geometry.physical_width;
+            data.physical_height_mm = geometry.physical_height;
+        },
+        .mode => |mode| {
+            log.debug(
+                "wl_output mode: flags: {{ current: {}, preferred: {} }}, " ++
+                    "width: {d}, height: {d}, refresh: {d}",
+                .{
+                    mode.flags.current,
+                    mode.flags.preferred,
+                    mode.width,
+                    mode.height,
+                    mode.refresh,
+                },
+            );
+
+            data.width = mode.width;
+            data.height = mode.height;
+        },
+        .done => {
+            log.debug("wl_output done", .{});
+        },
+        .scale => |scale| {
+            log.debug("wl_output scale: {d}", .{scale.factor});
+        },
+        .name => |name| {
+            log.debug("wl_output name: '{s}'", .{name.name});
+        },
+        .description => |description| {
+            log.debug(
+                "wl_output description: '{s}'",
+                .{description.description},
+            );
+        },
+    }
+}
+
+//= xdg wm base
 
 pub fn xdgWmBaseListener(
     xdg_wm_base: *xdg.WmBase,
@@ -127,8 +228,7 @@ pub fn xdgWmBaseListener(
     }
 }
 
-// =============================================================================
-// = xdg surface
+//= xdg surface
 
 pub const XdgSurfaceListenerData = struct {
     event_queue: *EventQueue,
@@ -154,8 +254,7 @@ pub fn xdgSurfaceListener(
     } });
 }
 
-// =============================================================================
-// = xdg toplevel
+//= xdg toplevel
 
 pub const XdgToplevelListenerData = struct {
     event_queue: *EventQueue,
@@ -219,13 +318,17 @@ pub fn xdgToplevelListener(
             // such as the monitor size
 
             _ = configure_bounds;
+
+            // log.debug(
+            //     "configure bounds: {d}x{d}",
+            //     .{ configure_bounds.width, configure_bounds.height },
+            // );
         },
         .wm_capabilities => {},
     }
 }
 
-// // =============================================================================
-// // = xdg popup
+// //= xdg popup
 
 // pub const XdgPopupListenerData = struct {
 //     event_queue: *EventQueue,
@@ -265,8 +368,7 @@ pub fn xdgToplevelListener(
 //     }
 // }
 
-// =============================================================================
-// = wl frame callback
+//= wl frame callback
 
 pub const WlFrameCallbackListenerData = struct {
     event_queue: *EventQueue,
@@ -295,8 +397,7 @@ pub fn wlFrameCallbackListener(
     );
 }
 
-// =============================================================================
-// = wl seat
+//= wl seat
 
 pub const WlSeatListenerData = struct {
     wl_keyboard: ?*wl.Keyboard,
@@ -337,8 +438,7 @@ pub fn wlSeatListener(
     }
 }
 
-// =============================================================================
-// = wl keyboard
+//= wl keyboard
 
 pub const WlKeyboardListenerData = struct {
     event_queue: *EventQueue,
@@ -558,8 +658,7 @@ pub fn wlKeyboardListener(
     }
 }
 
-// =============================================================================
-// = wl pointer
+//= wl pointer
 
 pub const WlPointerListenerData = struct {
     event_queue: *EventQueue,
