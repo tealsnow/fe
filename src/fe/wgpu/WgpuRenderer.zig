@@ -35,6 +35,7 @@ pub fn init(
     initial_size: Size(u32),
     inspect: InspectOptions,
     font_atlas: *FontAtlas,
+    rect_instance_buffer_data: []const RectInstance,
 ) !Renderer {
     const adapter, const surface =
         try createAdapaterAndSurface(surface_descriptor, inspect.instance);
@@ -103,6 +104,7 @@ pub fn init(
             surface_format,
             initial_size.floatFromInt(f32),
             font_atlas,
+            rect_instance_buffer_data,
         );
 
     return .{
@@ -534,6 +536,7 @@ const RenderPassRect = struct {
         surface_format: wgpu.TextureFormat,
         surface_size_px: Size(f32),
         font_atlas: *FontAtlas,
+        rect_instance_buffer_data: []const RectInstance,
     ) !RenderPassRect {
         const bind_group_layout, //
         const pipeline_layout, //
@@ -612,32 +615,32 @@ const RenderPassRect = struct {
 
         //- rect steup
 
-        const l_tex_u32 = font_atlas.getRectForCodepoint('l') orelse
-            @panic("no rect");
-        const o_tex_u32 = font_atlas.getRectForCodepoint('o') orelse
-            @panic("no rect");
-
-        const l_tex = l_tex_u32.floatFromInt(f32);
-        const o_tex = o_tex_u32.floatFromInt(f32);
-
-        const r1 = mt.Bounds(f32).bounds(.pt(120, 120), l_tex.size());
-        const r2 = mt.Bounds(f32).bounds(.pt(140, 130), o_tex.size());
-        const r3 = mt.Bounds(f32).bounds(.pt(190, 120), l_tex.size());
-
-        const red = mt.RgbaF32.hexRgb(0xff0000);
-        const green = mt.RgbaF32.hexRgb(0x00ff00);
-        const blue = mt.RgbaF32.hexRgb(0x0000ff);
-        const white = mt.RgbaF32.hexRgb(0xffffff);
-
-        const atlas_rect = mt.Rect(f32)
-            .rect(.zero, .fromSize(font_atlas.size.floatFromInt(f32)));
-
-        const rect_instance_buffer_data = [_]RectInstance{
-            .recti(.fromBounds(r1), l_tex, red),
-            .recti(.fromBounds(r2), o_tex, green),
-            .recti(.fromBounds(r3), l_tex, blue),
-            .recti(.rect(.pt(300, 300), .pt(800, 800)), atlas_rect, white),
-        };
+        // const l_tex_u32 = font_atlas.getRectForCodepoint('l') orelse
+        //     @panic("no rect");
+        // const o_tex_u32 = font_atlas.getRectForCodepoint('o') orelse
+        //     @panic("no rect");
+        //
+        // const l_tex = l_tex_u32.floatFromInt(f32);
+        // const o_tex = o_tex_u32.floatFromInt(f32);
+        //
+        // const r1 = mt.Bounds(f32).bounds(.pt(120, 120), l_tex.size());
+        // const r2 = mt.Bounds(f32).bounds(.pt(140, 130), o_tex.size());
+        // const r3 = mt.Bounds(f32).bounds(.pt(190, 120), l_tex.size());
+        //
+        // const red = mt.RgbaF32.hexRgb(0xff0000);
+        // const green = mt.RgbaF32.hexRgb(0x00ff00);
+        // const blue = mt.RgbaF32.hexRgb(0x0000ff);
+        // const white = mt.RgbaF32.hexRgb(0xffffff);
+        //
+        // const atlas_rect = mt.Rect(f32)
+        //     .rect(.zero, .fromSize(font_atlas.size.floatFromInt(f32)));
+        //
+        // const rect_instance_buffer_data = [_]RectInstance{
+        //     .recti(.fromBounds(r1), l_tex, red),
+        //     .recti(.fromBounds(r2), o_tex, green),
+        //     .recti(.fromBounds(r3), l_tex, blue),
+        //     .recti(.rect(.pt(300, 300), .pt(800, 800)), atlas_rect, white),
+        // };
 
         const rect_instance_buffer = device.createBuffer(&.{
             .label = "rect instance buffer",
@@ -653,7 +656,7 @@ const RenderPassRect = struct {
         queue.writeBuffer(
             rect_instance_buffer,
             0,
-            &rect_instance_buffer_data,
+            rect_instance_buffer_data.ptr,
             rect_instance_buffer.getSize(),
         );
 
@@ -699,7 +702,8 @@ const RenderPassRect = struct {
             .uniform = uniform,
             .uniform_buffer = uniform_buffer,
 
-            .rect_instance_buffer_data_len = rect_instance_buffer_data.len,
+            .rect_instance_buffer_data_len = //
+            @intCast(rect_instance_buffer_data.len),
             .rect_instance_buffer = rect_instance_buffer,
 
             .atlas_texture = atlas_texture,

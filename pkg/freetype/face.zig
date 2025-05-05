@@ -15,7 +15,7 @@ pub const GlyphSlot = extern struct {
     face: *Face,
     next: ?*GlyphSlot,
     glyph_index: c_uint,
-    generic: c.FT_Generic,
+    generic: Generic,
     metrics: c.FT_Glyph_Metrics,
     linearHoriAdvance: Fixed,
     linearVertAdvance: Fixed,
@@ -80,6 +80,36 @@ pub const PixelMode = enum(u8) {
     _,
 };
 
+pub const Size = extern struct {
+    face: *Face,
+    generic: Generic,
+    metrics: SizeMetrics,
+    internal: ?*anyopaque,
+};
+
+pub const SizeMetrics = extern struct {
+    x_ppem: c_ushort,
+    y_ppem: c_ushort,
+    x_scale: Fixed,
+    y_scale: Fixed,
+    ascender: Pos,
+    descender: Pos,
+    height: Pos,
+    max_advance: Pos,
+};
+
+pub const Generic = extern struct {
+    data: ?*anyopaque,
+    finalizer: c.FT_Generic_Finalizer,
+};
+
+pub const BBox = extern struct {
+    xMin: Pos,
+    yMin: Pos,
+    xMax: Pos,
+    yMax: Pos,
+};
+
 pub const Face = extern struct {
     num_faces: c_long,
     face_index: c_long,
@@ -92,8 +122,8 @@ pub const Face = extern struct {
     available_sizes: [*]c.FT_Bitmap_Size,
     num_charmaps: c_int,
     charmaps: [*]c.FT_CharMap,
-    generic: c.FT_Generic,
-    bbox: c.FT_BBox,
+    generic: Generic,
+    bbox: BBox,
     units_per_EM: c_ushort,
     ascender: c_short,
     descender: c_short,
@@ -103,13 +133,13 @@ pub const Face = extern struct {
     underline_position: c_short,
     underline_thickness: c_short,
     glyph: *GlyphSlot,
-    size: c.FT_Size,
+    size: *Size,
     charmap: c.FT_CharMap,
     driver: c.FT_Driver,
     memory: c.FT_Memory,
     stream: c.FT_Stream,
     sizes_list: c.FT_ListRec,
-    autohint: c.FT_Generic,
+    autohint: Generic,
     extensions: ?*anyopaque,
     internal: c.FT_Face_Internal,
 

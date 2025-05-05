@@ -220,6 +220,10 @@ pub fn build(b: *std.Build) void {
                 fe_mod.addImport("freetype", m.module("freetype"));
                 fe_mod.linkLibrary(m.artifact("freetype"));
             }
+
+            //- harfbuzz
+            fe_mod.addSystemIncludePath(b.path("harfbuzz"));
+            fe_mod.linkSystemLibrary("harfbuzz", .{ .needed = true });
         },
     }
 

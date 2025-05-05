@@ -66,6 +66,7 @@
             wgpu-native
 
             freetype
+            harfbuzz
           ];
 
           env = {

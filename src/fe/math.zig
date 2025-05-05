@@ -34,6 +34,13 @@ pub fn Point(comptime T: type) type {
                 .y = @floatFromInt(self.y),
             };
         }
+
+        pub fn floor(self: Self) Self {
+            return .{
+                .x = @floor(self.x),
+                .y = @floor(self.y),
+            };
+        }
     };
 }
 

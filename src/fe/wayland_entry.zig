@@ -1,3 +1,9 @@
+// @TODO:
+//   @[ ]: setup cu
+//   @[ ]: cu: window border
+//   @[ ]: window rounding - cu?
+//   @[ ]: window shadows - cu?
+
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
@@ -18,13 +24,14 @@ const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
 // @TODO: Migrate to use ghostty/pkg/fontconfig
 const fc = @import("fontconfig.zig");
 
-const freetype = @import("freetype");
+const ft = @import("freetype");
 
-// @TODO:
-//   @[ ]: setup cu
-//   @[ ]: cu: window border
-//   @[ ]: window rounding - cu?
-//   @[ ]: window shadows - cu?
+const hb = @cImport({
+    @cInclude("hb.h");
+    @cInclude("hb-ft.h");
+});
+
+const pretty = @import("pretty");
 
 pub fn entry(gpa: Allocator) !void {
     try run(gpa);
@@ -39,25 +46,31 @@ pub const FontAtlas = struct {
     cursor: Point(u32) = .all(0),
     max_y: u32 = 0,
 
-    face: *freetype.Face,
+    face: *ft.Face,
 
-    // glyph index -> tex coords
-    glyph_map: std.AutoHashMapUnmanaged(GlyphIndex, mt.Rect(u32)) = .empty,
+    glyph_map: std.AutoHashMapUnmanaged(GlyphIndex, GlyphInfo) = .empty,
 
+    /// Index into font for a specific glyph
+    /// has no relation to unicode codepoint or consistency between fonts
     pub const GlyphIndex = enum(u32) {
-        missing = 0,
-        _,
+        missing = 0, // by convention 0 maps to the missing character
+        _, // every other index is dependent on the font used
+    };
+
+    pub const GlyphInfo = struct {
+        /// top-left to bottom-right
+        tex_coords: mt.Rect(u32),
+        /// Per character pos data to be used in conjuction with shaping
+        bearing: mt.Point(i32),
+        size: mt.Size(i32),
     };
 
     pub fn init(
         gpa: Allocator,
         size: mt.Size(u32),
-        face: *freetype.Face,
+        face: *ft.Face,
     ) !FontAtlas {
         const bytes = try gpa.alloc(u8, size.width * size.height);
-        for (bytes) |*byte| {
-            byte.* = 0;
-        }
         return .{
             .bytes = bytes,
             .size = size,
@@ -70,27 +83,45 @@ pub const FontAtlas = struct {
         atlas.glyph_map.deinit(gpa);
     }
 
-    pub fn cacheGlyph(
+    pub fn getInfoOrCacheForGlyphIndex(
         atlas: *FontAtlas,
         gpa: Allocator,
         glyph_index: GlyphIndex,
-    ) !void {
-        if (atlas.glyph_map.contains(glyph_index)) return;
+    ) !GlyphInfo {
+        if (atlas.glyph_map.get(glyph_index)) |info| return info;
 
         // log.debug("caching glyph idx: {d}", .{@intFromEnum(glyph_index)});
 
         try atlas.face.loadGlyph(@intFromEnum(glyph_index), .{});
         try atlas.face.glyph.render(.normal);
-        const bitmap = atlas.face.glyph.bitmap;
+        const glyph = atlas.face.glyph;
+        const bitmap = glyph.bitmap;
 
-        assert(bitmap.pixel_mode == .gray);
+        if (bitmap.pixel_mode != .gray) {
+            log.err("not gray pixel mode: {}", .{bitmap.pixel_mode});
+            @panic("not gray");
+        }
 
-        try atlas.glyph_map.put(gpa, glyph_index, .rect(
-            atlas.cursor,
-            .pt(atlas.cursor.x + bitmap.width, atlas.cursor.y + bitmap.rows),
-        ));
+        // assert(bitmap.pixel_mode == .gray);
 
-        atlas.blit(bitmap.width, bitmap.rows, bitmap.buffer);
+        const rect =
+            atlas.blit(.size(bitmap.width, bitmap.rows), bitmap.buffer);
+
+        const info = GlyphInfo{
+            .tex_coords = rect,
+            .bearing = .pt(
+                @intCast(@divTrunc(glyph.metrics.horiBearingX, 64)),
+                @intCast(@divTrunc(glyph.metrics.horiBearingY, 64)),
+            ),
+            .size = .size(
+                @intCast(@divTrunc(glyph.metrics.width, 64)),
+                @intCast(@divTrunc(glyph.metrics.height, 64)),
+            ),
+        };
+
+        try atlas.glyph_map.put(gpa, glyph_index, info);
+
+        return info;
     }
 
     pub fn getGlyphIndexForCodepoint(
@@ -101,45 +132,48 @@ pub const FontAtlas = struct {
         return @enumFromInt(idx);
     }
 
-    pub fn getRectForCodepoint(
-        atlas: *const FontAtlas,
-        codepoint: u21,
-    ) ?mt.Rect(u32) {
-        const glyph_index = atlas.getGlyphIndexForCodepoint(codepoint);
-        return atlas.glyph_map.get(glyph_index);
-    }
+    // pub fn getRectForCodepoint(
+    //     atlas: *const FontAtlas,
+    //     codepoint: u21,
+    // ) ?mt.Rect(u32) {
+    //     const glyph_index = atlas.getGlyphIndexForCodepoint(codepoint);
+    //     return atlas.glyph_map.get(glyph_index);
+    // }
 
     pub fn blit(
         atlas: *FontAtlas,
-        width: u32,
-        height: u32,
-        bytes: [*]u8,
-    ) void {
-        if (atlas.cursor.x + width > atlas.size.width) {
+        size: mt.Size(u32),
+        bytes: [*]const u8,
+    ) mt.Rect(u32) {
+        if (atlas.cursor.x + size.width > atlas.size.width) {
             atlas.cursor = .{
                 .x = 0,
                 .y = atlas.max_y,
             };
         }
 
-        if (atlas.cursor.y + height > atlas.size.height) {
+        if (atlas.cursor.y + size.height > atlas.size.height) {
             @panic("TODO: atlas overflow");
         }
 
-        for (0..height) |y| {
-            for (0..width) |x| {
+        const rect = mt.Rect(u32).fromBounds(.bounds(atlas.cursor, size));
+
+        for (0..size.height) |y| {
+            for (0..size.width) |x| {
                 const adj_x = atlas.cursor.x + x;
                 const adj_y = atlas.cursor.y + y;
 
                 const atlas_i = adj_y * atlas.size.width + adj_x;
-                const bitmap_i = y * width + x;
+                const bitmap_i = y * size.width + x;
 
                 const byte = &atlas.bytes[atlas_i];
                 byte.* = bytes[bitmap_i];
             }
         }
-        atlas.cursor.x += width;
-        atlas.max_y = @max(atlas.max_y, atlas.cursor.y + height);
+        atlas.cursor.x += size.width;
+        atlas.max_y = @max(atlas.max_y, atlas.cursor.y + size.height);
+
+        return rect;
     }
 
     /// assumes size is 32 bit aligned
@@ -149,7 +183,8 @@ pub const FontAtlas = struct {
         const out_file = try cwd.createFile(file_name, .{});
         defer out_file.close();
 
-        const w = out_file.writer();
+        var buffered_writer = std.io.bufferedWriter(out_file.writer());
+        var w = buffered_writer.writer();
 
         const width = atlas.size.width;
         const height = atlas.size.height;
@@ -187,6 +222,167 @@ pub const FontAtlas = struct {
         // @NOTE: each row is meant to be aligned to 32 bits
         //  this assumes the atlas size is aligned
         try w.writeAll(atlas.bytes);
+
+        try buffered_writer.flush();
+    }
+};
+
+pub const FontFace = struct {
+    ft_face: *ft.Face,
+    hb_font: *hb.hb_font_t,
+
+    pub fn fromFtFace(ft_face: *ft.Face) !FontFace {
+        const hb_font =
+            hb.hb_ft_font_create_referenced(@ptrCast(ft_face)) orelse
+            return error.hb;
+        return .{
+            .ft_face = ft_face,
+            .hb_font = hb_font,
+        };
+    }
+
+    pub fn deinit(face: FontFace) void {
+        face.ft_face.deinit();
+        hb.hb_font_destroy(face.hb_font);
+    }
+};
+
+pub const ShapedText = struct {
+    font_face: *const FontFace,
+
+    buffer: *hb.hb_buffer_t,
+    string: []const u8,
+
+    glyph_infos: []hb.hb_glyph_info_t,
+    glyph_positions: []hb.hb_glyph_position_t,
+
+    size: ?mt.Size(i32),
+
+    pub fn init(font_face: *const FontFace, string: []const u8) !ShapedText {
+        //- setup buffer
+        const hb_buffer = hb.hb_buffer_create() orelse return error.hb;
+        hb.hb_buffer_add_utf8(
+            hb_buffer,
+            string.ptr,
+            @intCast(string.len),
+            0,
+            -1,
+        );
+        hb.hb_buffer_guess_segment_properties(hb_buffer);
+
+        //- shape
+        hb.hb_shape(font_face.hb_font, hb_buffer, null, 0);
+
+        var glyph_info_count: u32 = undefined;
+        const glyph_info =
+            hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_info_count) orelse
+            return error.hb;
+
+        var glyph_pos_count: u32 = undefined;
+        const glyph_pos =
+            hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_pos_count) orelse
+            return error.hb;
+
+        assert(glyph_info_count == glyph_pos_count);
+        const glyph_count = glyph_info_count;
+
+        return .{
+            .font_face = font_face,
+
+            .buffer = hb_buffer,
+            .string = string,
+
+            .glyph_infos = glyph_info[0..glyph_count],
+            .glyph_positions = glyph_pos[0..glyph_count],
+
+            .size = null,
+        };
+    }
+
+    pub fn deinit(text: ShapedText) void {
+        hb.hb_buffer_destroy(text.buffer);
+    }
+
+    pub fn getSize(text: *ShapedText) mt.Size(i32) {
+        if (text.size) |size| return size;
+
+        var size = mt.Size(i32).zero;
+
+        const line_height =
+            @divTrunc(text.font_face.ft_face.size.metrics.height, 64);
+        size.height = @intCast(line_height);
+
+        for (text.glyph_positions) |pos| {
+            const x_advance = @divTrunc(pos.x_advance, 64);
+            const y_advance = @divTrunc(pos.y_advance, 64);
+
+            size.width += x_advance;
+            size.height += y_advance; // not sure if this is correct
+        }
+
+        text.size = size;
+        return size;
+    }
+
+    /// origin is top left point to start from
+    pub fn generateRects(
+        text: *ShapedText,
+        gpa: Allocator,
+        font_atlas: *FontAtlas,
+        origin: mt.Point(i32),
+    ) ![]WgpuRenderer.RectInstance {
+        const size = text.getSize();
+        var cursor = origin;
+
+        const descender: i32 = @intCast(
+            @divTrunc(text.font_face.ft_face.size.metrics.descender, 64),
+        );
+        cursor.y += size.height + descender; // adjust to bottom right
+
+        var rect_buffer_data =
+            try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
+                .initCapacity(gpa, text.glyph_infos.len);
+
+        for (text.glyph_infos, 0..) |info, i| {
+            const pos = text.glyph_positions[i];
+
+            // codepoint here is a misnomer - it is actually the glyph index in the
+            // font and has no correlation to the unicode character
+            const glyph_index: FontAtlas.GlyphIndex = @enumFromInt(info.codepoint);
+
+            const atlas_info =
+                try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
+            const tex_coords = atlas_info.tex_coords.floatFromInt(f32);
+            const bearing = atlas_info.bearing;
+
+            const x_offset = @divFloor(pos.x_offset, 64);
+            const y_offset = @divFloor(pos.y_offset, 64);
+            const x_advance = @divFloor(pos.x_advance, 64);
+            const y_advance = @divFloor(pos.y_advance, 64);
+
+            const point = mt.Point(i32)
+                .pt(
+                    cursor.x + x_offset + bearing.x,
+                    cursor.y + y_offset + -bearing.y,
+                )
+                .floatFromInt(f32)
+                .floor();
+
+            try rect_buffer_data.append(
+                gpa,
+                .recti(
+                    .fromBounds(.bounds(point, tex_coords.size())),
+                    tex_coords,
+                    mt.RgbaF32.hexRgb(0xffffff),
+                ),
+            );
+
+            cursor.x += x_advance;
+            cursor.y += y_advance;
+        }
+
+        const slice = try rect_buffer_data.toOwnedSlice(gpa);
+        return slice;
     }
 };
 
@@ -234,16 +430,17 @@ fn run(gpa: Allocator) !void {
 
     // freetype
 
-    const ft = try freetype.Library.init();
-    defer ft.deinit();
+    const ft_lib = try ft.Library.init();
+    defer ft_lib.deinit();
 
-    const ft_face = try ft.initFace(def_font_path, 0);
-    defer ft_face.deinit();
+    const ft_face = try ft_lib.initFace(def_font_path, 0);
 
-    // @FIXME: Just a temporary solution until I figure out proper sizing
-    // try ft_face.setPixelSizes(0, 64);
+    const font_face = try FontFace.fromFtFace(ft_face);
+    defer font_face.deinit();
+
     {
-        const pt = 22;
+        // const pt = 24;
+        const pt = 32;
         const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
         const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
         try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
@@ -252,33 +449,148 @@ fn run(gpa: Allocator) !void {
     var font_atlas = try FontAtlas.init(gpa, .square(512), ft_face);
     defer font_atlas.deinit(gpa);
 
+    // create a small white square at 0,0 for texture-less rects
+    _ = font_atlas.blit(.square(2), &.{ 255, 255, 255, 255 });
+
+    // pre-cache all basic ascii chars
     // 0, 32..128
-    try font_atlas.cacheGlyph(gpa, font_atlas.getGlyphIndexForCodepoint(0));
+    _ = try font_atlas.getInfoOrCacheForGlyphIndex(
+        gpa,
+        font_atlas.getGlyphIndexForCodepoint(0),
+    );
     for (32..128) |ascii| {
         const codepoint = @as(u21, @intCast(ascii));
         const glyph_index = font_atlas.getGlyphIndexForCodepoint(codepoint);
-        try font_atlas.cacheGlyph(gpa, glyph_index);
+        _ = try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
     }
 
-    // try font_atlas.writeToBmp("text.bmp");
+    const text_string =
+        "Hello, World! - hgl dq - fi fl ff fj ffi ffl - WAV T. W. Lewis";
 
-    // const text_string = "Hello, World!";
-    // const utf8_view = try std.unicode.Utf8View.init(text_string);
-    // var utf8_iter = utf8_view.iterator();
-    // while (utf8_iter.nextCodepoint()) |codepoint| {
-    //     const rect = font_atlas.getRectForCodepoint(codepoint) orelse
-    //         @panic("TODO: no rect");
+    var shaped_text = try ShapedText.init(&font_face, text_string);
+    defer shaped_text.deinit();
+
+    const rect_buffer_data =
+        try shaped_text.generateRects(gpa, &font_atlas, .all(100));
+    defer gpa.free(rect_buffer_data);
+
+    //- hb font
+
+    // const hb_font = hb.hb_ft_font_create_referenced(@ptrCast(ft_face)) orelse
+    //     return error.hb;
+    // defer hb.hb_font_destroy(hb_font);
+
+    //- hb buffer
+
+    // const hb_buffer = hb.hb_buffer_create() orelse return error.hb;
+    // defer hb.hb_buffer_destroy(hb_buffer);
     //
-    //     log.debug("char: {u} - rect: {d}x{d}-{d}x{d} ", .{
-    //         codepoint,
-    //         rect.p0.x,
-    //         rect.p0.y,
-    //         rect.p1.x,
-    //         rect.p1.y,
-    //     });
+    // hb.hb_buffer_add_utf8(hb_buffer, text_string, text_string.len, 0, -1);
+    //
+    // hb.hb_buffer_guess_segment_properties(hb_buffer);
+    //
+    // //- hb shape
+    //
+    // hb.hb_shape(hb_font, hb_buffer, null, 0);
+    //
+    // //- hb glyph and position information
+    //
+    // var glyph_info_count: u32 = undefined;
+    // const glyph_info =
+    //     hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_info_count) orelse
+    //     return error.hb;
+    //
+    // var glyph_pos_count: u32 = undefined;
+    // const glyph_pos =
+    //     hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_pos_count);
+    //
+    // assert(glyph_info_count == glyph_pos_count);
+    // const glyph_count = glyph_info_count;
+    //
+    // //- hb iterate
+    //
+    // var rect_buffer_data =
+    //     try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
+    //         .initCapacity(gpa, text_string.len);
+    // defer rect_buffer_data.deinit(gpa);
+    //
+    // var cursor = mt.Point(i32).all(100); // top left
+    //
+    // // pre size
+    // {
+    //     var size = mt.Size(i32).zero;
+    //
+    //     const line_height = @divTrunc(ft_face.size.metrics.height, 64);
+    //
+    //     size.height = @intCast(line_height);
+    //     const descender: i32 =
+    //         @intCast(@divTrunc(ft_face.size.metrics.descender, 64));
+    //
+    //     var i: u32 = 0;
+    //     while (i < glyph_count) : (i += 1) {
+    //         const pos = glyph_pos[i];
+    //         const x_advance = @divTrunc(pos.x_advance, 64);
+    //         const y_advance = @divTrunc(pos.y_advance, 64);
+    //
+    //         size.width += x_advance;
+    //         size.height += y_advance; // not sure if this is correct
+    //     }
+    //
+    //     log.debug("size: {d}x{d}", .{ size.width, size.height });
+    //
+    //     var whole_rect = mt.Rect(i32).fromBounds(.bounds(cursor, size));
+    //     try rect_buffer_data.append(
+    //         gpa,
+    //         .recti(
+    //             whole_rect.floatFromInt(f32),
+    //             .zero,
+    //             .hexRgb(0xff0000),
+    //         ),
+    //     );
+    //
+    //     cursor.y += size.height + descender; // adjust to bottom right
+    // }
+    //
+    // var i: u32 = 0;
+    // while (i < glyph_count) : (i += 1) {
+    //     const info = glyph_info[i];
+    //     // codepoint here is a misnomer - it is actually the glyph index in the
+    //     // font and has no correlation to the unicode character
+    //     const glyph_index: FontAtlas.GlyphIndex = @enumFromInt(info.codepoint);
+    //
+    //     const atlas_info =
+    //         try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
+    //     const tex_coords = atlas_info.tex_coords.floatFromInt(f32);
+    //     const bearing = atlas_info.bearing;
+    //
+    //     const pos = glyph_pos[i];
+    //     const x_offset = @divFloor(pos.x_offset, 64);
+    //     const y_offset = @divFloor(pos.y_offset, 64);
+    //     const x_advance = @divFloor(pos.x_advance, 64);
+    //     const y_advance = @divFloor(pos.y_advance, 64);
+    //
+    //     const origin = mt.Point(i32)
+    //         .pt(
+    //             cursor.x + x_offset + bearing.x,
+    //             cursor.y + y_offset + -bearing.y,
+    //         )
+    //         .floatFromInt(f32)
+    //         .floor();
+    //
+    //     try rect_buffer_data.append(
+    //         gpa,
+    //         .recti(
+    //             .fromBounds(.bounds(origin, tex_coords.size())),
+    //             tex_coords,
+    //             mt.RgbaF32.hexRgb(0xffffff),
+    //         ),
+    //     );
+    //
+    //     cursor.x += x_advance;
+    //     cursor.y += y_advance;
     // }
 
-    // if (true) return;
+    try font_atlas.writeToBmp("text.bmp");
 
     //- wpgu
 
@@ -296,6 +608,7 @@ fn run(gpa: Allocator) !void {
             // .surface = true,
         },
         &font_atlas,
+        rect_buffer_data,
     );
     defer renderer.deinit();
 
@@ -419,7 +732,7 @@ fn run(gpa: Allocator) !void {
 
                     pointer_pos = motion.point;
 
-                    const cursor: wl.CursorKind =
+                    const kind: wl.CursorKind =
                         if (window.getEdge(pointer_pos)) |edge|
                             switch (edge) {
                                 .top_left, .bottom_right => .resize_nwse,
@@ -432,7 +745,7 @@ fn run(gpa: Allocator) !void {
 
                     try conn.cursor_manager.setCursor(
                         pointer_enter_serial,
-                        cursor,
+                        kind,
                     );
                 },
                 .pointer_button => |button| button: {

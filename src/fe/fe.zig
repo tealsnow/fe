@@ -1,4 +1,9 @@
 // @TODO:
+//   @[ ]: intergrate google/breakpad for crash handling (ghostty/pkg)
+//   @[ ]: consider using google/highway for simd (ghostty/pkg)
+//   @[ ]: use simdutf for transcoding if I need it (ghostty/pkg)
+//   @[ ]: use utf8proc for normalization and other operations (ghostty/pkg)
+//   @[ ]: use wuffs for image loading (ghostty/pkg)
 //   @[ ]: disabled state for atoms
 //   @[ ]: pre-reserve mmaped memory for allocators
 //   @[ ]: Migrate to github issue tracker for all of these
