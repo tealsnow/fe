@@ -245,6 +245,17 @@ pub const FontFace = struct {
         face.ft_face.deinit();
         hb.hb_font_destroy(face.hb_font);
     }
+
+    pub fn lineHeight(font_face: *const FontFace) i32 {
+        return @intCast(@divFloor(font_face.ft_face.size.metrics.height, 64));
+    }
+
+    pub fn topLeftToBaselineAdjustment(font_face: *const FontFace) i32 {
+        const line_height = font_face.lineHeight();
+        const descender: i32 =
+            @intCast(@divFloor(font_face.ft_face.size.metrics.descender, 64));
+        return line_height + descender;
+    }
 };
 
 pub const ShapedText = struct {
@@ -255,8 +266,6 @@ pub const ShapedText = struct {
 
     glyph_infos: []hb.hb_glyph_info_t,
     glyph_positions: []hb.hb_glyph_position_t,
-
-    size: ?mt.Size(i32),
 
     pub fn init(font_face: *const FontFace, string: []const u8) !ShapedText {
         //- setup buffer
@@ -294,8 +303,6 @@ pub const ShapedText = struct {
 
             .glyph_infos = glyph_info[0..glyph_count],
             .glyph_positions = glyph_pos[0..glyph_count],
-
-            .size = null,
         };
     }
 
@@ -303,45 +310,35 @@ pub const ShapedText = struct {
         hb.hb_buffer_destroy(text.buffer);
     }
 
-    pub fn getSize(text: *ShapedText) mt.Size(i32) {
-        if (text.size) |size| return size;
-
+    pub fn calculateSize(text: *const ShapedText) mt.Size(i32) {
         var size = mt.Size(i32).zero;
 
-        const line_height =
-            @divTrunc(text.font_face.ft_face.size.metrics.height, 64);
-        size.height = @intCast(line_height);
+        size.height = text.font_face.lineHeight();
 
         for (text.glyph_positions) |pos| {
-            const x_advance = @divTrunc(pos.x_advance, 64);
-            const y_advance = @divTrunc(pos.y_advance, 64);
+            const x_advance = @divFloor(pos.x_advance, 64);
+            const y_advance = @divFloor(pos.y_advance, 64);
 
             size.width += x_advance;
             size.height += y_advance; // not sure if this is correct
         }
 
-        text.size = size;
         return size;
     }
 
-    /// origin is top left point to start from
-    pub fn generateRects(
-        text: *ShapedText,
+    pub fn generateRectsArrayList(
+        text: *const ShapedText,
         gpa: Allocator,
         font_atlas: *FontAtlas,
+        list: *std.ArrayListUnmanaged(WgpuRenderer.RectInstance),
         origin: mt.Point(i32),
-    ) ![]WgpuRenderer.RectInstance {
-        const size = text.getSize();
+    ) !void {
         var cursor = origin;
 
-        const descender: i32 = @intCast(
-            @divTrunc(text.font_face.ft_face.size.metrics.descender, 64),
-        );
-        cursor.y += size.height + descender; // adjust to bottom right
+        // adjust from topleft to baseline
+        cursor.y += text.font_face.topLeftToBaselineAdjustment();
 
-        var rect_buffer_data =
-            try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
-                .initCapacity(gpa, text.glyph_infos.len);
+        try list.ensureUnusedCapacity(gpa, text.glyph_infos.len);
 
         for (text.glyph_infos, 0..) |info, i| {
             const pos = text.glyph_positions[i];
@@ -368,7 +365,7 @@ pub const ShapedText = struct {
                 .floatFromInt(f32)
                 .floor();
 
-            try rect_buffer_data.append(
+            try list.append(
                 gpa,
                 .recti(
                     .fromBounds(.bounds(point, tex_coords.size())),
@@ -380,8 +377,22 @@ pub const ShapedText = struct {
             cursor.x += x_advance;
             cursor.y += y_advance;
         }
+    }
 
-        const slice = try rect_buffer_data.toOwnedSlice(gpa);
+    /// origin is top left point to start from
+    pub fn generateRects(
+        text: *const ShapedText,
+        gpa: Allocator,
+        font_atlas: *FontAtlas,
+        origin: mt.Point(i32),
+    ) ![]WgpuRenderer.RectInstance {
+        var list =
+            try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
+                .initCapacity(gpa, text.glyph_infos.len);
+
+        try text.generateRectsArrayList(gpa, font_atlas, &list, origin);
+
+        const slice = try list.toOwnedSlice(gpa);
         return slice;
     }
 };
@@ -439,14 +450,14 @@ fn run(gpa: Allocator) !void {
     defer font_face.deinit();
 
     {
-        // const pt = 24;
-        const pt = 32;
+        const pt = 24;
+        // const pt = 32;
         const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
         const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
         try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
     }
 
-    var font_atlas = try FontAtlas.init(gpa, .square(512), ft_face);
+    var font_atlas = try FontAtlas.init(gpa, .square(1024 * 2), ft_face);
     defer font_atlas.deinit(gpa);
 
     // create a small white square at 0,0 for texture-less rects
@@ -464,131 +475,49 @@ fn run(gpa: Allocator) !void {
         _ = try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
     }
 
-    const text_string =
-        "Hello, World! - hgl dq - fi fl ff fj ffi ffl - WAV T. W. Lewis";
+    const unicode_test_strings = @import("unicode_3_2_test.zig").strings;
 
-    var shaped_text = try ShapedText.init(&font_face, text_string);
-    defer shaped_text.deinit();
+    const random_test_strings = [_][]const u8{
+        // https://stackoverflow.com/a/51539774/13156251
+        // Vertically-stacked characters
+        "Z̤͔ͧ̑̓ä͖̭̈̇lͮ̒ͫǧ̗͚̚o̙̔ͮ̇͐̇",
+        // Right-to-left words
+        "اختبار النص",
+        // Mixed-direction words
+        // @TODO: mixed bidi
+        // "من left اليمين to الى right اليسار",
+        // Mixed-direction characters
+        // @TODO: mixed bidi
+        // "a‭b‮c‭d‮e‭f‮g",
+        // Very long characters
+        "﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽",
+        // Emoji with skintone variations
+        // @TODO: Emoji
+        // "👱👱🏻👱🏼👱🏽👱🏾👱🏿",
+        // Emoji with gender variations
+        // @TODO: Emoji
+        // "🧟‍♀️🧟‍♂️",
+        // Emoji created by combining codepoints
+        // @TODO: Emoji
+        // "👨‍❤️‍💋‍👨👩‍👩‍👧‍👦🏳️‍⚧️🇵🇷",
+    };
 
-    const rect_buffer_data =
-        try shaped_text.generateRects(gpa, &font_atlas, .all(100));
-    defer gpa.free(rect_buffer_data);
+    const strings = unicode_test_strings ++ random_test_strings;
 
-    //- hb font
+    var list = std.ArrayListUnmanaged(WgpuRenderer.RectInstance).empty;
+    defer list.deinit(gpa);
 
-    // const hb_font = hb.hb_ft_font_create_referenced(@ptrCast(ft_face)) orelse
-    //     return error.hb;
-    // defer hb.hb_font_destroy(hb_font);
+    const line_height = font_face.lineHeight();
+    const origin = mt.Point(i32).all(200);
+    for (strings, 0..) |string, i| {
+        var pos = origin;
+        pos.y += line_height * @as(i32, @intCast(i));
 
-    //- hb buffer
+        const shaped = try ShapedText.init(&font_face, string);
+        defer shaped.deinit();
 
-    // const hb_buffer = hb.hb_buffer_create() orelse return error.hb;
-    // defer hb.hb_buffer_destroy(hb_buffer);
-    //
-    // hb.hb_buffer_add_utf8(hb_buffer, text_string, text_string.len, 0, -1);
-    //
-    // hb.hb_buffer_guess_segment_properties(hb_buffer);
-    //
-    // //- hb shape
-    //
-    // hb.hb_shape(hb_font, hb_buffer, null, 0);
-    //
-    // //- hb glyph and position information
-    //
-    // var glyph_info_count: u32 = undefined;
-    // const glyph_info =
-    //     hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_info_count) orelse
-    //     return error.hb;
-    //
-    // var glyph_pos_count: u32 = undefined;
-    // const glyph_pos =
-    //     hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_pos_count);
-    //
-    // assert(glyph_info_count == glyph_pos_count);
-    // const glyph_count = glyph_info_count;
-    //
-    // //- hb iterate
-    //
-    // var rect_buffer_data =
-    //     try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
-    //         .initCapacity(gpa, text_string.len);
-    // defer rect_buffer_data.deinit(gpa);
-    //
-    // var cursor = mt.Point(i32).all(100); // top left
-    //
-    // // pre size
-    // {
-    //     var size = mt.Size(i32).zero;
-    //
-    //     const line_height = @divTrunc(ft_face.size.metrics.height, 64);
-    //
-    //     size.height = @intCast(line_height);
-    //     const descender: i32 =
-    //         @intCast(@divTrunc(ft_face.size.metrics.descender, 64));
-    //
-    //     var i: u32 = 0;
-    //     while (i < glyph_count) : (i += 1) {
-    //         const pos = glyph_pos[i];
-    //         const x_advance = @divTrunc(pos.x_advance, 64);
-    //         const y_advance = @divTrunc(pos.y_advance, 64);
-    //
-    //         size.width += x_advance;
-    //         size.height += y_advance; // not sure if this is correct
-    //     }
-    //
-    //     log.debug("size: {d}x{d}", .{ size.width, size.height });
-    //
-    //     var whole_rect = mt.Rect(i32).fromBounds(.bounds(cursor, size));
-    //     try rect_buffer_data.append(
-    //         gpa,
-    //         .recti(
-    //             whole_rect.floatFromInt(f32),
-    //             .zero,
-    //             .hexRgb(0xff0000),
-    //         ),
-    //     );
-    //
-    //     cursor.y += size.height + descender; // adjust to bottom right
-    // }
-    //
-    // var i: u32 = 0;
-    // while (i < glyph_count) : (i += 1) {
-    //     const info = glyph_info[i];
-    //     // codepoint here is a misnomer - it is actually the glyph index in the
-    //     // font and has no correlation to the unicode character
-    //     const glyph_index: FontAtlas.GlyphIndex = @enumFromInt(info.codepoint);
-    //
-    //     const atlas_info =
-    //         try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
-    //     const tex_coords = atlas_info.tex_coords.floatFromInt(f32);
-    //     const bearing = atlas_info.bearing;
-    //
-    //     const pos = glyph_pos[i];
-    //     const x_offset = @divFloor(pos.x_offset, 64);
-    //     const y_offset = @divFloor(pos.y_offset, 64);
-    //     const x_advance = @divFloor(pos.x_advance, 64);
-    //     const y_advance = @divFloor(pos.y_advance, 64);
-    //
-    //     const origin = mt.Point(i32)
-    //         .pt(
-    //             cursor.x + x_offset + bearing.x,
-    //             cursor.y + y_offset + -bearing.y,
-    //         )
-    //         .floatFromInt(f32)
-    //         .floor();
-    //
-    //     try rect_buffer_data.append(
-    //         gpa,
-    //         .recti(
-    //             .fromBounds(.bounds(origin, tex_coords.size())),
-    //             tex_coords,
-    //             mt.RgbaF32.hexRgb(0xffffff),
-    //         ),
-    //     );
-    //
-    //     cursor.x += x_advance;
-    //     cursor.y += y_advance;
-    // }
+        try shaped.generateRectsArrayList(gpa, &font_atlas, &list, pos);
+    }
 
     try font_atlas.writeToBmp("text.bmp");
 
@@ -608,7 +537,7 @@ fn run(gpa: Allocator) !void {
             // .surface = true,
         },
         &font_atlas,
-        rect_buffer_data,
+        list.items,
     );
     defer renderer.deinit();
 
