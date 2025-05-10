@@ -383,6 +383,9 @@ pub const ShapedText = struct {
                     .fromBounds(.bounds(point, size)),
                     tex_coords,
                     color,
+                    0,
+                    0,
+                    0,
                 ),
             );
 
@@ -570,9 +573,12 @@ fn run(gpa: Allocator) !void {
     try list.append(
         gpa,
         .recti(
-            .fromBounds(.bounds(origin.floatFromInt(f32), .square(20))),
+            .fromBounds(.bounds(origin.floatFromInt(f32), .square(200))),
             .zero,
             .hexRgb(0xff0000),
+            15,
+            0,
+            4,
         ),
     );
 

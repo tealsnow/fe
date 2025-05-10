@@ -14,6 +14,11 @@ struct Cpu2Vertex {
 
     @location(4) color: vec4f,
 
+    @location(5) corner_radius: f32,
+    @location(6) edge_softness: f32,
+
+    @location(7) border_thickness: f32,
+
     //- vertex data
     @builtin(vertex_index) index: u32,
 }
@@ -24,6 +29,15 @@ struct Vertex2Fragment {
     // fragment input
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
+
+    @location(2) dst_pos: vec2f,
+    @location(3) dst_center: vec2f,
+    @location(4) dst_half_size: vec2f,
+
+    @location(5) corner_radius: f32,
+    @location(6) edge_softness: f32,
+
+    @location(7) border_thickness: f32,
 }
 
 //= bindings
@@ -46,7 +60,6 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     );
 
     //- position rect
-
     let dst_half_size = (in.dst_p1 - in.dst_p0) * 0.5;
     let dst_center = (in.dst_p1 + in.dst_p0) * 0.5;
     let dst_pos = corners[in.index] * dst_half_size + dst_center;
@@ -55,7 +68,6 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     let flipped_ndc = vec2f(ndc.x, -ndc.y); // flip y
 
     //- position texture
-
     let tex_half_size = (in.tex_p1 - in.tex_p0) * 0.5;
     let tex_center = (in.tex_p1 + in.tex_p0) * 0.5;
     let tex_pos = corners[in.index] * tex_half_size + tex_center;
@@ -65,12 +77,20 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     let tex_uv = tex_pos / atlas_size;
 
     //- fill output
-
     var out: Vertex2Fragment;
 
     out.position = vec4f(flipped_ndc, 0, 1);
     out.uv = tex_uv;
     out.color = in.color;
+
+    out.dst_pos = dst_pos;
+    out.dst_center = dst_center;
+    out.dst_half_size = dst_half_size;
+
+    out.corner_radius = in.corner_radius;
+    out.edge_softness = in.edge_softness;
+
+    out.border_thickness = in.border_thickness;
 
     return out;
 }
@@ -79,14 +99,106 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
 
 @fragment
 fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
+    // we need to shrink the rectangle's half-size
+    // that is used for distance calculations with
+    // the edge softness - otherwise the underlying
+    // primitive will cut off the falloff too early.
+    let softness = in.edge_softness;
+    let softness_padding = vec2f(
+        max(0f, softness * 2f - 1f),
+        max(0f, softness * 2f - 1f),
+    );
+
+    // sample distance
+    let dist = roundedRectSDF(
+        in.dst_pos,
+        in.dst_center,
+        in.dst_half_size - softness_padding,
+        in.corner_radius,
+    );
+
+    // map distance => a blend color
+    let sdf_factor = 1f - smoothstep(0f, 2f * softness, dist);
+
+    //- border thickness
+    var border_factor = 1f;
+    if (in.border_thickness != 0f) {
+        let interior_half_size =
+            in.dst_half_size - vec2f(in.border_thickness);
+
+        // reduction factor for the internal corner
+        // radius. not 100% sure the best way to go
+        // about this, but this is the best thing I've
+        // found so far!
+        //
+        // this is necessary because otherwise it looks
+        // weird
+        let interior_radius_reduce_f = min(
+            interior_half_size.x / in.dst_half_size.x,
+            interior_half_size.y / in.dst_half_size.y
+        );
+
+        let interior_corner_radius =
+            in.corner_radius *
+            interior_radius_reduce_f *
+            interior_radius_reduce_f;
+
+        let inside_d = roundedRectSDF(
+            in.dst_pos,
+            in.dst_center,
+            interior_half_size - softness_padding,
+            interior_corner_radius,
+        );
+
+        let inside_f = smoothstep(0f, 2f * softness, inside_d);
+        border_factor = inside_f;
+    }
+
     let sample = textureSample(atlas_texture, atlas_sampler, in.uv);
 
-    let srgb = in.color.rgb;
-    let a = in.color.a;
+    let rgba = in.color * sample.rgba * sdf_factor * border_factor;
+    let rgb = rgba.rgb;
+    let a = rgba.a;
+
+    // let srgb = in.color.rgb * sdf_factor;
+    // let a = in.color.a * sample.a * sdf_factor;
 
     // gamma correction
     // this is an approximation
-    let linear_rgb = pow(srgb, vec3f(2.2));
+    let linear_rgb = pow(rgb, vec3f(2.2));
+    // let linear_rgb = pow(srgb, vec3f(2.2));
 
-    return vec4f(linear_rgb * sample.rgb, a * sample.a);
+    // let color = linear_rgb * sample.rgb * sdf_factor;
+    // let a = in.color.a * sample.a;
+
+    return vec4f(linear_rgb, a);
+    // return vec4f(linear_rgb * sample.rgb, a);
 }
+
+//= util
+
+
+fn roundedRectSDF(
+    sample_pos: vec2f,
+    rect_center: vec2f,
+    rect_half_size: vec2f,
+    r: f32,
+) -> f32 {
+    let d2 = 
+        abs(rect_center - sample_pos) -
+        rect_half_size + 
+        vec2f(r, r);
+    return min(max(d2.x, d2.y), 0f) + length(max(d2, vec2f(0f, 0f))) - r;
+}
+
+// float RoundedRectSDF(
+//     vec2 sample_pos,
+//     vec2 rect_center,
+//     vec2 rect_half_size,
+//     float r
+// ) {
+//   vec2 d2 = (abs(rect_center - sample_pos) -
+//              rect_half_size +
+//              vec2(r, r));
+//   return min(max(d2.x, d2.y), 0.0) + length(max(d2, 0.0)) - r;
+// }

@@ -489,19 +489,32 @@ pub const RectInstance = extern struct {
     dst: mt.Rect(f32),
     tex: mt.Rect(f32),
     color: mt.RgbaF32,
+    corner_radius: f32,
+    edge_softness: f32,
+    border_thickness: f32,
 
     pub fn recti(
         dst: mt.Rect(f32),
         tex: mt.Rect(f32),
         color: mt.RgbaF32,
+        corner_radius: f32,
+        edge_softness: f32,
+        border_thickness: f32,
     ) RectInstance {
-        return .{ .dst = dst, .tex = tex, .color = color };
+        return .{
+            .dst = dst,
+            .tex = tex,
+            .color = color,
+            .corner_radius = corner_radius,
+            .edge_softness = edge_softness,
+            .border_thickness = border_thickness,
+        };
     }
 };
 
 // fields should be 16 bit aligned
 const RenderPassRectUniform = extern struct {
-    surface_size_px: Size(f32), // 8
+    surface_size_px: Size(f32), // 8- softness_padding,
     _padding: [2]u32 = @splat(0), // 8
 
     pub fn write(
@@ -773,12 +786,12 @@ const RenderPassRect = struct {
                 // .operation = .add,
             },
             .alpha = .{
-                // .src_factor = .zero,
-                // .dst_factor = .one,
-                // .operation = .add,
-                .src_factor = .one,
-                .dst_factor = .one_minus_src_alpha,
+                .src_factor = .zero,
+                .dst_factor = .one,
                 .operation = .add,
+                // .src_factor = .one,
+                // .dst_factor = .one_minus_src_alpha,
+                // .operation = .add,
             },
         };
 
@@ -855,22 +868,37 @@ const RenderPassRect = struct {
             .{ // dst_p1
                 .shader_location = 1,
                 .format = .float32x2,
-                .offset = @sizeOf([2]f32),
+                .offset = 2 * @sizeOf(f32),
             },
             .{ // tex_p0
                 .shader_location = 2,
                 .format = .float32x2,
-                .offset = 2 * @sizeOf([2]f32),
+                .offset = 4 * @sizeOf(f32),
             },
             .{ // tex_p0
                 .shader_location = 3,
                 .format = .float32x2,
-                .offset = 3 * @sizeOf([2]f32),
+                .offset = 6 * @sizeOf(f32),
             },
             .{ // color
                 .shader_location = 4,
                 .format = .float32x4,
-                .offset = 4 * @sizeOf([2]f32),
+                .offset = 8 * @sizeOf(f32),
+            },
+            .{ // corner_radius
+                .shader_location = 5,
+                .format = .float32,
+                .offset = 12 * @sizeOf(f32),
+            },
+            .{ // edge_softness
+                .shader_location = 6,
+                .format = .float32,
+                .offset = 13 * @sizeOf(f32),
+            },
+            .{ // border_thickness
+                .shader_location = 7,
+                .format = .float32,
+                .offset = 14 * @sizeOf(f32),
             },
         };
 
