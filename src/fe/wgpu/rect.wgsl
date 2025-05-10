@@ -1,5 +1,5 @@
-/* 
- * Rectangle drawing 
+/*
+ * Rectangle drawing
  */
 
 //= Type definitions
@@ -81,12 +81,12 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
 fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     let sample = textureSample(atlas_texture, atlas_sampler, in.uv);
 
-    let rgb = in.color.rgb;
-    let a = in.color.a * sample.r;
+    let srgb = in.color.rgb;
+    let a = in.color.a;
 
     // gamma correction
     // this is an approximation
-    let linear_rgb = pow(rgb, vec3f(2.2));
+    let linear_rgb = pow(srgb, vec3f(2.2));
 
-    return vec4f(linear_rgb, a);
+    return vec4f(linear_rgb * sample.rgb, a * sample.a);
 }

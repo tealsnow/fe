@@ -61,7 +61,7 @@ pub fn wlRegistryListener(
         data.wl_compositor = registry.bind(
             global.name,
             wl.Compositor,
-            6,
+            5,
         ) catch @panic("could not bind wayland compositor");
 
         log.debug("bound interface: '{s}'", .{global.interface});

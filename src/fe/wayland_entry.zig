@@ -39,8 +39,9 @@ pub fn entry(gpa: Allocator) !void {
     std.process.cleanExit();
 }
 
+// @TODO: auto grow
 pub const FontAtlas = struct {
-    bytes: []u8, // 1 bit format
+    bytes: []u32, // 4 bit rgba format
     size: Size(u32),
 
     cursor: Point(u32) = .all(0),
@@ -70,7 +71,7 @@ pub const FontAtlas = struct {
         size: mt.Size(u32),
         face: *ft.Face,
     ) !FontAtlas {
-        const bytes = try gpa.alloc(u8, size.width * size.height);
+        const bytes = try gpa.alloc(u32, size.width * size.height);
         return .{
             .bytes = bytes,
             .size = size,
@@ -90,32 +91,28 @@ pub const FontAtlas = struct {
     ) !GlyphInfo {
         if (atlas.glyph_map.get(glyph_index)) |info| return info;
 
-        // log.debug("caching glyph idx: {d}", .{@intFromEnum(glyph_index)});
-
         try atlas.face.loadGlyph(@intFromEnum(glyph_index), .{});
-        try atlas.face.glyph.render(.normal);
+        try atlas.face.glyph.render(.lcd);
         const glyph = atlas.face.glyph;
         const bitmap = glyph.bitmap;
 
-        if (bitmap.pixel_mode != .gray) {
-            log.err("not gray pixel mode: {}", .{bitmap.pixel_mode});
-            @panic("not gray");
-        }
+        assert(bitmap.pixel_mode == .lcd);
 
-        // assert(bitmap.pixel_mode == .gray);
-
-        const rect =
-            atlas.blit(.size(bitmap.width, bitmap.rows), bitmap.buffer);
+        const rect = atlas.blit(
+            .size(bitmap.width, bitmap.rows),
+            bitmap.pitch,
+            bitmap.buffer,
+        );
 
         const info = GlyphInfo{
             .tex_coords = rect,
             .bearing = .pt(
-                @intCast(@divTrunc(glyph.metrics.horiBearingX, 64)),
-                @intCast(@divTrunc(glyph.metrics.horiBearingY, 64)),
+                @intCast(glyph.metrics.horiBearingX >> 6),
+                @intCast(glyph.metrics.horiBearingY >> 6),
             ),
             .size = .size(
-                @intCast(@divTrunc(glyph.metrics.width, 64)),
-                @intCast(@divTrunc(glyph.metrics.height, 64)),
+                @intCast(glyph.metrics.width >> 6),
+                @intCast(glyph.metrics.height >> 6),
             ),
         };
 
@@ -132,18 +129,11 @@ pub const FontAtlas = struct {
         return @enumFromInt(idx);
     }
 
-    // pub fn getRectForCodepoint(
-    //     atlas: *const FontAtlas,
-    //     codepoint: u21,
-    // ) ?mt.Rect(u32) {
-    //     const glyph_index = atlas.getGlyphIndexForCodepoint(codepoint);
-    //     return atlas.glyph_map.get(glyph_index);
-    // }
-
     pub fn blit(
         atlas: *FontAtlas,
         size: mt.Size(u32),
-        bytes: [*]const u8,
+        pitch: i32, // row
+        bitmap: [*]const u8,
     ) mt.Rect(u32) {
         if (atlas.cursor.x + size.width > atlas.size.width) {
             atlas.cursor = .{
@@ -158,16 +148,42 @@ pub const FontAtlas = struct {
 
         const rect = mt.Rect(u32).fromBounds(.bounds(atlas.cursor, size));
 
-        for (0..size.height) |y| {
-            for (0..size.width) |x| {
-                const adj_x = atlas.cursor.x + x;
-                const adj_y = atlas.cursor.y + y;
+        if (pitch < 0) {
+            // @TODO: if row padding is negative the flow is up,
+            //  we only support down flow atm
+            @panic("TODO: up flow bitmap");
+        }
+        const pitch_u: usize = @intCast(pitch);
 
-                const atlas_i = adj_y * atlas.size.width + adj_x;
-                const bitmap_i = y * size.width + x;
+        for (0..size.height) |bitmap_y| {
+            for (0..size.width) |bitmap_x| {
+                const atlas_x = atlas.cursor.x + bitmap_x;
+                const atlas_y = atlas.cursor.y + bitmap_y;
 
-                const byte = &atlas.bytes[atlas_i];
-                byte.* = bytes[bitmap_i];
+                const bitmap_i = bitmap_y * pitch_u + bitmap_x;
+                const atlas_i = atlas_y * atlas.size.width + atlas_x;
+
+                const bitmap_pixel_rgb_u8: [3]u8 =
+                    bitmap[bitmap_i..(bitmap_i + 3)][0..3].*;
+                const bitmap_pixel_rgb_u24: u24 =
+                    @bitCast(bitmap_pixel_rgb_u8);
+
+                const bitmap_pixel_rgba_u32: u32 =
+                    @as(u32, bitmap_pixel_rgb_u24) << 8 | 0x000000ff;
+
+                atlas.bytes[atlas_i] = bitmap_pixel_rgba_u32;
+
+                // const r = bitmap[bitmap_i + 0];
+                // const g = bitmap[bitmap_i + 1];
+                // const b = bitmap[bitmap_i + 2];
+
+                // var atlas_pixel: u32 = 0;
+                // atlas_pixel |= @as(u32, r) << 24;
+                // atlas_pixel |= @as(u32, g) << 16;
+                // atlas_pixel |= @as(u32, b) << 8;
+                // atlas_pixel |= @as(u32, 0xff) << 0;
+
+                // atlas.bytes[atlas_i] = atlas_pixel;
             }
         }
         atlas.cursor.x += size.width;
@@ -177,7 +193,10 @@ pub const FontAtlas = struct {
     }
 
     /// assumes size is 32 bit aligned
-    pub fn writeToBmp(atlas: *const FontAtlas, file_name: []const u8) !void {
+    pub fn writeToBmp(
+        atlas: *const FontAtlas,
+        file_name: []const u8,
+    ) !void {
         const cwd = std.fs.cwd();
 
         const out_file = try cwd.createFile(file_name, .{});
@@ -191,25 +210,16 @@ pub const FontAtlas = struct {
 
         //- BMP header
         try w.writeInt(u16, 0x4D42, .little); // magic 'BM'
-        const bmp_size = width * height + 14;
-        try w.writeInt(u32, bmp_size, .little); // size
+        try w.writeInt(u32, width * height + 14, .little); // size
         try w.writeInt(u32, 0x0, .little); // reserved
-        // try w.writeInt(u32, 26, .little); // start of pixel array
         try w.writeInt(u32, 54, .little); // start of pixel array
-
-        // // DIB header - OS/2 1.x BITMAPCOREHEADER
-        // try w.writeInt(u32, 12, .little); // header size
-        // try w.writeInt(u16, @intCast(font_atlas.size.width), .little); // width
-        // try w.writeInt(u16, @intCast(font_atlas.size.height), .little); // height
-        // try w.writeInt(u16, 1, .little); // num color planes
-        // try w.writeInt(u16, 8, .little); // bits per pixel
 
         //- DIB header - Windows BITMAPINFOHEADER
         try w.writeInt(u32, 40, .little); // header size
         try w.writeInt(i32, @intCast(width), .little); // width
         try w.writeInt(i32, -@as(i32, @intCast(height)), .little); // height
         try w.writeInt(u16, 1, .little); // num color planes
-        try w.writeInt(u16, 8, .little); // bits per pixel
+        try w.writeInt(u16, 32, .little); // bits per pixel
         try w.writeInt(u32, 0, .little); // compression method - none
         try w.writeInt(u32, width * height, .little); // size of pixel array
         try w.writeInt(i32, @intCast(width), .little); // horiz res px/m
@@ -221,7 +231,7 @@ pub const FontAtlas = struct {
 
         // @NOTE: each row is meant to be aligned to 32 bits
         //  this assumes the atlas size is aligned
-        try w.writeAll(atlas.bytes);
+        try w.writeAll(@ptrCast(atlas.bytes));
 
         try buffered_writer.flush();
     }
@@ -247,13 +257,13 @@ pub const FontFace = struct {
     }
 
     pub fn lineHeight(font_face: *const FontFace) i32 {
-        return @intCast(@divFloor(font_face.ft_face.size.metrics.height, 64));
+        return @intCast(font_face.ft_face.size.metrics.height >> 6);
     }
 
     pub fn topLeftToBaselineAdjustment(font_face: *const FontFace) i32 {
         const line_height = font_face.lineHeight();
         const descender: i32 =
-            @intCast(@divFloor(font_face.ft_face.size.metrics.descender, 64));
+            @intCast(font_face.ft_face.size.metrics.descender >> 6);
         return line_height + descender;
     }
 };
@@ -316,8 +326,8 @@ pub const ShapedText = struct {
         size.height = text.font_face.lineHeight();
 
         for (text.glyph_positions) |pos| {
-            const x_advance = @divFloor(pos.x_advance, 64);
-            const y_advance = @divFloor(pos.y_advance, 64);
+            const x_advance = pos.x_advance >> 6;
+            const y_advance = pos.y_advance >> 6;
 
             size.width += x_advance;
             size.height += y_advance; // not sure if this is correct
@@ -331,7 +341,8 @@ pub const ShapedText = struct {
         gpa: Allocator,
         font_atlas: *FontAtlas,
         list: *std.ArrayListUnmanaged(WgpuRenderer.RectInstance),
-        origin: mt.Point(i32),
+        origin: mt.Point(i32), // topleft
+        color: mt.RgbaF32,
     ) !void {
         var cursor = origin;
 
@@ -341,21 +352,21 @@ pub const ShapedText = struct {
         try list.ensureUnusedCapacity(gpa, text.glyph_infos.len);
 
         for (text.glyph_infos, 0..) |info, i| {
-            const pos = text.glyph_positions[i];
-
-            // codepoint here is a misnomer - it is actually the glyph index in the
+            // codepoint here is a misnomer - it is the glyph index in the
             // font and has no correlation to the unicode character
-            const glyph_index: FontAtlas.GlyphIndex = @enumFromInt(info.codepoint);
+            const glyph_index: FontAtlas.GlyphIndex =
+                @enumFromInt(info.codepoint);
 
             const atlas_info =
                 try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
             const tex_coords = atlas_info.tex_coords.floatFromInt(f32);
             const bearing = atlas_info.bearing;
 
-            const x_offset = @divFloor(pos.x_offset, 64);
-            const y_offset = @divFloor(pos.y_offset, 64);
-            const x_advance = @divFloor(pos.x_advance, 64);
-            const y_advance = @divFloor(pos.y_advance, 64);
+            const pos = text.glyph_positions[i];
+            const x_offset = pos.x_offset;
+            const y_offset = pos.y_offset;
+            const x_advance = pos.x_advance >> 6;
+            const y_advance = pos.y_advance >> 6;
 
             const point = mt.Point(i32)
                 .pt(
@@ -364,13 +375,14 @@ pub const ShapedText = struct {
                 )
                 .floatFromInt(f32)
                 .floor();
+            const size = atlas_info.size.floatFromInt(f32);
 
             try list.append(
                 gpa,
                 .recti(
-                    .fromBounds(.bounds(point, tex_coords.size())),
+                    .fromBounds(.bounds(point, size)),
                     tex_coords,
-                    mt.RgbaF32.hexRgb(0xffffff),
+                    color,
                 ),
             );
 
@@ -385,12 +397,13 @@ pub const ShapedText = struct {
         gpa: Allocator,
         font_atlas: *FontAtlas,
         origin: mt.Point(i32),
+        color: mt.RgbaF32,
     ) ![]WgpuRenderer.RectInstance {
         var list =
             try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
                 .initCapacity(gpa, text.glyph_infos.len);
 
-        try text.generateRectsArrayList(gpa, font_atlas, &list, origin);
+        try text.generateRectsArrayList(gpa, font_atlas, &list, origin, color);
 
         const slice = try list.toOwnedSlice(gpa);
         return slice;
@@ -399,7 +412,6 @@ pub const ShapedText = struct {
 
 fn run(gpa: Allocator) !void {
     //- window
-
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
 
@@ -413,7 +425,6 @@ fn run(gpa: Allocator) !void {
     window.minimium_size = .{ .width = 200, .height = 100 };
 
     //- font loading
-
     const def_font_path = def_font_path: {
         const font_family = "sans";
 
@@ -443,6 +454,7 @@ fn run(gpa: Allocator) !void {
 
     const ft_lib = try ft.Library.init();
     defer ft_lib.deinit();
+    try ft_lib.setLcdFilter(.default);
 
     const ft_face = try ft_lib.initFace(def_font_path, 0);
 
@@ -450,18 +462,20 @@ fn run(gpa: Allocator) !void {
     defer font_face.deinit();
 
     {
-        const pt = 24;
-        // const pt = 32;
-        const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
-        const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
-        try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
+        const pt = 28;
+        // const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
+        // const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
+        // log.debug("dpi: {d}x{d}", .{ horz_dpi, vert_dpi });
+        // try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
+        const dpi = 96;
+        try ft_face.setCharSize(0, pt * 2 * 64, dpi, dpi);
     }
 
-    var font_atlas = try FontAtlas.init(gpa, .square(1024 * 2), ft_face);
+    var font_atlas = try FontAtlas.init(gpa, .square(32 * 64 * 2), ft_face);
     defer font_atlas.deinit(gpa);
 
     // create a small white square at 0,0 for texture-less rects
-    _ = font_atlas.blit(.square(2), &.{ 255, 255, 255, 255 });
+    _ = font_atlas.blit(.square(2), 0, &(.{255} ** (3 * 2 * 2)));
 
     // pre-cache all basic ascii chars
     // 0, 32..128
@@ -475,34 +489,49 @@ fn run(gpa: Allocator) !void {
         _ = try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
     }
 
-    const unicode_test_strings = @import("unicode_3_2_test.zig").strings;
+    // const random_test_strings = [_][]const u8{
+    //     // https://stackoverflow.com/a/51539774/13156251
+    //     // Vertically-stacked characters
+    //     "Z̤͔ͧ̑̓ä͖̭̈̇lͮ̒ͫǧ̗͚̚o̙̔ͮ̇͐̇",
+    //     // Right-to-left words
+    //     "اختبار النص",
+    //     // Mixed-direction words
+    //     // @TODO: mixed bidi
+    //     // "من left اليمين to الى right اليسار",
+    //     // Mixed-direction characters
+    //     // @TODO: mixed bidi
+    //     // "a‭b‮c‭d‮e‭f‮g",
+    //     // Very long characters
+    //     "﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽",
+    //     // Emoji with skintone variations
+    //     // @TODO: Emoji
+    //     // "👱👱🏻👱🏼👱🏽👱🏾👱🏿",
+    //     // Emoji with gender variations
+    //     // @TODO: Emoji
+    //     // "🧟‍♀️🧟‍♂️",
+    //     // Emoji created by combining codepoints
+    //     // @TODO: Emoji
+    //     // "👨‍❤️‍💋‍👨👩‍👩‍👧‍👦🏳️‍⚧️🇵🇷",
+    // };
+    //
+    // const unicode_test_strings = @import("unicode_3_2_test.zig").strings;
+    // const strings = unicode_test_strings ++ random_test_strings;
 
-    const random_test_strings = [_][]const u8{
-        // https://stackoverflow.com/a/51539774/13156251
-        // Vertically-stacked characters
-        "Z̤͔ͧ̑̓ä͖̭̈̇lͮ̒ͫǧ̗͚̚o̙̔ͮ̇͐̇",
-        // Right-to-left words
-        "اختبار النص",
-        // Mixed-direction words
-        // @TODO: mixed bidi
-        // "من left اليمين to الى right اليسار",
-        // Mixed-direction characters
-        // @TODO: mixed bidi
-        // "a‭b‮c‭d‮e‭f‮g",
-        // Very long characters
-        "﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽",
-        // Emoji with skintone variations
-        // @TODO: Emoji
-        // "👱👱🏻👱🏼👱🏽👱🏾👱🏿",
-        // Emoji with gender variations
-        // @TODO: Emoji
-        // "🧟‍♀️🧟‍♂️",
-        // Emoji created by combining codepoints
-        // @TODO: Emoji
-        // "👨‍❤️‍💋‍👨👩‍👩‍👧‍👦🏳️‍⚧️🇵🇷",
+    const strings = [_][]const u8{
+        "Hello, World!",
+        "this is in red",
+        "this is in green",
+        "this is in blue",
+        "this is half transparent",
     };
-
-    const strings = unicode_test_strings ++ random_test_strings;
+    const colors = [_]mt.RgbaF32{
+        .hexRgb(0xffffff),
+        .hexRgb(0xff0000),
+        .hexRgb(0x00ff00),
+        .hexRgb(0x0000ff),
+        .hexRgba(0xffffff7f),
+    };
+    // // const strings = unicode_test_strings;
 
     var list = std.ArrayListUnmanaged(WgpuRenderer.RectInstance).empty;
     defer list.deinit(gpa);
@@ -513,13 +542,39 @@ fn run(gpa: Allocator) !void {
         var pos = origin;
         pos.y += line_height * @as(i32, @intCast(i));
 
+        const color = colors[i];
+
         const shaped = try ShapedText.init(&font_face, string);
         defer shaped.deinit();
 
-        try shaped.generateRectsArrayList(gpa, &font_atlas, &list, pos);
+        try shaped.generateRectsArrayList(
+            gpa,
+            &font_atlas,
+            &list,
+            pos,
+            color,
+        );
     }
 
-    try font_atlas.writeToBmp("text.bmp");
+    try font_atlas.writeToBmp("atlas.bmp");
+
+    // try list.append(
+    //     gpa,
+    //     .recti(
+    //         .fromBounds(.bounds(.all(40), font_atlas.size.floatFromInt(f32))),
+    //         .fromBounds(.bounds(.all(0), font_atlas.size.floatFromInt(f32))),
+    //         .hexRgb(0xffffff),
+    //     ),
+    // );
+
+    try list.append(
+        gpa,
+        .recti(
+            .fromBounds(.bounds(origin.floatFromInt(f32), .square(20))),
+            .zero,
+            .hexRgb(0xff0000),
+        ),
+    );
 
     //- wpgu
 

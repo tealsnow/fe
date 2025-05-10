@@ -557,7 +557,7 @@ const RenderPassRect = struct {
                 wgpu.TextureUsage.copy_dst,
             .dimension = .@"2d",
             .size = atlas_texture_size,
-            .format = .r8_unorm,
+            .format = .rgba8_unorm,
         };
         const atlas_texture =
             device.createTexture(&atlas_texture_desc) orelse {
@@ -571,10 +571,10 @@ const RenderPassRect = struct {
                 .origin = .{},
             },
             font_atlas.bytes.ptr,
-            font_atlas.bytes.len,
+            font_atlas.bytes.len * 4,
             &.{
                 .offset = 0,
-                .bytes_per_row = font_atlas.size.width,
+                .bytes_per_row = font_atlas.size.width * 4,
                 .rows_per_image = font_atlas.size.height,
             },
             &atlas_texture_size,
@@ -588,7 +588,7 @@ const RenderPassRect = struct {
         };
         const atlas_texture_sampler = device.createSampler(&.{
             .label = "atlas texture sampler",
-            .mag_filter = .linear,
+            .mag_filter = .nearest,
             .min_filter = .nearest,
         }) orelse {
             log.err("failed to create atlas texture sampler", .{});
@@ -768,10 +768,16 @@ const RenderPassRect = struct {
                 .src_factor = .src_alpha,
                 .dst_factor = .one_minus_src_alpha,
                 .operation = .add,
+                // .src_factor = .one,
+                // .dst_factor = .one_minus_src_alpha,
+                // .operation = .add,
             },
             .alpha = .{
-                .src_factor = .zero,
-                .dst_factor = .one,
+                // .src_factor = .zero,
+                // .dst_factor = .one,
+                // .operation = .add,
+                .src_factor = .one,
+                .dst_factor = .one_minus_src_alpha,
                 .operation = .add,
             },
         };

@@ -62,6 +62,22 @@ pub fn doneMMVar(self: Library, mm: *c.FT_MM_Var) void {
     _ = c.FT_Done_MM_Var(self.handle, mm);
 }
 
+pub fn setLcdFilter(self: Library, lcd_filter: LcdFilter) !void {
+    try intToError(c.FT_Library_SetLcdFilter(
+        self.handle,
+        @intFromEnum(lcd_filter),
+    ));
+}
+
+pub const LcdFilter = enum(c.enum_FT_LcdFilter_) {
+    none = c.FT_LCD_FILTER_NONE,
+    default = c.FT_LCD_FILTER_DEFAULT,
+    light = c.FT_LCD_FILTER_LIGHT,
+    legacy1 = c.FT_LCD_FILTER_LEGACY1,
+    legacy = c.FT_LCD_FILTER_LEGACY,
+    _,
+};
+
 pub const Version = struct {
     major: i32,
     minor: i32,

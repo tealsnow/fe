@@ -180,7 +180,7 @@ pub fn build(b: *std.Build) void {
             //     "unstable/pointer-gestures/pointer-gestures-unstable-v1.xml",
             // );
 
-            scanner.generate("wl_compositor", 6);
+            scanner.generate("wl_compositor", 5);
             scanner.generate("wl_shm", 2);
             scanner.generate("wl_output", 4);
             scanner.generate("xdg_wm_base", 6);
@@ -222,6 +222,7 @@ pub fn build(b: *std.Build) void {
             }
 
             //- harfbuzz
+
             fe_mod.addSystemIncludePath(b.path("harfbuzz"));
             fe_mod.linkSystemLibrary("harfbuzz", .{ .needed = true });
         },
