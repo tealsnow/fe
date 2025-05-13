@@ -38,7 +38,7 @@ pub fn entry(gpa: Allocator) !void {
 pub fn run(gpa: Allocator) !void {
     const trace_app_init = tracy.beginZone(@src(), .{ .name = "init" });
 
-    // =-= plugin setup =-=
+    //- plugin setup
     log.info("setting up plugins", .{});
 
     const host = try plugins.PluginHost.init(gpa);
@@ -47,7 +47,7 @@ pub fn run(gpa: Allocator) !void {
     const plugin = host.plugins[0];
     try plugins.doTest(plugin);
 
-    // =-= sdl setup =-=
+    //- sdl setup
     log.debug("initilizing sdl", .{});
 
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_APP_ID, "me.ketanr.fe");
@@ -60,11 +60,11 @@ pub fn run(gpa: Allocator) !void {
     try sdl.ttf.init();
     defer sdl.ttf.quit();
 
-    // =-= state =-=
+    //- state
     state = try AppState.init(gpa);
     defer state.deinit();
 
-    // =-= main loop =-=
+    //- main loop
     log.debug("starting main loop", .{});
 
     trace_app_init.end();

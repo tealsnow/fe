@@ -2,7 +2,7 @@
  * Rectangle drawing
  */
 
-//= Type definitions
+//= types 
 
 struct Cpu2Vertex {
     //- instance data
@@ -43,8 +43,9 @@ struct Vertex2Fragment {
 //= bindings
 
 @group(0) @binding(0) var<uniform> surface_size_px: vec2f;
-@group(0) @binding(1) var atlas_texture: texture_2d<f32>;
-@group(0) @binding(2) var atlas_sampler: sampler;
+
+@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
+@group(1) @binding(1) var atlas_sampler: sampler;
 
 //= vertex
 
@@ -156,27 +157,21 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
 
     let sample = textureSample(atlas_texture, atlas_sampler, in.uv);
 
-    let rgba = in.color * sample.rgba * sdf_factor * border_factor;
-    let rgb = rgba.rgb;
-    let a = rgba.a;
-
-    // let srgb = in.color.rgb * sdf_factor;
-    // let a = in.color.a * sample.a * sdf_factor;
+    let in_rgb = in.color.rgb;
+    let in_a = in.color.a;
 
     // gamma correction
     // this is an approximation
-    let linear_rgb = pow(rgb, vec3f(2.2));
-    // let linear_rgb = pow(srgb, vec3f(2.2));
+    let linear_in_rgb = pow(in_rgb, vec3f(2.2));
 
-    // let color = linear_rgb * sample.rgb * sdf_factor;
-    // let a = in.color.a * sample.a;
+    let out_rgb = linear_in_rgb * sample.rgb;
+    let out_a = in_a * sample.a;
 
-    return vec4f(linear_rgb, a);
-    // return vec4f(linear_rgb * sample.rgb, a);
+    let out_color = vec4f(out_rgb, out_a) * sdf_factor * border_factor;
+    return out_color;
 }
 
 //= util
-
 
 fn roundedRectSDF(
     sample_pos: vec2f,
@@ -191,14 +186,3 @@ fn roundedRectSDF(
     return min(max(d2.x, d2.y), 0f) + length(max(d2, vec2f(0f, 0f))) - r;
 }
 
-// float RoundedRectSDF(
-//     vec2 sample_pos,
-//     vec2 rect_center,
-//     vec2 rect_half_size,
-//     float r
-// ) {
-//   vec2 d2 = (abs(rect_center - sample_pos) -
-//              rect_half_size +
-//              vec2(r, r));
-//   return min(max(d2.x, d2.y), 0.0) + length(max(d2, 0.0)) - r;
-// }

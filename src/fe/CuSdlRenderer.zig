@@ -168,7 +168,10 @@ pub fn createFontFromFamilyName(gpa: std.mem.Allocator, family: [:0]const u8, pt
 /// Caller owns memory
 /// Returns the font for a generic family name such as sans, monospace or arial
 /// ensure fonconfig is initialized
-pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const u8) ![:0]u8 {
+pub fn getFontPathFromFamilyName(
+    allocator: std.mem.Allocator,
+    family: [:0]const u8,
+) ![:0]u8 {
     const pattern = try fc.Pattern.create();
     defer pattern.destroy();
     try pattern.addString(.family, family);
@@ -186,10 +189,15 @@ pub fn getFontPathFromFamilyName(allocator: std.mem.Allocator, family: [:0]const
 }
 
 pub const Callbacks = struct {
-    fn measureText(context: *anyopaque, text: []const u8, font_handle: cu.State.FontHandle) cu.Axis2(f32) {
+    fn measureText(
+        context: *anyopaque,
+        text: []const u8,
+        font_handle: cu.State.FontHandle,
+    ) cu.Axis2(f32) {
         _ = context;
         const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
-        const w, const h = font.getStringSize(text) catch @panic("failed to measure text");
+        const w, const h = font.getStringSize(text) catch
+            @panic("failed to measure text");
         return .axis(@floatFromInt(w), @floatFromInt(h));
     }
 

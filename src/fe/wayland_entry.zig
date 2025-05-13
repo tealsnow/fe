@@ -20,16 +20,16 @@ const Size = @import("math.zig").Size;
 const wl = @import("platform/linux/wayland/wayland.zig");
 
 const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
+const FontAtlas = WgpuRenderer.FontAtlas;
+const FontFace = WgpuRenderer.FontFace;
+const ShapedText = WgpuRenderer.ShapedText;
+
+const cu = @import("cu");
 
 // @TODO: Migrate to use ghostty/pkg/fontconfig
 const fc = @import("fontconfig.zig");
 
 const ft = @import("freetype");
-
-const hb = @cImport({
-    @cInclude("hb.h");
-    @cInclude("hb-ft.h");
-});
 
 const pretty = @import("pretty");
 
@@ -38,380 +38,6 @@ pub fn entry(gpa: Allocator) !void {
 
     std.process.cleanExit();
 }
-
-// @TODO: auto grow
-pub const FontAtlas = struct {
-    bytes: []u32, // 4 bit rgba format
-    size: Size(u32),
-
-    cursor: Point(u32) = .all(0),
-    max_y: u32 = 0,
-
-    face: *ft.Face,
-
-    glyph_map: std.AutoHashMapUnmanaged(GlyphIndex, GlyphInfo) = .empty,
-
-    /// Index into font for a specific glyph
-    /// has no relation to unicode codepoint or consistency between fonts
-    pub const GlyphIndex = enum(u32) {
-        missing = 0, // by convention 0 maps to the missing character
-        _, // every other index is dependent on the font used
-    };
-
-    pub const GlyphInfo = struct {
-        /// top-left to bottom-right
-        tex_coords: mt.Rect(u32),
-        /// Per character pos data to be used in conjuction with shaping
-        bearing: mt.Point(i32),
-        size: mt.Size(i32),
-    };
-
-    pub fn init(
-        gpa: Allocator,
-        size: mt.Size(u32),
-        face: *ft.Face,
-    ) !FontAtlas {
-        const bytes = try gpa.alloc(u32, size.width * size.height);
-        return .{
-            .bytes = bytes,
-            .size = size,
-            .face = face,
-        };
-    }
-
-    pub fn deinit(atlas: *FontAtlas, gpa: Allocator) void {
-        gpa.free(atlas.bytes);
-        atlas.glyph_map.deinit(gpa);
-    }
-
-    pub fn getInfoOrCacheForGlyphIndex(
-        atlas: *FontAtlas,
-        gpa: Allocator,
-        glyph_index: GlyphIndex,
-    ) !GlyphInfo {
-        if (atlas.glyph_map.get(glyph_index)) |info| return info;
-
-        try atlas.face.loadGlyph(@intFromEnum(glyph_index), .{});
-        try atlas.face.glyph.render(.lcd);
-        const glyph = atlas.face.glyph;
-        const bitmap = glyph.bitmap;
-
-        assert(bitmap.pixel_mode == .lcd);
-
-        const rect = atlas.blit(
-            .size(bitmap.width, bitmap.rows),
-            bitmap.pitch,
-            bitmap.buffer,
-        );
-
-        const info = GlyphInfo{
-            .tex_coords = rect,
-            .bearing = .pt(
-                @intCast(glyph.metrics.horiBearingX >> 6),
-                @intCast(glyph.metrics.horiBearingY >> 6),
-            ),
-            .size = .size(
-                @intCast(glyph.metrics.width >> 6),
-                @intCast(glyph.metrics.height >> 6),
-            ),
-        };
-
-        try atlas.glyph_map.put(gpa, glyph_index, info);
-
-        return info;
-    }
-
-    pub fn getGlyphIndexForCodepoint(
-        atlas: *const FontAtlas,
-        codepoint: u21,
-    ) GlyphIndex {
-        const idx = atlas.face.getCharIndex(codepoint) orelse 0;
-        return @enumFromInt(idx);
-    }
-
-    pub fn blit(
-        atlas: *FontAtlas,
-        size: mt.Size(u32),
-        pitch: i32, // row
-        bitmap: [*]const u8,
-    ) mt.Rect(u32) {
-        if (atlas.cursor.x + size.width > atlas.size.width) {
-            atlas.cursor = .{
-                .x = 0,
-                .y = atlas.max_y,
-            };
-        }
-
-        if (atlas.cursor.y + size.height > atlas.size.height) {
-            @panic("TODO: atlas overflow");
-        }
-
-        const rect = mt.Rect(u32).fromBounds(.bounds(atlas.cursor, size));
-
-        if (pitch < 0) {
-            // @TODO: if row padding is negative the flow is up,
-            //  we only support down flow atm
-            @panic("TODO: up flow bitmap");
-        }
-        const pitch_u: usize = @intCast(pitch);
-
-        for (0..size.height) |bitmap_y| {
-            for (0..size.width) |bitmap_x| {
-                const atlas_x = atlas.cursor.x + bitmap_x;
-                const atlas_y = atlas.cursor.y + bitmap_y;
-
-                const bitmap_i = bitmap_y * pitch_u + bitmap_x;
-                const atlas_i = atlas_y * atlas.size.width + atlas_x;
-
-                const bitmap_pixel_rgb_u8: [3]u8 =
-                    bitmap[bitmap_i..(bitmap_i + 3)][0..3].*;
-                const bitmap_pixel_rgb_u24: u24 =
-                    @bitCast(bitmap_pixel_rgb_u8);
-
-                const bitmap_pixel_rgba_u32: u32 =
-                    @as(u32, bitmap_pixel_rgb_u24) << 8 | 0x000000ff;
-
-                atlas.bytes[atlas_i] = bitmap_pixel_rgba_u32;
-
-                // const r = bitmap[bitmap_i + 0];
-                // const g = bitmap[bitmap_i + 1];
-                // const b = bitmap[bitmap_i + 2];
-
-                // var atlas_pixel: u32 = 0;
-                // atlas_pixel |= @as(u32, r) << 24;
-                // atlas_pixel |= @as(u32, g) << 16;
-                // atlas_pixel |= @as(u32, b) << 8;
-                // atlas_pixel |= @as(u32, 0xff) << 0;
-
-                // atlas.bytes[atlas_i] = atlas_pixel;
-            }
-        }
-        atlas.cursor.x += size.width;
-        atlas.max_y = @max(atlas.max_y, atlas.cursor.y + size.height);
-
-        return rect;
-    }
-
-    /// assumes size is 32 bit aligned
-    pub fn writeToBmp(
-        atlas: *const FontAtlas,
-        file_name: []const u8,
-    ) !void {
-        const cwd = std.fs.cwd();
-
-        const out_file = try cwd.createFile(file_name, .{});
-        defer out_file.close();
-
-        var buffered_writer = std.io.bufferedWriter(out_file.writer());
-        var w = buffered_writer.writer();
-
-        const width = atlas.size.width;
-        const height = atlas.size.height;
-
-        //- BMP header
-        try w.writeInt(u16, 0x4D42, .little); // magic 'BM'
-        try w.writeInt(u32, width * height + 14, .little); // size
-        try w.writeInt(u32, 0x0, .little); // reserved
-        try w.writeInt(u32, 54, .little); // start of pixel array
-
-        //- DIB header - Windows BITMAPINFOHEADER
-        try w.writeInt(u32, 40, .little); // header size
-        try w.writeInt(i32, @intCast(width), .little); // width
-        try w.writeInt(i32, -@as(i32, @intCast(height)), .little); // height
-        try w.writeInt(u16, 1, .little); // num color planes
-        try w.writeInt(u16, 32, .little); // bits per pixel
-        try w.writeInt(u32, 0, .little); // compression method - none
-        try w.writeInt(u32, width * height, .little); // size of pixel array
-        try w.writeInt(i32, @intCast(width), .little); // horiz res px/m
-        try w.writeInt(i32, @intCast(height), .little); // vert res px/m
-        try w.writeInt(u32, 0, .little); // num colors in pallete - 0 for default
-        try w.writeInt(u32, 0, .little); // num 'important' colors - 0 for all
-
-        //- pixel array
-
-        // @NOTE: each row is meant to be aligned to 32 bits
-        //  this assumes the atlas size is aligned
-        try w.writeAll(@ptrCast(atlas.bytes));
-
-        try buffered_writer.flush();
-    }
-};
-
-pub const FontFace = struct {
-    ft_face: *ft.Face,
-    hb_font: *hb.hb_font_t,
-
-    pub fn fromFtFace(ft_face: *ft.Face) !FontFace {
-        const hb_font =
-            hb.hb_ft_font_create_referenced(@ptrCast(ft_face)) orelse
-            return error.hb;
-        return .{
-            .ft_face = ft_face,
-            .hb_font = hb_font,
-        };
-    }
-
-    pub fn deinit(face: FontFace) void {
-        face.ft_face.deinit();
-        hb.hb_font_destroy(face.hb_font);
-    }
-
-    pub fn lineHeight(font_face: *const FontFace) i32 {
-        return @intCast(font_face.ft_face.size.metrics.height >> 6);
-    }
-
-    pub fn topLeftToBaselineAdjustment(font_face: *const FontFace) i32 {
-        const line_height = font_face.lineHeight();
-        const descender: i32 =
-            @intCast(font_face.ft_face.size.metrics.descender >> 6);
-        return line_height + descender;
-    }
-};
-
-pub const ShapedText = struct {
-    font_face: *const FontFace,
-
-    buffer: *hb.hb_buffer_t,
-    string: []const u8,
-
-    glyph_infos: []hb.hb_glyph_info_t,
-    glyph_positions: []hb.hb_glyph_position_t,
-
-    pub fn init(font_face: *const FontFace, string: []const u8) !ShapedText {
-        //- setup buffer
-        const hb_buffer = hb.hb_buffer_create() orelse return error.hb;
-        hb.hb_buffer_add_utf8(
-            hb_buffer,
-            string.ptr,
-            @intCast(string.len),
-            0,
-            -1,
-        );
-        hb.hb_buffer_guess_segment_properties(hb_buffer);
-
-        //- shape
-        hb.hb_shape(font_face.hb_font, hb_buffer, null, 0);
-
-        var glyph_info_count: u32 = undefined;
-        const glyph_info =
-            hb.hb_buffer_get_glyph_infos(hb_buffer, &glyph_info_count) orelse
-            return error.hb;
-
-        var glyph_pos_count: u32 = undefined;
-        const glyph_pos =
-            hb.hb_buffer_get_glyph_positions(hb_buffer, &glyph_pos_count) orelse
-            return error.hb;
-
-        assert(glyph_info_count == glyph_pos_count);
-        const glyph_count = glyph_info_count;
-
-        return .{
-            .font_face = font_face,
-
-            .buffer = hb_buffer,
-            .string = string,
-
-            .glyph_infos = glyph_info[0..glyph_count],
-            .glyph_positions = glyph_pos[0..glyph_count],
-        };
-    }
-
-    pub fn deinit(text: ShapedText) void {
-        hb.hb_buffer_destroy(text.buffer);
-    }
-
-    pub fn calculateSize(text: *const ShapedText) mt.Size(i32) {
-        var size = mt.Size(i32).zero;
-
-        size.height = text.font_face.lineHeight();
-
-        for (text.glyph_positions) |pos| {
-            const x_advance = pos.x_advance >> 6;
-            const y_advance = pos.y_advance >> 6;
-
-            size.width += x_advance;
-            size.height += y_advance; // not sure if this is correct
-        }
-
-        return size;
-    }
-
-    pub fn generateRectsArrayList(
-        text: *const ShapedText,
-        gpa: Allocator,
-        font_atlas: *FontAtlas,
-        list: *std.ArrayListUnmanaged(WgpuRenderer.RectInstance),
-        origin: mt.Point(i32), // topleft
-        color: mt.RgbaF32,
-    ) !void {
-        var cursor = origin;
-
-        // adjust from topleft to baseline
-        cursor.y += text.font_face.topLeftToBaselineAdjustment();
-
-        try list.ensureUnusedCapacity(gpa, text.glyph_infos.len);
-
-        for (text.glyph_infos, 0..) |info, i| {
-            // codepoint here is a misnomer - it is the glyph index in the
-            // font and has no correlation to the unicode character
-            const glyph_index: FontAtlas.GlyphIndex =
-                @enumFromInt(info.codepoint);
-
-            const atlas_info =
-                try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
-            const tex_coords = atlas_info.tex_coords.floatFromInt(f32);
-            const bearing = atlas_info.bearing;
-
-            const pos = text.glyph_positions[i];
-            const x_offset = pos.x_offset;
-            const y_offset = pos.y_offset;
-            const x_advance = pos.x_advance >> 6;
-            const y_advance = pos.y_advance >> 6;
-
-            const point = mt.Point(i32)
-                .pt(
-                    cursor.x + x_offset + bearing.x,
-                    cursor.y + y_offset + -bearing.y,
-                )
-                .floatFromInt(f32)
-                .floor();
-            const size = atlas_info.size.floatFromInt(f32);
-
-            try list.append(
-                gpa,
-                .recti(
-                    .fromBounds(.bounds(point, size)),
-                    tex_coords,
-                    color,
-                    0,
-                    0,
-                    0,
-                ),
-            );
-
-            cursor.x += x_advance;
-            cursor.y += y_advance;
-        }
-    }
-
-    /// origin is top left point to start from
-    pub fn generateRects(
-        text: *const ShapedText,
-        gpa: Allocator,
-        font_atlas: *FontAtlas,
-        origin: mt.Point(i32),
-        color: mt.RgbaF32,
-    ) ![]WgpuRenderer.RectInstance {
-        var list =
-            try std.ArrayListUnmanaged(WgpuRenderer.RectInstance)
-                .initCapacity(gpa, text.glyph_infos.len);
-
-        try text.generateRectsArrayList(gpa, font_atlas, &list, origin, color);
-
-        const slice = try list.toOwnedSlice(gpa);
-        return slice;
-    }
-};
 
 fn run(gpa: Allocator) !void {
     //- window
@@ -459,22 +85,15 @@ fn run(gpa: Allocator) !void {
     defer ft_lib.deinit();
     try ft_lib.setLcdFilter(.default);
 
-    const ft_face = try ft_lib.initFace(def_font_path, 0);
-
-    const font_face = try FontFace.fromFtFace(ft_face);
+    var font_face = try FontFace.fromPath(ft_lib, def_font_path);
     defer font_face.deinit();
+    try font_face.setSize(28, 96);
 
-    {
-        const pt = 28;
-        // const vert_dpi: u16 = @intFromFloat(@floor(conn.vdpi));
-        // const horz_dpi: u16 = @intFromFloat(@floor(conn.hdpi));
-        // log.debug("dpi: {d}x{d}", .{ horz_dpi, vert_dpi });
-        // try ft_face.setCharSize(0, pt * 64, horz_dpi, vert_dpi);
-        const dpi = 96;
-        try ft_face.setCharSize(0, pt * 2 * 64, dpi, dpi);
-    }
-
-    var font_atlas = try FontAtlas.init(gpa, .square(32 * 64 * 2), ft_face);
+    var font_atlas = try FontAtlas.init(
+        gpa,
+        .square(32 * 64 * 2),
+        &font_face,
+    );
     defer font_atlas.deinit(gpa);
 
     // create a small white square at 0,0 for texture-less rects
@@ -492,34 +111,6 @@ fn run(gpa: Allocator) !void {
         _ = try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
     }
 
-    // const random_test_strings = [_][]const u8{
-    //     // https://stackoverflow.com/a/51539774/13156251
-    //     // Vertically-stacked characters
-    //     "Z̤͔ͧ̑̓ä͖̭̈̇lͮ̒ͫǧ̗͚̚o̙̔ͮ̇͐̇",
-    //     // Right-to-left words
-    //     "اختبار النص",
-    //     // Mixed-direction words
-    //     // @TODO: mixed bidi
-    //     // "من left اليمين to الى right اليسار",
-    //     // Mixed-direction characters
-    //     // @TODO: mixed bidi
-    //     // "a‭b‮c‭d‮e‭f‮g",
-    //     // Very long characters
-    //     "﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽﷽",
-    //     // Emoji with skintone variations
-    //     // @TODO: Emoji
-    //     // "👱👱🏻👱🏼👱🏽👱🏾👱🏿",
-    //     // Emoji with gender variations
-    //     // @TODO: Emoji
-    //     // "🧟‍♀️🧟‍♂️",
-    //     // Emoji created by combining codepoints
-    //     // @TODO: Emoji
-    //     // "👨‍❤️‍💋‍👨👩‍👩‍👧‍👦🏳️‍⚧️🇵🇷",
-    // };
-    //
-    // const unicode_test_strings = @import("unicode_3_2_test.zig").strings;
-    // const strings = unicode_test_strings ++ random_test_strings;
-
     const strings = [_][]const u8{
         "Hello, World!",
         "this is in red",
@@ -534,7 +125,6 @@ fn run(gpa: Allocator) !void {
         .hexRgb(0x0000ff),
         .hexRgba(0xffffff7f),
     };
-    // // const strings = unicode_test_strings;
 
     var list = std.ArrayListUnmanaged(WgpuRenderer.RectInstance).empty;
     defer list.deinit(gpa);
@@ -560,15 +150,6 @@ fn run(gpa: Allocator) !void {
     }
 
     try font_atlas.writeToBmp("atlas.bmp");
-
-    // try list.append(
-    //     gpa,
-    //     .recti(
-    //         .fromBounds(.bounds(.all(40), font_atlas.size.floatFromInt(f32))),
-    //         .fromBounds(.bounds(.all(0), font_atlas.size.floatFromInt(f32))),
-    //         .hexRgb(0xffffff),
-    //     ),
-    // );
 
     try list.append(
         gpa,
@@ -597,10 +178,40 @@ fn run(gpa: Allocator) !void {
             // .device = gpa,
             // .surface = true,
         },
-        &font_atlas,
-        list.items,
     );
     defer renderer.deinit();
+
+    const render_pass_data = try WgpuRenderer.RenderPassData.init(
+        renderer.device,
+        renderer.queue,
+        renderer.texture_bind_group_layout,
+        font_atlas.textureDataRef(),
+        list.items,
+    );
+    defer render_pass_data.deinit();
+
+    //- cu
+
+    const ui_state = try cu.State.init(
+        gpa,
+        WgpuRenderer.CuCallbacks.callbacks,
+    );
+    defer ui_state.deinit();
+
+    cu.state = ui_state;
+
+    const default_font =
+        ui_state.registerFont(@alignCast(@ptrCast(&font_face)));
+
+    ui_state.default_palette = cu.Atom.Palette{
+        .background = .hexRgb(0x1d2021), // gruvbox bg0
+        .text = .hexRgb(0xebdbb2), // gruvbox fg1
+        .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
+        .border = .hexRgb(0x3c3836), // gruvbox bg1
+        .hot = .hexRgb(0x665c54), // grovbox bg3
+        .active = .hexRgb(0xfbf1c7), // grovbox fg0
+    };
+    ui_state.default_font = default_font;
 
     //- main loop
 
@@ -627,6 +238,11 @@ fn run(gpa: Allocator) !void {
                     if (window.handleToplevelConfigureEvent(conf)) |size| {
                         // window was resized
                         renderer.reconfigure(size);
+
+                        cu.state.window_size = .axis(
+                            @floatFromInt(size.width),
+                            @floatFromInt(size.height),
+                        );
                     }
 
                     do_render = true;
@@ -664,6 +280,16 @@ fn run(gpa: Allocator) !void {
                     //     },
                     // );
 
+                    cu.state.pushEvent(.{ .key = .{
+                        .scancode = @intCast(key.scancode),
+                        .keycode = .unknown,
+                        .mod = .{},
+                        .state = if (key.state == .pressed)
+                            .pressed
+                        else
+                            .released,
+                    } });
+
                     if (key.state != .pressed) break :key;
 
                     switch (@intFromEnum(key.keysym)) {
@@ -674,7 +300,18 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .modifier => |mods| {
-                    _ = mods;
+                    cu.state.pushEvent(.{ .key = .{
+                        .scancode = 0,
+                        .keycode = .unknown,
+                        .mod = .{
+                            .shift = mods.state.shift,
+                            .ctrl = mods.state.ctrl,
+                            .alt = mods.state.alt,
+                        },
+                        .state = .none,
+                    } });
+
+                    // _ = mods;
                     // log.debug(
                     //     "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}," ++
                     //         " gui: {}, serial: {d}",
@@ -690,7 +327,6 @@ fn run(gpa: Allocator) !void {
                 },
 
                 .text => |text| {
-                    _ = text;
                     // const utf8 = text.sliceZ();
                     // log.debug(
                     //     "text: codepoint: 0x{x}, text: '{s}'",
@@ -699,6 +335,10 @@ fn run(gpa: Allocator) !void {
                     //         std.fmt.fmtSliceEscapeLower(utf8),
                     //     },
                     // );
+
+                    cu.state.pushEvent(.{ .text = .{
+                        .text = text.slice(),
+                    } });
                 },
 
                 .pointer_focus => |focus| {
@@ -719,6 +359,13 @@ fn run(gpa: Allocator) !void {
                     //     "pointer_motion: {d}x{d}",
                     //     .{ motion.x, motion.y },
                     // );
+
+                    cu.state.pushEvent(.{ .mouse_move = .{
+                        .pos = .vec(
+                            @floatCast(motion.point.x),
+                            @floatCast(motion.point.y),
+                        ),
+                    } });
 
                     pointer_pos = motion.point;
 
@@ -748,6 +395,21 @@ fn run(gpa: Allocator) !void {
                     //     },
                     // );
 
+                    cu.state.pushEvent(.{ .mouse_button = .{
+                        .button = switch (button.button) {
+                            .left => .left,
+                            .middle => .middle,
+                            .right => .right,
+                            .forward => .forward,
+                            .back => .back,
+                        },
+                        .pos = cu.state.mouse,
+                        .state = if (button.state == .pressed)
+                            .pressed
+                        else
+                            .released,
+                    } });
+
                     if (button.state != .pressed) break :button;
 
                     if (button.button == .left) {
@@ -759,7 +421,7 @@ fn run(gpa: Allocator) !void {
                     }
                 },
                 .pointer_scroll => |scroll| {
-                    _ = scroll;
+                    // _ = scroll;
                     // log.debug(
                     //     "pointer_scroll: axis: {s}, source: {s}, value: {?d}",
                     //     .{
@@ -768,12 +430,28 @@ fn run(gpa: Allocator) !void {
                     //         scroll.value,
                     //     },
                     // );
+
+                    if (scroll.value) |value|
+                        cu.state.pushEvent(.{ .scroll = .{
+                            .scroll = if (scroll.axis == .vertical)
+                                .vec(@floatCast(value), 0)
+                            else
+                                .vec(0, @floatCast(value)),
+                            .pos = cu.state.mouse,
+                        } });
                 },
             }
         }
 
         if (do_render) {
-            renderer.render();
+            cu.startBuild(0);
+            cu.state.ui_root.layout_axis = .y;
+            cu.state.ui_root.flags.draw_background = true;
+            cu.state.ui_root.flags.draw_border = true;
+
+            cu.endBuild();
+
+            renderer.render(&render_pass_data);
             renderer.surface.present();
         }
     }

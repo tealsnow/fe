@@ -160,8 +160,7 @@ pub const Event = struct {
         }
 
         pub fn slice(text: Text) []const u8 {
-            const z = text.sliceZ();
-            z[0..z.len];
+            return text.sliceZ()[0..];
         }
     };
 

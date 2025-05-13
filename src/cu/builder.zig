@@ -83,12 +83,15 @@ pub fn endBuild() void {
 
     // remove stale atoms
     {
-        const trace = tracy.beginZone(@src(), .{ .name = "remove stale atoms" });
+        const trace =
+            tracy.beginZone(@src(), .{ .name = "remove stale atoms" });
         defer trace.end();
 
         var to_remove = std.ArrayList(Atom.Key)
-            // we would hope no more than a 1/4 of the total atoms are removed in a given frame
-            .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch @panic("oom");
+            // we would hope no more than a 1/4 of the total
+            // atoms are removed in a given frame
+            .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch
+            @panic("oom");
 
         for (cu.state.atom_map.values()) |atom| {
             if (atom.build_index_touched_last < cu.state.current_build_index) {
