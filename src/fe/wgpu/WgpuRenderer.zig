@@ -878,14 +878,14 @@ pub const CuCallbacks = struct {
             @panic("failed to shape text");
         defer shaped.deinit();
 
-        const size = shaped.calculateSize().floatFromInt(f32);
+        const size = shaped.calculateSize();
         return .axis(size.width, size.height);
     }
 
     fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
         const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
-        return @floatFromInt(font_face.lineHeight());
+        return font_face.lineHeight();
     }
 
     fn getGraphicsInfo(context: *anyopaque) cu.State.GraphicsInfo {

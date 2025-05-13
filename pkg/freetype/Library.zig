@@ -71,8 +71,8 @@ pub fn setLcdFilter(self: Library, lcd_filter: LcdFilter) !void {
     ));
 }
 
-pub fn setLcdGeometry(self: Library, sub: [3]Vector) void {
-    try intToError(c.FT_Library_SetLcdGeometry(self.handle, @ptrCast(&sub)));
+pub fn setLcdGeometry(self: Library, sub: [3]Vector) !void {
+    try intToError(c.FT_Library_SetLcdGeometry(self.handle, @constCast(@ptrCast(&sub))));
 }
 
 pub const Geometry = struct {

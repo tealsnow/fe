@@ -42,13 +42,13 @@ pub fn setSize(face: FontFace, pt: i32, dpi: u16) !void {
     try face.ft_face.setCharSize(0, pt * 2 * 64, dpi, dpi);
 }
 
-pub fn lineHeight(font_face: *const FontFace) i32 {
-    return @intCast(font_face.ft_face.size.metrics.height >> 6);
+pub fn lineHeight(face: *const FontFace) f32 {
+    return @as(f32, @floatFromInt(face.ft_face.size.metrics.height)) / 64;
 }
 
-pub fn topLeftToBaselineAdjustment(font_face: *const FontFace) i32 {
-    const line_height = font_face.lineHeight();
-    const descender: i32 =
-        @intCast(font_face.ft_face.size.metrics.descender >> 6);
+pub fn topLeftToBaselineAdjustment(face: *const FontFace) f32 {
+    const line_height = face.lineHeight();
+    const descender =
+        @as(f32, @floatFromInt(face.ft_face.size.metrics.descender)) / 64;
     return line_height + descender;
 }

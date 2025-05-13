@@ -1,18 +1,22 @@
 const FontAtlas = @This();
 
-// @TODO: auto grow
+// @PERF: simd might be usefull here
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
+const log = std.log.scoped(.FontAtlas);
+
 const mt = @import("../math.zig");
 const FontFace = @import("FontFace.zig");
 
+const ft = @import("freetype");
+
 //= fields
 
-bytes: []u32, // 4 bit rgba format
-size: mt.Size(u32),
+bytes: []u32 = &[_]u32{}, // 4 bit rgba format
+size: mt.Size(u32) = .zero,
 
 cursor: mt.Point(u32) = .all(0),
 max_y: u32 = 0,
@@ -34,7 +38,10 @@ pub const GlyphInfo = struct {
     /// top-left to bottom-right
     tex_coords: mt.Rect(u32),
     /// Per character pos data to be used in conjuction with shaping
+    /// in 26.6 fixed point
     bearing: mt.Point(i32),
+    /// physical size of glyph
+    /// in 26.6 fixed point
     size: mt.Size(i32),
 };
 
@@ -45,17 +52,8 @@ pub const TextureDataRef = struct {
 
 //= methods
 
-pub fn init(
-    gpa: Allocator,
-    size: mt.Size(u32),
-    face: *const FontFace,
-) !FontAtlas {
-    const bytes = try gpa.alloc(u32, size.width * size.height);
-    return .{
-        .bytes = bytes,
-        .size = size,
-        .face = face,
-    };
+pub fn init(face: *const FontFace) !FontAtlas {
+    return .{ .face = face };
 }
 
 pub fn deinit(atlas: *FontAtlas, gpa: Allocator) void {
@@ -72,28 +70,36 @@ pub fn getInfoOrCacheForGlyphIndex(
 
     const ft_face = atlas.face.ft_face;
 
-    try ft_face.loadGlyph(@intFromEnum(glyph_index), .{});
-    try ft_face.glyph.render(.lcd);
+    try ft_face.loadGlyph(
+        @intFromEnum(glyph_index),
+        ft.face.LoadFlag.render |
+            ft.face.LoadFlag.force_autohint |
+            ft.face.LoadFlag.target.lcd,
+    );
+    // try ft_face.glyph.render(.lcd);
     const glyph = ft_face.glyph;
     const bitmap = glyph.bitmap;
 
     assert(bitmap.pixel_mode == .lcd);
 
-    const rect = atlas.blit(
+    const rect = try atlas.blit(
+        gpa,
         .size(bitmap.width, bitmap.rows),
         bitmap.pitch,
         bitmap.buffer,
     );
 
+    // int casts here since I highly doubt that there will be > a i32 worth
+    // of bearing or size for a single glyph
     const info = GlyphInfo{
         .tex_coords = rect,
         .bearing = .pt(
-            @intCast(glyph.metrics.horiBearingX >> 6),
-            @intCast(glyph.metrics.horiBearingY >> 6),
+            @intCast(glyph.metrics.horiBearingX),
+            @intCast(glyph.metrics.horiBearingY),
         ),
         .size = .size(
-            @intCast(glyph.metrics.width >> 6),
-            @intCast(glyph.metrics.height >> 6),
+            @intCast(glyph.metrics.width),
+            @intCast(glyph.metrics.height),
         ),
     };
 
@@ -112,22 +118,52 @@ pub fn getGlyphIndexForCodepoint(
 
 pub fn blit(
     atlas: *FontAtlas,
+    gpa: Allocator,
     size: mt.Size(u32),
     pitch: i32, // row
     bitmap: [*]const u8,
-) mt.Rect(u32) {
-    if (atlas.cursor.x + size.width > atlas.size.width) {
+) !mt.Rect(u32) {
+    const padding = 2;
+    const padded_size = mt.Size(u32)
+        .size(size.width + padding * 2, size.height + padding * 2);
+
+    if (atlas.cursor.x + padded_size.width > atlas.size.width) {
         atlas.cursor = .{
             .x = 0,
             .y = atlas.max_y,
         };
     }
 
-    if (atlas.cursor.y + size.height > atlas.size.height) {
-        @panic("TODO: atlas overflow");
+    if (atlas.cursor.y + padded_size.height > atlas.size.height) {
+        if (std.meta.eql(atlas.size, .zero)) {
+            const new_size = mt.Size(u32).square(32 * 32 * 2);
+            const bytes = try gpa.alloc(u32, new_size.width * new_size.height);
+
+            atlas.bytes = bytes;
+            atlas.size = new_size;
+        } else {
+            const new_height = atlas.size.height + atlas.size.height / 2;
+            const new_size = mt.Size(u32).size(atlas.size.width, new_height);
+
+            const new_len = new_size.width * new_size.height;
+
+            if (gpa.resize(atlas.bytes, new_len)) {
+                atlas.size = new_size;
+            } else if (gpa.remap(atlas.bytes, new_len)) |bytes| {
+                atlas.bytes = bytes;
+                atlas.size = new_size;
+            } else {
+                const bytes = try gpa.realloc(atlas.bytes, new_len);
+
+                atlas.bytes = bytes;
+                atlas.size = new_size;
+            }
+        }
+
+        assert(atlas.cursor.y + size.height <= atlas.size.height);
     }
 
-    const rect = mt.Rect(u32).fromBounds(.bounds(atlas.cursor, size));
+    const rect = mt.Rect(u32).fromBounds(.bounds(atlas.cursor, padded_size));
 
     if (pitch < 0) {
         // @TODO: if row padding is negative the flow is up,
@@ -136,39 +172,46 @@ pub fn blit(
     }
     const pitch_u: usize = @intCast(pitch);
 
+    // const subpixel_width = size.width * 3;
+
+    for (0..padded_size.height) |y| {
+        for (0..padded_size.width) |x| {
+            const atlas_x = atlas.cursor.x + x;
+            const atlas_y = atlas.cursor.y + y;
+            const atlas_i = atlas_y * atlas.size.width + atlas_x;
+
+            // Set to transparent
+            atlas.bytes[atlas_i] = 0;
+        }
+    }
+
     for (0..size.height) |bitmap_y| {
         for (0..size.width) |bitmap_x| {
-            const atlas_x = atlas.cursor.x + bitmap_x;
-            const atlas_y = atlas.cursor.y + bitmap_y;
+            const atlas_x = atlas.cursor.x + bitmap_x + padding;
+            const atlas_y = atlas.cursor.y + bitmap_y + padding;
 
             const bitmap_i = bitmap_y * pitch_u + bitmap_x;
             const atlas_i = atlas_y * atlas.size.width + atlas_x;
 
-            const bitmap_pixel_rgb_u8: [3]u8 =
-                bitmap[bitmap_i..(bitmap_i + 3)][0..3].*;
-            const bitmap_pixel_rgb_u24: u24 =
-                @bitCast(bitmap_pixel_rgb_u8);
+            const r = bitmap[bitmap_i + 0];
+            const g = bitmap[bitmap_i + 1];
+            const b = bitmap[bitmap_i + 2];
 
-            const bitmap_pixel_rgba_u32: u32 =
-                @as(u32, bitmap_pixel_rgb_u24) << 8 | 0x000000ff;
-
-            atlas.bytes[atlas_i] = bitmap_pixel_rgba_u32;
-
-            // const r = bitmap[bitmap_i + 0];
+            // const b = bitmap[bitmap_i + 0];
             // const g = bitmap[bitmap_i + 1];
-            // const b = bitmap[bitmap_i + 2];
+            // const r = bitmap[bitmap_i + 2];
 
-            // var atlas_pixel: u32 = 0;
-            // atlas_pixel |= @as(u32, r) << 24;
-            // atlas_pixel |= @as(u32, g) << 16;
-            // atlas_pixel |= @as(u32, b) << 8;
-            // atlas_pixel |= @as(u32, 0xff) << 0;
+            const atlas_pixel: u32 =
+                @as(u32, r) << 24 |
+                @as(u32, g) << 16 |
+                @as(u32, b) << 8 |
+                0xff;
 
-            // atlas.bytes[atlas_i] = atlas_pixel;
+            atlas.bytes[atlas_i] = atlas_pixel;
         }
     }
-    atlas.cursor.x += size.width;
-    atlas.max_y = @max(atlas.max_y, atlas.cursor.y + size.height);
+    atlas.cursor.x += padded_size.width;
+    atlas.max_y = @max(atlas.max_y, atlas.cursor.y + padded_size.height);
 
     return rect;
 }

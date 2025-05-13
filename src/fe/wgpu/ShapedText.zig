@@ -1,8 +1,12 @@
 const ShapedText = @This();
 
+// @PERF: This file is ripe for simd optimizations
+
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+
+const log = std.log.scoped(.ShapedText);
 
 const FontAtlas = @import("FontAtlas.zig");
 const FontFace = @import("FontFace.zig");
@@ -63,14 +67,16 @@ pub fn deinit(text: ShapedText) void {
     hb.hb_buffer_destroy(text.buffer);
 }
 
-pub fn calculateSize(text: *const ShapedText) mt.Size(i32) {
-    var size = mt.Size(i32).zero;
+pub fn calculateSize(text: *const ShapedText) mt.Size(f32) {
+    var size = mt.Size(f32).zero;
 
     size.height = text.font_face.lineHeight();
 
     for (text.glyph_positions) |pos| {
-        const x_advance = pos.x_advance >> 6;
-        const y_advance = pos.y_advance >> 6;
+        // const x_advance = pos.x_advance >> 6;
+        // const y_advance = pos.y_advance >> 6;
+        const x_advance = @as(f32, @floatFromInt(pos.x_advance)) / 64;
+        const y_advance = @as(f32, @floatFromInt(pos.y_advance)) / 64;
 
         size.width += x_advance;
         size.height += y_advance; // not sure if this is correct
@@ -84,7 +90,7 @@ pub fn generateRectsArrayList(
     gpa: Allocator,
     font_atlas: *FontAtlas,
     list: *std.ArrayListUnmanaged(RectInstance),
-    origin: mt.Point(i32), // topleft
+    origin: mt.Point(f32), // topleft
     color: mt.RgbaF32,
 ) !void {
     var cursor = origin;
@@ -106,19 +112,27 @@ pub fn generateRectsArrayList(
         const bearing = atlas_info.bearing;
 
         const pos = text.glyph_positions[i];
-        const x_offset = pos.x_offset;
-        const y_offset = pos.y_offset;
-        const x_advance = pos.x_advance >> 6;
-        const y_advance = pos.y_advance >> 6;
 
-        const point = mt.Point(i32)
+        const x_offset = @as(f32, @floatFromInt(pos.x_offset)) / 64;
+        const y_offset = @as(f32, @floatFromInt(pos.y_offset)) / 64;
+
+        const x_advance = @as(f32, @floatFromInt(pos.x_advance)) / 64;
+        const y_advance = @as(f32, @floatFromInt(pos.y_advance)) / 64;
+
+        const x_bearing = @as(f32, @floatFromInt(bearing.x)) / 64;
+        const y_bearing = @as(f32, @floatFromInt(bearing.y)) / 64;
+
+        const point = mt.Point(f32)
             .pt(
-                cursor.x + x_offset + bearing.x,
-                cursor.y + y_offset + -bearing.y,
+                cursor.x + x_offset + x_bearing,
+                cursor.y + y_offset + -y_bearing,
             )
-            .floatFromInt(f32)
             .floor();
-        const size = atlas_info.size.floatFromInt(f32);
+
+        const size_fixed = atlas_info.size;
+        const width = @as(f32, @floatFromInt(size_fixed.width)) / 64;
+        const height = @as(f32, @floatFromInt(size_fixed.height)) / 64;
+        const size = mt.Size(f32).size(width, height);
 
         try list.append(
             gpa,

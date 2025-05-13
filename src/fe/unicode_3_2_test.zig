@@ -1,6 +1,4 @@
 pub const strings = [_][]const u8{
-    "Hello, World! - hgl dq - fi fl ff fj ffi ffl - WAV T. W. Lewis",
-
     // https://www.cogsci.ed.ac.uk/~richard/unicode-sample-3-2.html
     // Basic Latin
     "! \" # $ % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ? @ A B C D E F G H I J K L M N O P Q R S T U V W X Y Z [ \\ ] ^ _ ` a b c d e f g h i j k l m n o p q r s t u v w x y z { | } ~ ",
