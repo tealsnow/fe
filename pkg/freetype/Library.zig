@@ -7,6 +7,8 @@ const errors = @import("errors.zig");
 const Error = errors.Error;
 const intToError = errors.intToError;
 
+const Pos = c.FT_Pos;
+
 handle: c.FT_Library,
 
 /// Initialize a new FreeType library object. The set of modules that are
@@ -68,6 +70,29 @@ pub fn setLcdFilter(self: Library, lcd_filter: LcdFilter) !void {
         @intFromEnum(lcd_filter),
     ));
 }
+
+pub fn setLcdGeometry(self: Library, sub: [3]Vector) void {
+    try intToError(c.FT_Library_SetLcdGeometry(self.handle, @ptrCast(&sub)));
+}
+
+pub const Geometry = struct {
+    pub const rgb = [3]Vector{
+        .{ .x = -21, .y = 0 },
+        .{ .x = 0, .y = 0 },
+        .{ .x = 21, .y = 0 },
+    };
+
+    pub const bgr = [3]Vector{
+        .{ .x = 21, .y = 0 },
+        .{ .x = 0, .y = 0 },
+        .{ .x = -21, .y = 0 },
+    };
+};
+
+pub const Vector = extern struct {
+    x: Pos,
+    y: Pos,
+};
 
 pub const LcdFilter = enum(c.enum_FT_LcdFilter_) {
     none = c.FT_LCD_FILTER_NONE,

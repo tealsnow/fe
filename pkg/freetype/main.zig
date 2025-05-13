@@ -1,7 +1,7 @@
-const computations = @import("computations.zig");
-const errors = @import("errors.zig");
-const face = @import("face.zig");
-const tag = @import("tag.zig");
+pub const computations = @import("computations.zig");
+pub const errors = @import("errors.zig");
+pub const face = @import("face.zig");
+pub const tag = @import("tag.zig");
 
 pub const c = @import("c.zig").c;
 pub const testing = @import("test.zig");

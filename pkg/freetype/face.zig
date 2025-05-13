@@ -389,46 +389,81 @@ pub const RenderMode = enum(c_uint) {
     sdf = c.FT_RENDER_MODE_SDF,
 };
 
-/// A list of bit field constants for FT_Load_Glyph to indicate what kind of
-/// operations to perform during glyph loading.
-pub const LoadFlags = packed struct(i32) {
-    no_scale: bool = false,
-    no_hinting: bool = false,
-    render: bool = false,
-    no_bitmap: bool = false,
-    vertical_layout: bool = false,
-    force_autohint: bool = false,
-    crop_bitmap: bool = false,
-    pedantic: bool = false,
-    ignore_global_advance_with: bool = false,
-    no_recurse: bool = false,
-    ignore_transform: bool = false,
-    monochrome: bool = false,
-    linear_design: bool = false,
-    no_autohint: bool = false,
-    _padding1: u1 = 0,
-    target_normal: bool = false,
-    target_light: bool = false,
-    target_mono: bool = false,
-    target_lcd: bool = false,
-    target_lcd_v: bool = false,
-    color: bool = false,
-    compute_metrics: bool = false,
-    bitmap_metrics_only: bool = false,
-    _padding2: u1 = 0,
-    no_svg: bool = false,
-    _padding3: u7 = 0,
+pub const LoadFlags = i32;
 
-    test "bitcast" {
-        const testing = std.testing;
-        const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC | c.FT_LOAD_COLOR;
-        const flags = @as(LoadFlags, @bitCast(cval));
-        try testing.expect(!flags.no_hinting);
-        try testing.expect(flags.render);
-        try testing.expect(flags.pedantic);
-        try testing.expect(flags.color);
-    }
+pub const LoadFlag = struct {
+    pub const default = c.FT_LOAD_DEFAULT;
+    pub const no_scale = c.FT_LOAD_NO_SCALE;
+    pub const no_hinting = c.FT_LOAD_NO_HINTING;
+    pub const render = c.FT_LOAD_RENDER;
+    pub const no_bitmap = c.FT_LOAD_NO_BITMAP;
+    pub const vertical_layout = c.FT_LOAD_VERTICAL_LAYOUT;
+    pub const force_autohint = c.FT_LOAD_FORCE_AUTOHINT;
+    pub const crop_bitmap = c.FT_LOAD_CROP_BITMAP;
+    pub const pedantic = c.FT_LOAD_PEDANTIC;
+    pub const ignore_global_advance_width = c.FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
+    pub const no_recurse = c.FT_LOAD_NO_RECURSE;
+    pub const ignore_transform = c.FT_LOAD_IGNORE_TRANSFORM;
+    pub const monochrome = c.FT_LOAD_MONOCHROME;
+    pub const linear_design = c.FT_LOAD_LINEAR_DESIGN;
+    pub const sbits_only = c.FT_LOAD_SBITS_ONLY;
+    pub const no_autohint = c.FT_LOAD_NO_AUTOHINT;
+    pub const color = c.FT_LOAD_COLOR;
+    pub const compute_metrics = c.FT_LOAD_COMPUTE_METRICS;
+    pub const bitmap_metrics_only = c.FT_LOAD_BITMAP_METRICS_ONLY;
+    pub const no_svg = c.FT_LOAD_NO_SVG;
+    pub const advance_only = c.FT_LOAD_ADVANCE_ONLY;
+    pub const svg_only = c.FT_LOAD_SVG_ONLY;
+
+    pub const target = struct {
+        pub const normal = c.FT_LOAD_TARGET_NORMAL;
+        pub const light = c.FT_LOAD_TARGET_LIGHT;
+        pub const mono = c.FT_LOAD_TARGET_MONO;
+        pub const lcd = c.FT_LOAD_TARGET_LCD;
+        pub const lcd_v = c.FT_LOAD_TARGET_LCD_V;
+    };
 };
+
+// /// A list of bit field constants for FT_Load_Glyph to indicate what kind of
+// /// operations to perform during glyph loading.
+// pub const LoadFlags = packed struct(i32) {
+//     no_scale: bool = false,
+//     no_hinting: bool = false,
+//     render: bool = false,
+//     no_bitmap: bool = false,
+//     vertical_layout: bool = false,
+//     force_autohint: bool = false,
+//     crop_bitmap: bool = false,
+//     pedantic: bool = false,
+//     _padding1: u1 = 0,
+//     ignore_global_advance_with: bool = false,
+//     no_recurse: bool = false,
+//     ignore_transform: bool = false,
+//     monochrome: bool = false,
+//     linear_design: bool = false,
+//     no_autohint: bool = false,
+//     target_normal: bool = false,
+//     target_light: bool = false,
+//     target_mono: bool = false,
+//     target_lcd: bool = false,
+//     target_lcd_v: bool = false,
+//     color: bool = false,
+//     compute_metrics: bool = false,
+//     bitmap_metrics_only: bool = false,
+//     _padding2: u1 = 0,
+//     no_svg: bool = false,
+//     _padding3: u7 = 0,
+
+//     test "bitcast" {
+//         const testing = std.testing;
+//         const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC | c.FT_LOAD_COLOR;
+//         const flags = @as(LoadFlags, @bitCast(cval));
+//         try testing.expect(!flags.no_hinting);
+//         try testing.expect(flags.render);
+//         try testing.expect(flags.pedantic);
+//         try testing.expect(flags.color);
+//     }
+// };
 
 test "loading memory font" {
     const testing = std.testing;
