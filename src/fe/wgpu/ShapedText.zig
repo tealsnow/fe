@@ -129,10 +129,12 @@ pub fn generateRectsArrayList(
             )
             .floor();
 
-        const size_fixed = atlas_info.size;
-        const width = @as(f32, @floatFromInt(size_fixed.width)) / 64;
-        const height = @as(f32, @floatFromInt(size_fixed.height)) / 64;
-        const size = mt.Size(f32).size(width, height);
+        // const size_fixed = atlas_info.size;
+        // const width = @as(f32, @floatFromInt(size_fixed.width)) / 64;
+        // const height = @as(f32, @floatFromInt(size_fixed.height)) / 64;
+        // const size = mt.Size(f32).size(width, height);
+
+        const size = tex_coords.size();
 
         try list.append(
             gpa,

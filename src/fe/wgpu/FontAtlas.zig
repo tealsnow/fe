@@ -15,7 +15,7 @@ const ft = @import("freetype");
 
 //= fields
 
-bytes: []u32 = &[_]u32{}, // 4 bit rgba format
+bytes: []u8 = &[_]u8{}, // 1 bit format
 size: mt.Size(u32) = .zero,
 
 cursor: mt.Point(u32) = .all(0),
@@ -46,7 +46,7 @@ pub const GlyphInfo = struct {
 };
 
 pub const TextureDataRef = struct {
-    bytes: [*]u32,
+    bytes: [*]u8,
     size: mt.Size(u32),
 };
 
@@ -70,23 +70,19 @@ pub fn getInfoOrCacheForGlyphIndex(
 
     const ft_face = atlas.face.ft_face;
 
-    try ft_face.loadGlyph(
-        @intFromEnum(glyph_index),
-        ft.face.LoadFlag.render |
-            ft.face.LoadFlag.force_autohint |
-            ft.face.LoadFlag.target.lcd,
-    );
-    // try ft_face.glyph.render(.lcd);
+    try ft_face.loadGlyph(@intFromEnum(glyph_index), 0);
+    try ft_face.glyph.render(.sdf);
     const glyph = ft_face.glyph;
     const bitmap = glyph.bitmap;
 
-    assert(bitmap.pixel_mode == .lcd);
+    assert(bitmap.pixel_mode == .gray);
 
     const rect = try atlas.blit(
         gpa,
         .size(bitmap.width, bitmap.rows),
         bitmap.pitch,
         bitmap.buffer,
+        2,
     );
 
     // int casts here since I highly doubt that there will be > a i32 worth
@@ -122,8 +118,8 @@ pub fn blit(
     size: mt.Size(u32),
     pitch: i32, // row
     bitmap: [*]const u8,
+    padding: u32,
 ) !mt.Rect(u32) {
-    const padding = 2;
     const padded_size = mt.Size(u32)
         .size(size.width + padding * 2, size.height + padding * 2);
 
@@ -137,7 +133,7 @@ pub fn blit(
     if (atlas.cursor.y + padded_size.height > atlas.size.height) {
         if (std.meta.eql(atlas.size, .zero)) {
             const new_size = mt.Size(u32).square(32 * 32 * 2);
-            const bytes = try gpa.alloc(u32, new_size.width * new_size.height);
+            const bytes = try gpa.alloc(u8, new_size.width * new_size.height);
 
             atlas.bytes = bytes;
             atlas.size = new_size;
@@ -193,21 +189,7 @@ pub fn blit(
             const bitmap_i = bitmap_y * pitch_u + bitmap_x;
             const atlas_i = atlas_y * atlas.size.width + atlas_x;
 
-            const r = bitmap[bitmap_i + 0];
-            const g = bitmap[bitmap_i + 1];
-            const b = bitmap[bitmap_i + 2];
-
-            // const b = bitmap[bitmap_i + 0];
-            // const g = bitmap[bitmap_i + 1];
-            // const r = bitmap[bitmap_i + 2];
-
-            const atlas_pixel: u32 =
-                @as(u32, r) << 24 |
-                @as(u32, g) << 16 |
-                @as(u32, b) << 8 |
-                0xff;
-
-            atlas.bytes[atlas_i] = atlas_pixel;
+            atlas.bytes[atlas_i] = bitmap[bitmap_i];
         }
     }
     atlas.cursor.x += padded_size.width;
@@ -243,7 +225,7 @@ pub fn writeToBmp(
     try w.writeInt(i32, @intCast(width), .little); // width
     try w.writeInt(i32, -@as(i32, @intCast(height)), .little); // height
     try w.writeInt(u16, 1, .little); // num color planes
-    try w.writeInt(u16, 32, .little); // bits per pixel
+    try w.writeInt(u16, 8, .little); // bits per pixel
     try w.writeInt(u32, 0, .little); // compression method - none
     try w.writeInt(u32, width * height, .little); // size of pixel array
     try w.writeInt(i32, @intCast(width), .little); // horiz res px/m

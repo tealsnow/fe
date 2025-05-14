@@ -87,13 +87,13 @@ fn run(gpa: Allocator) !void {
 
     var font_face = try FontFace.fromPath(ft_lib, def_font_path);
     defer font_face.deinit();
-    try font_face.setSize(15, 96);
+    try font_face.setSize(12, 96);
 
     var font_atlas = try FontAtlas.init(&font_face);
     defer font_atlas.deinit(gpa);
 
     // create a small white square at 0,0 for texture-less rects
-    _ = try font_atlas.blit(gpa, .square(2), 0, &(.{255} ** (3 * 2 * 2)));
+    _ = try font_atlas.blit(gpa, .square(2), 0, &(.{255} ** (3 * 2 * 2)), 0);
 
     // pre-cache all basic ascii chars
     // 0, 32..128
@@ -110,19 +110,18 @@ fn run(gpa: Allocator) !void {
     // const strings = @import("unicode_3_2_test.zig").strings;
     const strings = [_][]const u8{
         "Hello, World! - hgl dq - fi fl ff fj ffi ffl - WAV T. W. Lewis",
-        // "Hello, World!",
-        // "this is in red",
-        // "this is in green",
-        // "this is in blue",
-        // "this is half transparent",
+        "this is in red",
+        "this is in green",
+        "this is in blue",
+        "this is half transparent",
     };
-    // const colors = [_]mt.RgbaF32{
-    //     .hexRgb(0xffffff),
-    //     .hexRgb(0xff0000),
-    //     .hexRgb(0x00ff00),
-    //     .hexRgb(0x0000ff),
-    //     .hexRgba(0xffffff7f),
-    // };
+    const colors = [_]mt.RgbaF32{
+        .hexRgb(0xffffff),
+        .hexRgb(0xff0000),
+        .hexRgb(0x00ff00),
+        .hexRgb(0x0000ff),
+        .hexRgba(0xffffff7f),
+    };
 
     var list = std.ArrayListUnmanaged(WgpuRenderer.RectInstance).empty;
     defer list.deinit(gpa);
@@ -133,7 +132,7 @@ fn run(gpa: Allocator) !void {
         var pos = origin;
         pos.y += line_height * @as(f32, @floatFromInt(i));
 
-        // const color = colors[i];
+        const color = colors[i];
 
         const shaped = try ShapedText.init(&font_face, string);
         defer shaped.deinit();
@@ -143,12 +142,12 @@ fn run(gpa: Allocator) !void {
             &font_atlas,
             &list,
             pos,
-            // color,
-            .hexRgb(0xffffff),
+            color,
+            // .hexRgb(0xffffff),
         );
     }
 
-    try font_atlas.writeToBmp("atlas.bmp");
+    // try font_atlas.writeToBmp("atlas.bmp");
 
     try list.append(
         gpa,

@@ -951,7 +951,7 @@ pub const RenderPassData = struct {
                 wgpu.TextureUsage.copy_dst,
             .dimension = .@"2d",
             .size = atlas_texture_size,
-            .format = .rgba8_unorm,
+            .format = .r8_unorm,
         };
         const atlas_texture =
             device.createTexture(&atlas_texture_desc) orelse {
@@ -967,8 +967,8 @@ pub const RenderPassData = struct {
         };
         const atlas_texture_sampler = device.createSampler(&.{
             .label = "atlas texture sampler",
-            .mag_filter = .nearest,
-            .min_filter = .nearest,
+            .mag_filter = .linear,
+            .min_filter = .linear,
         }) orelse {
             log.err("failed to create atlas texture sampler", .{});
             return error.wgpu;
@@ -982,11 +982,10 @@ pub const RenderPassData = struct {
             },
             font_atlas_texture.bytes,
             font_atlas_texture.size.width *
-                font_atlas_texture.size.height *
-                4,
+                font_atlas_texture.size.height,
             &.{
                 .offset = 0,
-                .bytes_per_row = font_atlas_texture.size.width * 4,
+                .bytes_per_row = font_atlas_texture.size.width,
                 .rows_per_image = font_atlas_texture.size.height,
             },
             &atlas_texture_size,

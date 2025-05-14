@@ -100,6 +100,8 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
 
 @fragment
 fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
+    //- rounding / drop shadows
+
     // we need to shrink the rectangle's half-size
     // that is used for distance calculations with
     // the edge softness - otherwise the underlying
@@ -121,7 +123,7 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     // map distance => a blend color
     let sdf_factor = 1f - smoothstep(0f, 2f * softness, dist);
 
-    //- border thickness
+    //- hollow rects / border thickness
     var border_factor = 1f;
     if (in.border_thickness != 0f) {
         let interior_half_size =
@@ -155,7 +157,13 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
         border_factor = inside_f;
     }
 
-    let sample = textureSample(atlas_texture, atlas_sampler, in.uv);
+    //- color / texture
+
+    let font_sample = textureSample(atlas_texture, atlas_sampler, in.uv);
+    let font_c = font_sample.r;
+
+    let smoothing = 1f / 16f;
+    let font_alpha = smoothstep(0.5 - smoothing, 0.5 + smoothing, font_c);
 
     let in_rgb = in.color.rgb;
     let in_a = in.color.a;
@@ -164,8 +172,8 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     // this is an approximation
     let linear_in_rgb = pow(in_rgb, vec3f(2.2));
 
-    let out_rgb = linear_in_rgb * sample.rgb;
-    let out_a = in_a * sample.a;
+    let out_rgb = linear_in_rgb;
+    let out_a = in_a * font_alpha;
 
     let out_color = vec4f(out_rgb, out_a) * sdf_factor * border_factor;
     return out_color;
