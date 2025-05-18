@@ -3,8 +3,8 @@ const c = @cImport({
 });
 
 const sdl = @import("sdl3.zig");
-const Color = sdl.Color;
-const Surface = sdl.Surface;
+const Color = sdl.pixels.Color;
+const Surface = sdl.surface.Surface;
 
 pub const Error = error{sdl_ttf};
 

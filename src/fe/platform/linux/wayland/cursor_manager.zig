@@ -1,12 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.@"wl[CursorManager]");
+const log = std.log.scoped(.@"wayland.CursorManager");
 
 const wl = @import("wayland").client.wl;
 const wp = @import("wayland").client.wp;
-
-const Point = @import("../../../math.zig").Point;
-const Size = @import("../../../math.zig").Size;
 
 const Event = @import("events.zig").Event;
 
@@ -49,7 +46,7 @@ pub const CursorManager = union(enum) {
     pub fn deinit(manager: CursorManager) void {
         switch (manager) {
             .pointer => |pointer| pointer.deinit(),
-            .cursor_shape => {},
+            .cursor_shape => |cursor_shape| cursor_shape.deinit(),
         }
     }
 
@@ -212,6 +209,10 @@ pub const CursorManager = union(enum) {
 
     const CursorShapeManager = struct {
         wp_cursor_shape_device: *wp.CursorShapeDeviceV1,
+
+        pub fn deinit(manager: CursorShapeManager) void {
+            manager.wp_cursor_shape_device.destroy();
+        }
 
         pub fn setCursor(
             manager: CursorShapeManager,

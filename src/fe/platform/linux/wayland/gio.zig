@@ -4,8 +4,6 @@ pub const c = @cImport({
     @cInclude("gio/gio.h");
 });
 
-pub usingnamespace c;
-
 pub const Error = extern struct {
     domain: u32,
     code: i32,

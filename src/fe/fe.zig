@@ -52,6 +52,9 @@ const logFn = @import("logFn.zig");
 pub const std_options = std.Options{
     .logFn = logFn.logFn,
     .log_level = @enumFromInt(@intFromEnum(build_options.log_level)),
+    .log_scope_levels = &.{
+        .{ .scope = .@"wayland.listeners", .level = .warn },
+    },
 };
 
 var debug_allocator = std.heap.DebugAllocator(.{

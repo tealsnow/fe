@@ -2,7 +2,7 @@ const Connection = @This();
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.@"wl[connection]");
+const log = std.log.scoped(.@"wayland.connection");
 
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
@@ -15,6 +15,7 @@ const events = @import("events.zig");
 const xdp = @import("xdg_desktop_portal.zig");
 
 const CursorManager = @import("cursor_manager.zig").CursorManager;
+const CursorKind = @import("cursor_manager.zig").CursorKind;
 
 //- fields
 
@@ -44,6 +45,9 @@ xdg_wm_base: *xdg.WmBase,
 
 hdpi: f32,
 vdpi: f32,
+
+last_pointer_button_serial: u32 = 0,
+last_pointer_focus_enter_serial: u32 = 0,
 
 //- methods
 
@@ -286,11 +290,34 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
     defer conn.xdg_wm_base.destroy();
 }
 
-pub fn dispatch(conn: Connection) !void {
+pub fn dispatch(conn: *Connection) !void {
     if (conn.wl_display.dispatch() != .SUCCESS) {
         log.err("wl_display.dispatch() failed", .{});
         return error.wl;
     }
+
+    var i: usize = 0;
+    while (conn.event_queue.indexBack(i)) |event| : (i += 1) {
+        switch (event.kind) {
+            .pointer_button => |button| {
+                conn.last_pointer_button_serial = button.serial;
+            },
+            .pointer_focus => |focus| {
+                switch (focus.state) {
+                    .enter => //
+                    conn.last_pointer_focus_enter_serial = focus.serial,
+
+                    else => {},
+                }
+            },
+            else => {},
+        }
+    }
+}
+
+pub fn setCursor(conn: Connection, kind: CursorKind) !void {
+    return conn.cursor_manager
+        .setCursor(conn.last_pointer_focus_enter_serial, kind);
 }
 
 pub const GetEnvVarOwnedError = error{

@@ -9,36 +9,28 @@ pub const Error = error{sdl};
 
 //- Basics
 // main
-const init = @import("init.zig");
-pub usingnamespace init;
+pub const init = @import("init.zig");
 // hints
 // properies
-const err = @import("err.zig");
-pub usingnamespace err;
+pub const err = @import("err.zig");
 // log
 // assert
 // version
 
 //- Video
-const video = @import("video.zig");
-pub usingnamespace video;
-const render = @import("render.zig");
-pub usingnamespace render;
-const pixels = @import("pixels.zig");
-pub usingnamespace pixels;
+pub const video = @import("video.zig");
+pub const render = @import("render.zig");
+pub const pixels = @import("pixels.zig");
 // blendmode
-const rect = @import("rect.zig");
-pub usingnamespace rect;
-const surface = @import("surface.zig");
-pub usingnamespace surface;
+pub const rect = @import("rect.zig");
+pub const surface = @import("surface.zig");
 // clipboard
 // vulkan
 // metal
 // camera
 
 //- Input Events
-const event = @import("event.zig");
-pub usingnamespace event;
+pub const event = @import("event.zig");
 // keyboard
 // mouse
 // joystick
@@ -88,8 +80,7 @@ pub usingnamespace event;
 // tray
 // locale
 // system
-const stdinc = @import("stdinc.zig");
-pub usingnamespace stdinc;
+pub const stdinc = @import("stdinc.zig");
 // guid
 // misc
 

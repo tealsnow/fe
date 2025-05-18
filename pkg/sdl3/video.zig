@@ -3,7 +3,7 @@ const c = @cImport({
 });
 const sdl = @import("sdl3.zig");
 const Error = sdl.Error;
-const Point = sdl.Point;
+const Point = sdl.rect.Point;
 
 pub const WindowID = enum(u32) { _ };
 

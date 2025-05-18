@@ -2,7 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const c = @import("c.zig").c;
 const errors = @import("errors.zig");
-const Library = @import("Library.zig");
+const Library = @import("library.zig").Library;
 const Tag = @import("tag.zig").Tag;
 const Error = errors.Error;
 const intToError = errors.intToError;
@@ -423,47 +423,6 @@ pub const LoadFlag = struct {
         pub const lcd_v = c.FT_LOAD_TARGET_LCD_V;
     };
 };
-
-// /// A list of bit field constants for FT_Load_Glyph to indicate what kind of
-// /// operations to perform during glyph loading.
-// pub const LoadFlags = packed struct(i32) {
-//     no_scale: bool = false,
-//     no_hinting: bool = false,
-//     render: bool = false,
-//     no_bitmap: bool = false,
-//     vertical_layout: bool = false,
-//     force_autohint: bool = false,
-//     crop_bitmap: bool = false,
-//     pedantic: bool = false,
-//     _padding1: u1 = 0,
-//     ignore_global_advance_with: bool = false,
-//     no_recurse: bool = false,
-//     ignore_transform: bool = false,
-//     monochrome: bool = false,
-//     linear_design: bool = false,
-//     no_autohint: bool = false,
-//     target_normal: bool = false,
-//     target_light: bool = false,
-//     target_mono: bool = false,
-//     target_lcd: bool = false,
-//     target_lcd_v: bool = false,
-//     color: bool = false,
-//     compute_metrics: bool = false,
-//     bitmap_metrics_only: bool = false,
-//     _padding2: u1 = 0,
-//     no_svg: bool = false,
-//     _padding3: u7 = 0,
-
-//     test "bitcast" {
-//         const testing = std.testing;
-//         const cval: i32 = c.FT_LOAD_RENDER | c.FT_LOAD_PEDANTIC | c.FT_LOAD_COLOR;
-//         const flags = @as(LoadFlags, @bitCast(cval));
-//         try testing.expect(!flags.no_hinting);
-//         try testing.expect(flags.render);
-//         try testing.expect(flags.pedantic);
-//         try testing.expect(flags.color);
-//     }
-// };
 
 test "loading memory font" {
     const testing = std.testing;

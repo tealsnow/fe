@@ -1,7 +1,9 @@
 const c = @cImport({
     @cInclude("SDL3/SDL_surface.h");
 });
-const PixelFormat = @import("sdl3.zig").PixelFormat;
+
+const sdl = @import("sdl3.zig");
+const PixelFormat = sdl.pixels.PixelFormat;
 
 pub const SurfaceFlag = struct {
     pub const preallocated = c.SDL_SURFACE_PREALLOCATED;

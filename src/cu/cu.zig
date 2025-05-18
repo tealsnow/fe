@@ -7,27 +7,24 @@
 
 const builtin = @import("builtin");
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
 
 pub const Atom = @import("Atom.zig");
 pub const AtomFlags = Atom.Flags;
-pub const Color = @import("color.zig").Color;
 pub const layout = @import("layout.zig").layout;
-
-const math = @import("math.zig");
-pub usingnamespace math;
-const builder = @import("builder.zig");
-pub usingnamespace builder;
-const input = @import("input.zig");
-pub usingnamespace input;
-const scope_locals = @import("scope_locals.zig");
-pub usingnamespace scope_locals;
-
 pub const State = @import("State.zig");
+pub const FontId = State.FontId;
+pub const math = @import("math.zig");
+pub const builder = @import("builder.zig");
+pub const input = @import("input.zig");
+pub const Interaction = input.Interaction;
+pub const circle_buffers = @import("circle_buffers.zig");
+
+// const scope_locals = @import("scope_locals.zig");
+
 pub var state: *State = undefined;
 
+// @TODO: remove in favor of `if (builtin.mode == .Debug) {}`
 pub fn debugAssert(ok: bool, comptime fmt: []const u8, args: anytype) void {
     if (builtin.mode == .Debug) {
         if (!ok) {

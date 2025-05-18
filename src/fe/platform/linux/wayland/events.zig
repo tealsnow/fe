@@ -4,48 +4,13 @@ const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
 const xkb = @import("xkbcommon");
 
-const Size = @import("../../../math.zig").Size;
-const Point = @import("../../../math.zig").Point;
-
-/// Will be faster (if only marginal) with a power of 2 Size
-///
-/// This has no checking for overwriting
-pub fn CircleBufferQueue(comptime size: usize, comptime T: type) type {
-    return struct {
-        buffer: [size]T,
-        head: usize,
-        tail: usize,
-
-        const Queue = @This();
-
-        pub const empty = Queue{
-            .buffer = undefined,
-            .head = 0,
-            .tail = 0,
-        };
-
-        pub fn queue(self: *Queue, item: T) void {
-            self.buffer[self.head] = item;
-            self.head = (self.head + 1) % size;
-        }
-
-        pub fn dequeue(self: *Queue) ?T {
-            if (self.tail == self.head) return null;
-
-            const item = self.buffer[self.tail];
-            self.tail = (self.tail + 1) % size;
-            return item;
-        }
-
-        pub fn count(self: *Queue) usize {
-            return (self.head -% self.tail +% size) % size;
-        }
-    };
-}
+const mt = @import("cu").math;
+const EventQueueCircleBuffer =
+    @import("cu").circle_buffers.EventQueueCircleBuffer;
 
 // set to 8 max as a conservative measure, I have not seen more than 3 in my
 // testing, but different compositors could act different
-pub const EventQueue = CircleBufferQueue(8, Event);
+pub const EventQueue = EventQueueCircleBuffer(8, Event);
 
 pub const Event = struct {
     kind: Kind,
@@ -96,7 +61,7 @@ pub const Event = struct {
     };
 
     pub const ToplevelConfigure = struct {
-        size: ?Size(u32),
+        size: ?mt.Size(u32),
         state: ToplevelConfigureState,
     };
 
@@ -114,10 +79,10 @@ pub const Event = struct {
         pub fn isTiled(state: ToplevelConfigureState) bool {
             return state.maximized or
                 state.fullscreen or
-                (state.tiled_left and
-                    state.tiled_right and
-                    state.tiled_top and
-                    state.tiled_bottom);
+                state.tiled_left or
+                state.tiled_right or
+                state.tiled_top or
+                state.tiled_bottom;
         }
     };
 
@@ -180,7 +145,7 @@ pub const Event = struct {
     };
 
     pub const PointerMotion = struct {
-        point: Point(f64),
+        point: mt.Point(f64),
     };
 
     pub const PointerButton = struct {

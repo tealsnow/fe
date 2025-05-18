@@ -42,12 +42,14 @@ pub const XdpSettings = struct {
 
     pub fn getCursorTheme(xdp: XdpSettings, gpa: Allocator) ![:0]u8 {
         var gio_err: ?*gio.Error = null;
+        const args = gio.Variant.new("(ss)", .{
+            "org.gnome.desktop.interface",
+            "cursor-theme",
+        });
+        // defer args.unref();
         const read_cursor_theme = xdp.proxy.callSync(
             "Read",
-            gio.Variant.new("(ss)", .{
-                "org.gnome.desktop.interface",
-                "cursor-theme",
-            }),
+            args,
             @enumFromInt(gio.DBusCallFlags.none),
             -1,
             null,
@@ -77,12 +79,14 @@ pub const XdpSettings = struct {
 
     pub fn getCursorSize(xdp: XdpSettings) !i32 {
         var gio_err: ?*gio.Error = null;
+        const args = gio.Variant.new("(ss)", .{
+            "org.gnome.desktop.interface",
+            "cursor-size",
+        });
+        // defer args.unref();
         const read_cursor_size = xdp.proxy.callSync(
             "Read",
-            gio.Variant.new("(ss)", .{
-                "org.gnome.desktop.interface",
-                "cursor-size",
-            }),
+            args,
             @enumFromInt(gio.DBusCallFlags.none),
             -1,
             null,

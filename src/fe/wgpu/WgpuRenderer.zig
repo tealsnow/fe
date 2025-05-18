@@ -12,12 +12,11 @@ const ft = @import("freetype");
 const pretty = @import("pretty");
 
 const cu = @import("cu");
-
-const mt = @import("../math.zig");
+const mt = cu.math;
 
 pub const FontAtlas = @import("FontAtlas.zig");
-pub const ShapedText = @import("ShapedText.zig");
 pub const FontFace = @import("FontFace.zig");
+pub const TextShaper = @import("TextShaper.zig");
 
 const shader_code = @embedFile("rect.wgsl");
 
@@ -28,6 +27,7 @@ surface_format: wgpu.TextureFormat,
 device: *wgpu.Device,
 queue: *wgpu.Queue,
 
+shader_module: *wgpu.ShaderModule,
 pipeline_layout: *wgpu.PipelineLayout,
 pipeline: *wgpu.RenderPipeline,
 
@@ -39,6 +39,9 @@ uniform_bind_group: *wgpu.BindGroup,
 
 texture_bind_group_layout: *wgpu.BindGroupLayout,
 
+font_atlas_manager: *FontAtlasManager,
+batch_processor: *BatchProcessor,
+
 //= methods
 
 pub const InspectOptions = struct {
@@ -48,20 +51,24 @@ pub const InspectOptions = struct {
     surface: bool = false,
 };
 
-pub fn init(
+pub const InitParams = struct {
     surface_descriptor: wgpu.SurfaceDescriptor,
     initial_surface_size: mt.Size(u32),
     inspect: InspectOptions,
-) !Renderer {
-    const adapter, const surface =
-        try createAdapaterAndSurface(surface_descriptor, inspect.instance);
+};
+
+pub fn init(gpa: Allocator, params: InitParams) !Renderer {
+    const adapter, const surface = try createAdapaterAndSurface(
+        params.surface_descriptor,
+        params.inspect.instance,
+    );
     defer {
         log.debug("releasing adapter", .{});
         adapter.release();
     }
 
     //- inspect adapter
-    if (inspect.adapter) |alloc| {
+    if (params.inspect.adapter) |alloc| {
         log.debug("inspecting adapter", .{});
         try inspectAdapter(alloc, adapter);
     }
@@ -83,7 +90,7 @@ pub fn init(
     };
 
     //- inspect device
-    if (inspect.device) |alloc| {
+    if (params.inspect.device) |alloc| {
         log.debug("inspecting device", .{});
         try inspectDevice(alloc, device);
     }
@@ -103,7 +110,7 @@ pub fn init(
     surface.getCapabilities(adapter, &surface_caps);
     assert(surface_caps.format_count >= 1);
 
-    if (inspect.surface) {
+    if (params.inspect.surface) {
         inspectSurface(surface_caps);
     }
 
@@ -111,7 +118,7 @@ pub fn init(
     log.info("using surface format: {s}", .{@tagName(surface_format)});
 
     configureSurfaceBare(
-        initial_surface_size,
+        params.initial_surface_size,
         device,
         surface,
         surface_format,
@@ -119,6 +126,7 @@ pub fn init(
 
     //- pipeline
 
+    const shader_module, //
     const uniform_bind_group_layout, //
     const texture_bind_group_layout, //
     const pipeline_layout, //
@@ -128,7 +136,7 @@ pub fn init(
     //- uniform
 
     const uniform = UniformData{
-        .surface_size_px = initial_surface_size.floatFromInt(f32),
+        .surface_size_px = params.initial_surface_size.floatFromInt(f32),
     };
 
     const uniform_buffer = device.createBuffer(&.{
@@ -168,12 +176,19 @@ pub fn init(
 
     //- return
 
+    const font_atlas_manager = try gpa.create(FontAtlasManager);
+    font_atlas_manager.* = try .init();
+
+    const batch_processor = try gpa.create(BatchProcessor);
+    batch_processor.* = try .init(font_atlas_manager);
+
     return .{
         .surface = surface,
         .surface_format = surface_format,
         .device = device,
         .queue = queue,
 
+        .shader_module = shader_module,
         .pipeline_layout = pipeline_layout,
         .pipeline = pipeline,
 
@@ -184,14 +199,19 @@ pub fn init(
         .uniform_bind_group = uniform_bind_group,
 
         .texture_bind_group_layout = texture_bind_group_layout,
+
+        .font_atlas_manager = font_atlas_manager,
+        .batch_processor = batch_processor,
     };
 }
 
-pub fn deinit(renderer: Renderer) void {
+pub fn deinit(renderer: Renderer, gpa: Allocator) void {
+    defer renderer.surface.release();
     defer renderer.surface.unconfigure();
     defer renderer.queue.release();
     defer renderer.device.release();
 
+    defer renderer.shader_module.release();
     defer renderer.pipeline_layout.release();
     defer renderer.pipeline.release();
 
@@ -201,6 +221,12 @@ pub fn deinit(renderer: Renderer) void {
     defer renderer.uniform_bind_group.release();
 
     defer renderer.texture_bind_group_layout.release();
+
+    defer gpa.destroy(renderer.font_atlas_manager);
+    defer renderer.font_atlas_manager.deinit(gpa);
+
+    defer gpa.destroy(renderer.batch_processor);
+    defer renderer.batch_processor.deinit();
 }
 
 fn createAdapaterAndSurface(
@@ -323,6 +349,7 @@ fn createPipeline(
     device: *wgpu.Device,
     surface_format: wgpu.TextureFormat,
 ) !struct {
+    *wgpu.ShaderModule,
     *wgpu.BindGroupLayout, // uniform
     *wgpu.BindGroupLayout, // texture
     *wgpu.PipelineLayout,
@@ -335,18 +362,8 @@ fn createPipeline(
             .src_factor = .src_alpha,
             .dst_factor = .one_minus_src_alpha,
             .operation = .add,
-            // .src_factor = .one,
-            // .dst_factor = .one_minus_src_alpha,
-            // .operation = .add,
         },
-        .alpha = .{
-            .src_factor = .zero,
-            .dst_factor = .one,
-            .operation = .add,
-            // .src_factor = .one,
-            // .dst_factor = .one_minus_src_alpha,
-            // .operation = .add,
-        },
+        .alpha = wgpu.BlendComponent.over,
     };
 
     const color_target_state = wgpu.ColorTargetState{
@@ -528,6 +545,7 @@ fn createPipeline(
         };
 
     return .{
+        shader_module,
         uniform_bind_group_layout,
         texture_bind_group_layout,
         pipeline_layout,
@@ -664,9 +682,28 @@ fn deviceLostCallback(
 // renderer log - only use for err/warn unless testing
 const rlog = std.log.scoped(.@"wgpu render");
 
-pub fn render(
+pub fn render(renderer: Renderer, arena: Allocator) !void {
+    const batch_data = try renderer.batch_processor.process(arena);
+    defer renderer.batch_processor.reset();
+
+    var render_pass_data =
+        try arena.alloc(RenderPassData, batch_data.len);
+
+    for (batch_data, 0..) |data, i| {
+        render_pass_data[i] =
+            try renderer.batchToRenderPass(renderer.font_atlas_manager, data);
+    }
+
+    renderer.renderPassData(render_pass_data);
+
+    for (render_pass_data) |data| {
+        data.deinit();
+    }
+}
+
+pub fn renderPassData(
     renderer: Renderer,
-    render_pass_data: *const RenderPassData,
+    render_pass_data: []const RenderPassData,
 ) void {
     //- get next surface texture
     const target_view =
@@ -736,7 +773,7 @@ const EncodeCommandsError = error{
 fn encodeCommands(
     renderer: *const Renderer,
     target_view: *wgpu.TextureView,
-    render_pass_data: *const RenderPassData,
+    render_pass_data: []const RenderPassData,
 ) EncodeCommandsError!*wgpu.CommandBuffer {
     //- command encoder
     const encoder =
@@ -759,7 +796,7 @@ fn doRenderPass(
     renderer: *const Renderer,
     encoder: *wgpu.CommandEncoder,
     target_view: *wgpu.TextureView,
-    pass_data: *const RenderPassData,
+    pass_data: []const RenderPassData,
 ) void {
     const pass =
         encoder.beginRenderPass(&.{
@@ -770,14 +807,18 @@ fn doRenderPass(
                     .view = target_view,
                     .resolve_target = null,
                     .load_op = .clear,
-                    .store_op = .store,
+                    .store_op = .discard,
                     .clear_value = .{
-                        .r = 0.9,
-                        .g = 0.1,
-                        .b = 0.2,
-                        .a = 1.0,
+                        // .r = 0.9,
+                        // .g = 0.1,
+                        // .b = 0.2,
+                        // .a = 1.0
+                        .r = 0.0,
+                        .g = 0.0,
+                        .b = 0.0,
+                        .a = 0.0,
                     },
-                    .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                    // .depth_slice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
                 },
             },
             .depth_stencil_attachment = null,
@@ -800,21 +841,23 @@ fn doRenderPass(
         null,
     );
 
-    pass.setBindGroup(
-        1,
-        pass_data.atlas_texture_bind_group,
-        0,
-        null,
-    );
+    for (pass_data) |data| {
+        pass.setBindGroup(
+            1,
+            data.atlas_texture_bind_group,
+            0,
+            null,
+        );
 
-    pass.setVertexBuffer(
-        0,
-        pass_data.rect_buffer,
-        0,
-        pass_data.rect_buffer.getSize(),
-    );
+        pass.setVertexBuffer(
+            0,
+            data.rect_buffer,
+            0,
+            data.rect_buffer.getSize(),
+        );
 
-    pass.draw(4, pass_data.rect_buffer_count, 0, 0);
+        pass.draw(4, data.rect_buffer_count, 0, 0);
+    }
 
     pass.end();
 }
@@ -823,29 +866,11 @@ fn doRenderPass(
 
 pub const RectInstance = extern struct {
     dst: mt.Rect(f32),
-    tex: mt.Rect(f32),
+    tex: mt.Rect(f32) = .zero,
     color: mt.RgbaF32,
-    corner_radius: f32,
-    edge_softness: f32,
-    border_thickness: f32,
-
-    pub fn recti(
-        dst: mt.Rect(f32),
-        tex: mt.Rect(f32),
-        color: mt.RgbaF32,
-        corner_radius: f32,
-        edge_softness: f32,
-        border_thickness: f32,
-    ) RectInstance {
-        return .{
-            .dst = dst,
-            .tex = tex,
-            .color = color,
-            .corner_radius = corner_radius,
-            .edge_softness = edge_softness,
-            .border_thickness = border_thickness,
-        };
-    }
+    corner_radius: f32 = 0,
+    edge_softness: f32 = 0,
+    border_thickness: f32 = 0,
 };
 
 // fields should be 16 bit aligned
@@ -865,27 +890,54 @@ const UniformData = extern struct {
 //= CuCallbacks
 
 pub const CuCallbacks = struct {
+    renderer: *const Renderer,
+    gpa: Allocator,
+
+    pub fn init(renderer: *const Renderer, gpa: Allocator) !CuCallbacks {
+        return .{ .renderer = renderer, .gpa = gpa };
+    }
+
+    pub fn deinit(cb: CuCallbacks) void {
+        _ = cb;
+        // cb.shaper.deinit();
+    }
+
+    pub fn callbacks(cb: *CuCallbacks) cu.State.Callbacks {
+        return .{
+            .context = @ptrCast(@alignCast(cb)),
+            .vtable = .{
+                .measureText = &measureText,
+                .fontSize = &fontSize,
+                .getGraphicsInfo = &getGraphicsInfo,
+            },
+        };
+    }
+
     fn measureText(
         context: *anyopaque,
         text: []const u8,
         font_handle: cu.State.FontHandle,
-    ) cu.Axis2(f32) {
-        _ = context;
+    ) mt.Size(f32) {
+        const cb: *CuCallbacks = @ptrCast(@alignCast(context));
+
         const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
 
         // @TODO: It might be work caching this for later use in rendering
-        const shaped = ShapedText.init(font_face, text) catch
-            @panic("failed to shape text");
-        defer shaped.deinit();
 
-        const size = shaped.calculateSize();
-        return .axis(size.width, size.height);
+        const font_atlas = cb.renderer.font_atlas_manager.getAtlas(font_face);
+
+        const shaped = cb.renderer.batch_processor.shaper
+            .shape(font_face, font_atlas, text) catch
+            @panic("failed to shape text");
+
+        const size = shaped.calculateSize(cb.gpa) catch @panic("oom");
+        return .size(size.width, size.height);
     }
 
     fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
         const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
-        return font_face.lineHeight();
+        return font_face.line_height;
     }
 
     fn getGraphicsInfo(context: *anyopaque) cu.State.GraphicsInfo {
@@ -909,15 +961,6 @@ pub const CuCallbacks = struct {
             else => @compileError("platform unsupported at present"),
         };
     }
-
-    pub const callbacks = cu.State.Callbacks{
-        .context = undefined,
-        .vtable = .{
-            .measureText = &measureText,
-            .fontSize = &fontSize,
-            .getGraphicsInfo = &getGraphicsInfo,
-        },
-    };
 };
 
 //= render pass data
@@ -1061,10 +1104,274 @@ pub const RenderPassData = struct {
 
 //= atlas manager
 
-pub const FontAtlasManager = struct {};
+pub const FontAtlasManager = struct {
+    ft_lib: *ft.Library,
+    atlas_map: std.AutoHashMapUnmanaged(*FontFace, *FontAtlas) = .empty,
 
-//=
-// pub const BatchData = struct {
-//     font_face: *FontFace,
-//     rects: []const RectInstance,
-// };
+    pub fn init() !FontAtlasManager {
+        const ft_lib = try ft.Library.init();
+        return .{ .ft_lib = ft_lib };
+    }
+
+    pub fn deinit(self: *FontAtlasManager, gpa: Allocator) void {
+        var iter = self.atlas_map.iterator();
+        while (iter.next()) |entry| {
+            const font_face = entry.key_ptr.*;
+            font_face.deinit();
+            gpa.destroy(font_face);
+
+            const atlas = entry.value_ptr.*;
+            atlas.deinit(gpa);
+            gpa.destroy(atlas);
+        }
+
+        self.atlas_map.deinit(gpa);
+
+        self.ft_lib.deinit();
+    }
+
+    pub fn initFontFace(
+        self: *FontAtlasManager,
+        gpa: Allocator,
+        path: [:0]const u8,
+        index: i32,
+        pt_size: i32,
+        dpi: mt.Point(u16),
+    ) !*FontFace {
+        const face = try gpa.create(FontFace);
+        face.* = try FontFace.fromPath(self.ft_lib, path, index, pt_size, dpi);
+
+        const atlas = try gpa.create(FontAtlas);
+        atlas.* = try FontAtlas.init(face);
+
+        // create a small white square at 0,0 for texture-less rects
+        _ = try atlas.blit(gpa, .square(2), 0, &(.{255} ** (3 * 2 * 2)), 0);
+
+        try atlas.cacheAscii(gpa);
+
+        try self.atlas_map.put(gpa, face, atlas);
+
+        return face;
+    }
+
+    pub fn getAtlas(
+        self: *const FontAtlasManager,
+        font_face: *const FontFace,
+    ) *FontAtlas {
+        // const cast since we don't actually modify it
+        return self.atlas_map.get(@constCast(font_face)) orelse
+            @panic("given font face not owned by this atlas manager");
+    }
+};
+
+//= batch data
+
+pub const BatchData = struct {
+    font_face: *const FontFace,
+    rects: []const RectInstance,
+};
+
+pub fn batchToRenderPass(
+    renderer: *const Renderer,
+    font_atlas_manager: *const FontAtlasManager,
+    batch_data: BatchData,
+) !RenderPassData {
+    const font_atlas =
+        font_atlas_manager.getAtlas(batch_data.font_face);
+
+    const render_pass_data = try RenderPassData.init(
+        renderer.device,
+        renderer.queue,
+        renderer.texture_bind_group_layout,
+        font_atlas.textureDataRef(),
+        batch_data.rects,
+    );
+
+    return render_pass_data;
+}
+
+// @TODO:
+//  put non text rects all in one buffer
+//  then put text rects into own buffer based on font used
+//  this means we need an empty texture
+pub const BatchProcessor = struct {
+    font_atlas_manager: *const FontAtlasManager,
+    batches: std.ArrayListUnmanaged(BatchData) = .empty,
+    shaper: TextShaper,
+
+    list: std.ArrayListUnmanaged(RectInstance) = .empty,
+    font: ?*const FontFace = null,
+
+    pub fn init(
+        font_atlas_manager: *const FontAtlasManager,
+    ) !BatchProcessor {
+        const shaper = try TextShaper.init();
+        return .{
+            .font_atlas_manager = font_atlas_manager,
+            .shaper = shaper,
+        };
+    }
+
+    pub fn deinit(self: *BatchProcessor) void {
+        self.shaper.deinit();
+    }
+
+    pub fn reset(self: *BatchProcessor) void {
+        self.batches = .empty;
+        self.list = .empty;
+    }
+
+    pub fn process(
+        self: *BatchProcessor,
+        arena: Allocator,
+    ) ![]const BatchData {
+        if (!cu.state.ui_built) return &[_]BatchData{};
+
+        try self.processAtom(arena, cu.state.ui_root);
+
+        const rects = try self.list.toOwnedSlice(arena);
+        const batch = BatchData{
+            .font_face = self.font orelse @panic(""),
+            .rects = rects,
+        };
+        try self.batches.append(arena, batch);
+
+        return self.batches.items;
+    }
+
+    pub fn processAtom(
+        self: *BatchProcessor,
+        arena: Allocator,
+        atom: *cu.Atom,
+    ) !void {
+        if (std.math.isNan(atom.rect.p0.x) or
+            std.math.isNan(atom.rect.p0.y) or
+            std.math.isNan(atom.rect.p1.x) or
+            std.math.isNan(atom.rect.p1.y))
+        {
+            return;
+        }
+
+        const rect = atom.rect;
+
+        if (atom.flags.clip_rect) {
+            // @TODO
+        }
+
+        if (atom.flags.draw_background) {
+            const color = atom.palette.get(.background).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = rect,
+                .color = color,
+                .corner_radius = atom.corner_radius,
+            });
+        }
+
+        if (atom.flags.draw_border) {
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = rect,
+                .color = color,
+                .corner_radius = atom.corner_radius,
+                .border_thickness = atom.border_width,
+            });
+        }
+
+        if (atom.flags.draw_side_top) {
+            const topleft = rect.topLeft();
+            const topright = rect.topRight();
+
+            const border_rect = mt.Rect(f32).rect(
+                topleft,
+                .point(topright.x, topright.y + atom.border_width),
+            );
+
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
+
+        if (atom.flags.draw_side_bottom) {
+            const bottomleft = rect.bottomLeft();
+            const bottomright = rect.bottomRight();
+
+            const border_rect = mt.Rect(f32).rect(
+                .point(bottomleft.x, bottomleft.y - atom.border_width),
+                bottomright,
+            );
+
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
+
+        if (atom.flags.draw_side_left) {
+            const topleft = rect.topLeft();
+            const bottomleft = rect.bottomLeft();
+
+            const border_rect = mt.Rect(f32).rect(
+                topleft,
+                .point(bottomleft.x + atom.border_width, bottomleft.y),
+            );
+
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
+
+        if (atom.flags.draw_side_right) {
+            const topright = rect.topRight();
+            const bottomright = rect.bottomRight();
+
+            const border_rect = mt.Rect(f32).rect(
+                .point(topright.x - atom.border_width, topright.y),
+                bottomright,
+            );
+
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
+
+        const font_ptr = cu.state.getFont(atom.font);
+        const font_face: *const FontFace = @ptrCast(@alignCast(font_ptr));
+
+        self.font = font_face;
+
+        if (atom.flags.draw_text or atom.flags.draw_text_weak) {
+            const font_atlas = self.font_atlas_manager.getAtlas(font_face);
+
+            const shaped_text = try self.shaper
+                .shape(font_face, font_atlas, atom.display_string);
+
+            const color = if (atom.flags.draw_text)
+                atom.palette.get(.text).toRgbaF32()
+            else if (atom.flags.draw_text_weak)
+                atom.palette.get(.text_weak).toRgbaF32()
+            else
+                unreachable;
+
+            try shaped_text.generateRects(
+                arena,
+                &self.list,
+                atom.text_rect.p0,
+                color,
+            );
+        }
+
+        if (atom.children) |children| {
+            var maybe_child: ?*cu.Atom = children.first;
+            while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+                try self.processAtom(arena, child);
+            }
+        }
+    }
+};

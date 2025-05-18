@@ -12,7 +12,9 @@ const tracy = @import("tracy");
 const sdl = @import("sdl3");
 
 const cu = @import("cu");
+const math = cu.math;
 const AtomFlags = cu.AtomFlags;
+const b = cu.builder;
 
 const fc = @import("fontconfig.zig");
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
@@ -20,9 +22,9 @@ const plugins = @import("plugins.zig");
 
 pub fn entry(gpa: Allocator) !void {
     run(gpa) catch |err| {
-        if (sdl.getError()) |e| {
+        if (sdl.err.getError()) |e| {
             std.log.err("[SDL]: {s}", .{e});
-            sdl.clearError() catch {};
+            sdl.err.clearError() catch {};
         }
 
         plugins.printLastWasmError();
@@ -54,8 +56,8 @@ pub fn run(gpa: Allocator) !void {
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
     _ = sdl.c.SDL_SetHint(sdl.c.SDL_HINT_VIDEO_WAYLAND_PREFER_LIBDECOR, "0");
 
-    try sdl.init(sdl.InitFlag.events | sdl.InitFlag.video);
-    defer sdl.quit();
+    try sdl.init.init(sdl.init.InitFlag.events | sdl.init.InitFlag.video);
+    defer sdl.init.quit();
 
     try sdl.ttf.init();
     defer sdl.ttf.quit();
@@ -73,17 +75,17 @@ pub fn run(gpa: Allocator) !void {
         tracy.frameMark();
 
         cu.state = state.main_window.ui_state;
-        cu.startFrame();
+        b.startFrame();
         defer {
             cu.state = state.main_window.ui_state;
-            cu.endFrame();
+            b.endFrame();
         }
 
         cu.state = state.dbg_window.ui_state;
-        cu.startFrame();
+        b.startFrame();
         defer {
             cu.state = state.dbg_window.ui_state;
-            cu.endFrame();
+            b.endFrame();
         }
 
         try state.frameStart();
@@ -97,7 +99,7 @@ pub fn run(gpa: Allocator) !void {
 }
 
 pub const Window = struct {
-    window_handle: *sdl.Window,
+    window_handle: *sdl.video.Window,
     render_handle: CuSdlRenderer,
     ui_state: *cu.State,
 
@@ -110,30 +112,34 @@ pub const Window = struct {
         gpa: std.mem.Allocator,
         title: [:0]const u8,
         borderless: bool,
-        size: cu.Axis2(c_int),
+        size: math.Size(c_int),
     ) !*Window {
         const trace = tracy.beginZone(@src(), .{ .name = "init window" });
         defer trace.end();
 
         log.debug("creating window", .{});
 
-        const window = try sdl.Window.init(
+        const window = try sdl.video.Window.init(
             title,
-            size.w,
-            size.h,
-            sdl.WindowFlag.high_pixel_density |
-                sdl.WindowFlag.resizable |
-                if (borderless) sdl.WindowFlag.borderless else 0,
+            size.width,
+            size.height,
+            sdl.video.WindowFlag.high_pixel_density |
+                sdl.video.WindowFlag.resizable |
+                if (borderless) sdl.video.WindowFlag.borderless else 0,
         );
         try window.setHitTest(&windowHitTestCallback, null);
 
-        // @BUG: for some reason the window shows up as black until resized, unless we do this
-        try sdl.Event.push(.makeWindowResized(window.getID(), size.w, size.h));
+        // @BUG:
+        //  for some reason the window shows up as black until resized,
+        //  unless we do this
+        try sdl.event.Event
+            .push(.makeWindowResized(window.getID(), size.width, size.height));
 
-        const sdl_renderer = try sdl.Renderer.init(window, null);
+        const sdl_renderer = try sdl.render.Renderer.init(window, null);
         const renderer = CuSdlRenderer{ .sdl_rend = sdl_renderer };
 
-        const ui_state = try cu.State.init(gpa, CuSdlRenderer.Callbacks.callbacks);
+        const ui_state =
+            try cu.State.init(gpa, CuSdlRenderer.Callbacks.callbacks);
 
         log.debug("setting up fonts", .{});
         const default_font_handle, const monospace_font_handle = blk: {
@@ -143,10 +149,10 @@ pub const Window = struct {
 
             const font_size = 13;
 
-            const default =
-                try CuSdlRenderer.createFontFromFamilyName(gpa, "sans", font_size);
-            const monospace =
-                try CuSdlRenderer.createFontFromFamilyName(gpa, "monospace", font_size);
+            const default = try CuSdlRenderer
+                .createFontFromFamilyName(gpa, "sans", font_size);
+            const monospace = try CuSdlRenderer
+                .createFontFromFamilyName(gpa, "monospace", font_size);
 
             break :blk .{ default, monospace };
         };
@@ -156,14 +162,14 @@ pub const Window = struct {
         const monospace_font =
             ui_state.registerFont(@alignCast(@ptrCast(monospace_font_handle)));
 
-        ui_state.default_palette = cu.Atom.Palette{
+        ui_state.default_palette = .init(.{
             .background = .hexRgb(0x1d2021), // gruvbox bg0
             .text = .hexRgb(0xebdbb2), // gruvbox fg1
             .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
             .border = .hexRgb(0x3c3836), // gruvbox bg1
             .hot = .hexRgb(0x665c54), // grovbox bg3
             .active = .hexRgb(0xfbf1c7), // grovbox fg0
-        };
+        });
         ui_state.default_font = default_font;
 
         const result = try gpa.create(Window);
@@ -213,8 +219,8 @@ pub const AppState = struct {
     test_toggle: bool = false,
 
     pub fn init(gpa: std.mem.Allocator) !AppState {
-        const main_window = try Window.init(gpa, "fe", true, .axis(800, 600));
-        const dbg_window = try Window.init(gpa, "fe dbg", false, .axis(600, 400));
+        const main_window = try Window.init(gpa, "fe", true, .size(800, 600));
+        const dbg_window = try Window.init(gpa, "fe dbg", false, .size(600, 400));
 
         const now = try std.time.Instant.now();
 
@@ -232,7 +238,7 @@ pub const AppState = struct {
         app.dbg_window.deinit(app.gpa);
     }
 
-    pub fn windowFromId(app: *const AppState, id: sdl.WindowID) ?*Window {
+    pub fn windowFromId(app: *const AppState, id: sdl.video.WindowID) ?*Window {
         return if (app.main_window.window_handle.getID() == id)
             app.main_window
         else if (app.dbg_window.window_handle.getID() == id)
@@ -268,9 +274,9 @@ fn processEvents() !void {
     const event_timeout_ms = 10;
 
     if (if (comptime build_options.poll_event_loop)
-        sdl.Event.poll()
+        sdl.event.Event.poll()
     else
-        sdl.Event.waitTimeout(event_timeout_ms)) |event|
+        sdl.event.Event.waitTimeout(event_timeout_ms)) |event|
     ev: {
         const trace_handle_event = tracy.beginZone(@src(), .{ .name = "handle event" });
         defer trace_handle_event.end();
@@ -318,7 +324,7 @@ fn processEvents() !void {
                         try window.monospace_font_handle.setSize((window.monospace_font_handle.getSize() catch @panic("")) + 1);
                     },
                     .f11 => {
-                        if (window.window_handle.getFlags() & sdl.WindowFlag.fullscreen != 0) {
+                        if (window.window_handle.getFlags() & sdl.video.WindowFlag.fullscreen != 0) {
                             try window.window_handle.setFullscreen(false);
                         } else {
                             try window.window_handle.setFullscreen(true);
@@ -330,29 +336,32 @@ fn processEvents() !void {
 
             .mouse_motion => {
                 const motion = event.motion;
-                const window = state.windowFromId(motion.window_id) orelse break :ev;
+                const window = state.windowFromId(motion.window_id) orelse
+                    break :ev;
 
                 window.ui_state.pushEvent(.{
-                    .mouse_move = .{ .pos = .vec(motion.x, motion.y) },
+                    .mouse_move = .{ .pos = .point(motion.x, motion.y) },
                 });
             },
 
             .mouse_button_down, .mouse_button_up => {
                 const button = event.button;
-                const window = state.windowFromId(button.window_id) orelse break :ev;
+                const window = state.windowFromId(button.window_id) orelse
+                    break :ev;
 
-                const button_kind: cu.MouseButton = switch (button.button) {
-                    .left => .left,
-                    .middle => .middle,
-                    .right => .right,
-                    .x1 => .forward,
-                    .x2 => .back,
-                    else => @enumFromInt(@intFromEnum(button.button)),
-                };
+                const button_kind: cu.input.MouseButton =
+                    switch (button.button) {
+                        .left => .left,
+                        .middle => .middle,
+                        .right => .right,
+                        .x1 => .forward,
+                        .x2 => .back,
+                        else => @enumFromInt(@intFromEnum(button.button)),
+                    };
                 window.ui_state.pushEvent(.{
                     .mouse_button = .{
                         .button = button_kind,
-                        .pos = .vec(button.x, button.y),
+                        .pos = .point(button.x, button.y),
                         .state = if (button.down) .pressed else .released,
                     },
                 });
@@ -360,19 +369,21 @@ fn processEvents() !void {
 
             .mouse_wheel => {
                 const wheel = event.wheel;
-                const window = state.windowFromId(wheel.window_id) orelse break :ev;
+                const window = state.windowFromId(wheel.window_id) orelse
+                    break :ev;
 
                 window.ui_state.pushEvent(.{
                     .scroll = .{
-                        .scroll = .vec(wheel.x, wheel.y),
-                        .pos = .vec(wheel.mouse_x, wheel.mouse_y),
+                        .scroll = .size(wheel.x, wheel.y),
+                        .pos = .point(wheel.mouse_x, wheel.mouse_y),
                     },
                 });
             },
 
             .text_input => {
                 const text = event.text;
-                const window = state.windowFromId(text.window_id) orelse break :ev;
+                const window = state.windowFromId(text.window_id) orelse
+                    break :ev;
 
                 const slice = std.mem.sliceTo(text.text[0..], 0);
                 window.ui_state.pushEvent(.{
@@ -382,26 +393,29 @@ fn processEvents() !void {
 
             .window_resized => {
                 const resized = event.window;
-                const window = state.windowFromId(resized.window_id) orelse break :ev;
+                const window = state.windowFromId(resized.window_id) orelse
+                    break :ev;
 
                 window.ui_state.window_size =
-                    .axis(@floatFromInt(resized.data1), @floatFromInt(resized.data2));
+                    .size(@floatFromInt(resized.data1), @floatFromInt(resized.data2));
             },
 
             .window_exposed => {
                 tracy.message("window expose");
 
                 const exposed = event.window;
-                const window = state.windowFromId(exposed.window_id) orelse break :ev;
+                const window = state.windowFromId(exposed.window_id) orelse
+                    break :ev;
                 cu.state = window.ui_state;
                 try window.render_handle.render();
             },
 
             .window_close_requested => {
                 // const close = event.window;
-                // const window = state.windowFromId(close.window_id) orelse break :ev;
+                // const window = state.windowFromId(close.window_id) orelse
+                //     break :ev;
 
-                try sdl.Event.push(.makeQuit());
+                try sdl.event.Event.push(.makeQuit());
             },
 
             else => {},
@@ -414,23 +428,25 @@ fn update() !void {
     cu.state = window.ui_state;
 
     // build ui
-    cu.startBuild(@intFromEnum(window.window_handle.getID()));
+    b.startBuild(@intFromEnum(window.window_handle.getID()));
     cu.state.ui_root.layout_axis = .y;
     cu.state.ui_root.flags.draw_background = true;
     // Don't ask me why, but no matter how I slice it without the if, it doesn't work
     // I know it should, I don't know why it doesn't
     cu.state.ui_root.flags.draw_border =
-        if (window.window_handle.getFlags() & (sdl.WindowFlag.fullscreen | sdl.WindowFlag.maximized) != 0)
+        if (window.window_handle.getFlags() &
+        (sdl.video.WindowFlag.fullscreen |
+            sdl.video.WindowFlag.maximized) != 0)
             false
         else
             true;
 
     { // topbar
-        cu.pushFlags(.once(AtomFlags.none.drawSideBottom()));
-        cu.pushLayoutAxis(.once(.x));
-        cu.pushPrefSize(.once(.axis(.fill, .px(24))));
-        const topbar = cu.open("topbar");
-        defer cu.close(topbar);
+        b.stacks.flags.push(AtomFlags.none.drawSideBottom());
+        b.stacks.layout_axis.push(.x);
+        b.stacks.pref_size.push(.size(.fill, .px(24)));
+        const topbar = b.open("topbar");
+        defer b.close(topbar);
 
         const menu_items = [_][]const u8{
             "Fe",
@@ -440,9 +456,9 @@ fn update() !void {
         };
 
         for (menu_items) |item_str| {
-            cu.pushFlags(.once(AtomFlags.none.clickable().drawText()));
-            cu.pushPrefSize(.once(.square(.text_pad(8))));
-            const item = cu.build(item_str);
+            b.stacks.flags.push(AtomFlags.none.clickable().drawText());
+            b.stacks.pref_size.push(.square(.text_pad(8)));
+            const item = b.build(item_str);
 
             const inter = item.interaction();
             if (inter.f.hovering) {
@@ -456,13 +472,15 @@ fn update() !void {
         }
 
         {
-            cu.pushFlags(.once(AtomFlags.none.clickable()));
-            cu.pushPrefSize(.once(.square(.grow)));
-            const topbar_space = cu.build("topbar spacer");
+            b.stacks.flags.push(AtomFlags.none.clickable());
+            b.stacks.pref_size.push(.square(.grow));
+            const topbar_space = b.build("topbar spacer");
 
             const inter = topbar_space.interaction();
             if (inter.f.left_double_clicked) {
-                if (window.window_handle.getFlags() & sdl.WindowFlag.maximized == 0) {
+                if (window.window_handle.getFlags() &
+                    sdl.video.WindowFlag.maximized == 0)
+                {
                     try window.window_handle.maximize();
                 } else {
                     try window.window_handle.restore();
@@ -471,25 +489,30 @@ fn update() !void {
         }
 
         for (0..3) |i| {
-            cu.pushFlags(.once(AtomFlags.none.clickable().drawBorder()));
-            cu.pushPrefSize(.once(.square(.px(24))));
-            const button = cu.openf("top bar button {d}", .{i});
-            defer cu.close(button);
+            b.stacks.flags.push(AtomFlags.none.clickable().drawBorder());
+            b.stacks.pref_size.push(.square(.px(24)));
+            const button = b.openf("top bar button {d}", .{i});
+            defer b.close(button);
 
             const int = button.interaction();
             if (int.f.hovering) {
-                button.palette.border = cu.Color.hexRgb(0xFF0000);
+                // button.palette.border = cu.Color.hexRgb(0xFF0000);
+                button.palette.set(.border, .hexRgb(0xFF0000));
             }
 
             if (int.f.isClicked()) {
                 switch (i) {
                     0 => try window.window_handle.minimize(),
-                    1 => if (window.window_handle.getFlags() & sdl.WindowFlag.maximized != 0) {
+                    1 => if (window.window_handle.getFlags() &
+                        sdl.video.WindowFlag.maximized != 0)
+                    {
                         try window.window_handle.restore();
                     } else {
                         try window.window_handle.maximize();
                     },
-                    2 => try sdl.Event.push(.makeWindowCloseRequested(window.window_handle.getID())),
+                    2 => try sdl.event.Event.push(.makeWindowCloseRequested(
+                        window.window_handle.getID(),
+                    )),
                     else => unreachable,
                 }
             }
@@ -497,115 +520,124 @@ fn update() !void {
     }
 
     { // main pane
-        cu.pushLayoutAxis(.once(.x));
-        cu.pushPrefSize(.once(.square(.grow)));
-        const main_pane = cu.open("main pain");
-        defer cu.close(main_pane);
+        b.stacks.layout_axis.push(.x);
+        b.stacks.pref_size.push(.square(.grow));
+        const main_pane = b.open("main pain");
+        defer b.close(main_pane);
 
         { // left pane
-            cu.pushFlags(.once(AtomFlags.none.drawSideRight()));
-            cu.pushLayoutAxis(.once(.y));
-            cu.pushPrefSize(.once(.axis(.percent(0.4), .fill)));
-            const pane = cu.open("left pane");
-            defer cu.close(pane);
+            b.stacks.flags.push(AtomFlags.none.drawSideRight());
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.size(.percent(0.4), .fill));
+            const pane = b.open("left pane");
+            defer b.close(pane);
 
             { // header
-                cu.pushFlags(.once(AtomFlags.none.drawSideBottom().drawText()));
-                cu.pushTextAlignment(.once(.axis(.end, .center)));
-                cu.pushPrefSize(.once(.axis(.grow, .text)));
-                const header = cu.build("left header");
+                b.stacks.flags
+                    .push(AtomFlags.none.drawSideBottom().drawText());
+                b.stacks.text_align.push(.size(.end, .center));
+                b.stacks.pref_size.push(.size(.grow, .text));
+                const header = b.build("left header");
                 header.display_string = "Left Header gylp";
             }
 
             { // content
-                cu.pushFlags(.once(AtomFlags.none.clipRect().allowOverflow()));
-                cu.pushLayoutAxis(.once(.y));
-                cu.pushPrefSize(.once(.square(.grow)));
-                const content = cu.open("left content");
-                defer cu.close(content);
+                b.stacks.flags
+                    .push(AtomFlags.none.clipRect().allowOverflow());
+                b.stacks.layout_axis.push(.y);
+                b.stacks.pref_size.push(.square(.grow));
+                const content = b.open("left content");
+                defer b.close(content);
 
-                cu.pushFont(.keep(window.monospace_font));
-                defer cu.popFont();
+                b.stacks.font.pushForMany(window.monospace_font);
+                defer _ = b.stacks.font.pop();
 
-                _ = cu.labelf("draw window border: {}", .{cu.state.ui_root.flags.draw_border});
+                _ = b.labelf(
+                    "draw window border: {}",
+                    .{cu.state.ui_root.flags.draw_border},
+                );
 
-                _ = cu.lineSpacer();
+                _ = b.lineSpacer();
             }
         }
 
         { // right pane
-            cu.pushLayoutAxis(.once(.y));
-            cu.pushPrefSize(.once(.axis(.grow, .fill)));
-            const pane = cu.open("right pane");
-            defer cu.close(pane);
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.size(.grow, .fill));
+            const pane = b.open("right pane");
+            defer b.close(pane);
 
             { // header
-                cu.pushFlags(.once(AtomFlags.none.drawSideBottom().drawText()));
-                cu.pushLayoutAxis(.once(.x));
-                cu.pushTextAlignment(.once(.square(.center)));
-                cu.pushPrefSize(.once(.axis(.grow, .text)));
-                const header = cu.open("right header");
-                defer cu.close(header);
+                b.stacks.flags.push(AtomFlags.none.drawSideBottom().drawText());
+                b.stacks.layout_axis.push(.x);
+                b.stacks.text_align.push(.square(.center));
+                b.stacks.pref_size.push(.size(.grow, .text));
+                const header = b.open("right header");
+                defer b.close(header);
                 header.display_string = "Right Header";
 
                 if (header.interaction().f.mouse_over) {
-                    cu.pushBackgroundColor(.keep(.hexRgb(0x001800)));
-                    defer cu.popPalette();
+                    b.stacks.palette.pushForMany(.init(
+                        .{ .background = .hexRgb(0x001800) },
+                    ));
+                    defer _ = b.stacks.palette.pop();
 
-                    cu.pushFlags(.once(AtomFlags.none.floating().drawBackground()));
-                    cu.pushLayoutAxis(.once(.y));
-                    cu.pushPrefSize(.once(.square(.fit)));
-                    const float = cu.open("floating");
-                    defer cu.close(float);
-                    float.rel_position = cu.state.mouse.sub(header.rect.p0).add(.square(10)).intoAxis();
+                    b.stacks.flags.push(AtomFlags.none.floating().drawBackground());
+                    b.stacks.layout_axis.push(.y);
+                    b.stacks.pref_size.push(.square(.fit));
+                    const float = b.open("floating");
+                    defer b.close(float);
+                    float.rel_position = cu.state.mouse
+                        .sub(header.rect.p0)
+                        .add(.splat(10));
 
-                    _ = cu.label("tool tip!");
-                    _ = cu.label("extra tips!");
+                    _ = b.label("tool tip!");
+                    _ = b.label("extra tips!");
                 }
             }
 
             { // content
-                cu.pushLayoutAxis(.once(.y));
-                cu.pushPrefSize(.once(.square(.grow)));
-                const content = cu.open("right content");
-                defer cu.close(content);
+                b.stacks.layout_axis.push(.y);
+                b.stacks.pref_size.push(.square(.grow));
+                const content = b.open("right content");
+                defer b.close(content);
 
-                cu.pushPrefSize(.once(.square(.text_pad(8))));
-                if (cu.button("foo bar").f.isClicked()) {
+                b.stacks.pref_size.push(.square(.text_pad(8)));
+                if (b.button("foo bar").f.isClicked()) {
                     log.debug("foo bar clicked", .{});
                 }
 
-                _ = cu.lineSpacer();
+                _ = b.lineSpacer();
 
-                cu.pushPrefSize(.once(.axis(.px(40), .px(20))));
-                _ = cu.toggleSwitch(&state.test_toggle);
+                b.stacks.pref_size.push(.size(.px(40), .px(20)));
+                _ = b.toggleSwitch(&state.test_toggle);
             }
         }
 
         { // right bar
-            cu.pushFlags(.once(AtomFlags.none.drawSideLeft()));
-            cu.pushLayoutAxis(.once(.y));
-            const bar = cu.open("right bar");
-            defer cu.close(bar);
-
             const icon_size = cu.Atom.PrefSize.px(24);
-            bar.pref_size = .{ .w = icon_size, .h = .grow };
+
+            b.stacks.flags.push(AtomFlags.none.drawSideLeft());
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.size(icon_size, .grow));
+            const bar = b.open("right bar");
+            defer b.close(bar);
 
             { // inner
-                cu.pushLayoutAxis(.once(.y));
-                cu.pushPrefSize(.once(.axis(icon_size, .fit)));
-                const inner = cu.open("right bar inner");
-                defer cu.close(inner);
+                b.stacks.layout_axis.push(.y);
+                b.stacks.pref_size.push(.size(icon_size, .fit));
+                const inner = b.open("right bar inner");
+                defer b.close(inner);
 
                 for (0..5) |i| {
                     {
-                        cu.pushFlags(.once(AtomFlags.none.drawBorder()));
-                        cu.pushPrefSize(.once(.square(icon_size)));
-                        _ = cu.buildf("right bar icon {d}", .{i});
+                        b.stacks.flags.push(AtomFlags.none.drawBorder());
+                        b.stacks.pref_size.push(.square(icon_size));
+                        _ = b.buildf("right bar icon {d}", .{i});
                     }
 
-                    cu.pushPrefSize(.once(.axis(icon_size, .px(4))));
-                    _ = cu.spacer();
+                    b.stacks.pref_size.push(.size(icon_size, .px(4)));
+                    _ = b.spacer();
                 }
             }
         }
@@ -615,7 +647,7 @@ fn update() !void {
     try updateDbgWindow();
     cu.state = window.ui_state;
 
-    cu.endBuild();
+    b.endBuild();
     try window.render_handle.render();
 }
 
@@ -623,52 +655,53 @@ pub fn updateDbgWindow() !void {
     const window = state.dbg_window;
     cu.state = window.ui_state;
 
-    cu.startBuild(@intFromEnum(window.window_handle.getID()));
+    b.startBuild(@intFromEnum(window.window_handle.getID()));
     cu.state.ui_root.layout_axis = .y;
     cu.state.ui_root.flags = cu.state.ui_root.flags.drawBackground().allowOverflow();
 
     {
-        cu.pushTextColor(.keep(.hexRgb(0xff0000)));
-        defer cu.popPalette();
+        b.stacks.palette
+            .pushForMany(.init(.{ .text = .hexRgb(0xff0000) }));
+        defer _ = b.stacks.palette.pop();
 
-        _ = cu.labelf("fps: {d:.2}", .{state.fps});
-        _ = cu.labelf("ave fps: {d:.2}", .{state.fps_buffer.average()});
-        _ = cu.labelf("frame time: {d:.2}ms", .{state.delta_time_ms});
-        _ = cu.labelf("uptime: {d:.2}s", .{state.uptime_s});
+        _ = b.labelf("fps: {d:.2}", .{state.fps});
+        _ = b.labelf("ave fps: {d:.2}", .{state.fps_buffer.average()});
+        _ = b.labelf("frame time: {d:.2}ms", .{state.delta_time_ms});
+        _ = b.labelf("uptime: {d:.2}s", .{state.uptime_s});
     }
 
-    _ = cu.lineSpacer();
+    _ = b.lineSpacer();
 
     const main_state = state.main_window.ui_state;
 
-    _ = cu.labelf("build count: {d}", .{main_state.current_build_index});
-    _ = cu.labelf("atom build count: {d}", .{main_state.build_atom_count});
+    _ = b.labelf("build count: {d}", .{main_state.current_build_index});
+    _ = b.labelf("atom build count: {d}", .{main_state.build_atom_count});
 
-    _ = cu.lineSpacer();
+    _ = b.lineSpacer();
 
-    _ = cu.labelf("current atom count: {d}", .{main_state.atom_map.count()});
-    _ = cu.labelf("event count: {d}", .{main_state.event_list.len});
+    _ = b.labelf("current atom count: {d}", .{main_state.atom_map.count()});
+    _ = b.labelf("event count: {d}", .{main_state.event_list.len});
 
-    _ = cu.lineSpacer();
+    _ = b.lineSpacer();
 
     var an_active_atom = false;
     for (main_state.active_atom_key, 0..) |key, i| {
         if (key != .nil) {
-            const button: cu.MouseButton = @enumFromInt(i);
+            const button: cu.input.MouseButton = @enumFromInt(i);
             const active = main_state.atom_map.get(key).?;
-            _ = cu.labelf("active atom: [{s}] {?}", .{ @tagName(button), active });
+            _ = b.labelf("active atom: [{s}] {?}", .{ @tagName(button), active });
 
             an_active_atom = true;
         }
     }
     if (!an_active_atom)
-        _ = cu.label("active atom: none");
+        _ = b.label("active atom: none");
 
     const hot = main_state.atom_map.get(main_state.hot_atom_key);
-    cu.pushFlags(.once(AtomFlags.none.drawTextWeak()));
-    _ = cu.labelf("hot atom: {?}", .{hot});
+    b.stacks.flags.push(AtomFlags.none.drawTextWeak());
+    _ = b.labelf("hot atom: {?}", .{hot});
 
-    cu.endBuild();
+    b.endBuild();
     try window.render_handle.render();
 }
 
@@ -696,10 +729,10 @@ pub fn FpsCircleBuffer(comptime Size: usize) type {
 }
 
 fn windowHitTestCallback(
-    window: *sdl.Window,
-    point: *const sdl.Point,
+    window: *sdl.video.Window,
+    point: *const sdl.rect.Point,
     data: ?*anyopaque,
-) callconv(.c) sdl.HitTestResult {
+) callconv(.c) sdl.video.HitTestResult {
     _ = data;
 
     // I cannot for the life of me figure out a way to get window dragging/
@@ -766,7 +799,7 @@ fn windowHitTestCallback(
     //  x11 and wayland providing the out-of-window resizing.
     //  It does not seem there is any way to hook into this useage of libdecor
     //  to customize it any way.
-    if (window.getFlags() & sdl.WindowFlag.borderless == 0)
+    if (window.getFlags() & sdl.video.WindowFlag.borderless == 0)
         return .normal;
 
     const w, const h = window.getSize() catch @panic("could not get window size in hit test");

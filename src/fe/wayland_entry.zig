@@ -1,35 +1,25 @@
 // @TODO:
-//   @[ ]: setup cu
-//   @[ ]: cu: window border
-//   @[ ]: window rounding - cu?
 //   @[ ]: window shadows - cu?
 
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 const Allocator = mem.Allocator;
-
 const log = std.log.scoped(.@"fe[wl]");
-
-const xkb = @import("xkbcommon");
-
-const mt = @import("math.zig");
-const Point = @import("math.zig").Point;
-const Size = @import("math.zig").Size;
 
 const wl = @import("platform/linux/wayland/wayland.zig");
 
 const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
-const FontAtlas = WgpuRenderer.FontAtlas;
-const FontFace = WgpuRenderer.FontFace;
-const ShapedText = WgpuRenderer.ShapedText;
 
 const cu = @import("cu");
+const mt = cu.math;
+const AtomFlags = cu.AtomFlags;
+const b = cu.builder;
+
+const xkb = @import("xkbcommon");
 
 // @TODO: Migrate to use ghostty/pkg/fontconfig
 const fc = @import("fontconfig.zig");
-
-const ft = @import("freetype");
 
 const pretty = @import("pretty");
 
@@ -79,378 +69,618 @@ fn run(gpa: Allocator) !void {
 
     log.debug("default font path (sans): {s}", .{def_font_path});
 
-    // freetype
-
-    const ft_lib = try ft.Library.init();
-    defer ft_lib.deinit();
-    try ft_lib.setLcdFilter(.default);
-
-    var font_face = try FontFace.fromPath(ft_lib, def_font_path);
-    defer font_face.deinit();
-    try font_face.setSize(12, 96);
-
-    var font_atlas = try FontAtlas.init(&font_face);
-    defer font_atlas.deinit(gpa);
-
-    // create a small white square at 0,0 for texture-less rects
-    _ = try font_atlas.blit(gpa, .square(2), 0, &(.{255} ** (3 * 2 * 2)), 0);
-
-    // pre-cache all basic ascii chars
-    // 0, 32..128
-    _ = try font_atlas.getInfoOrCacheForGlyphIndex(
-        gpa,
-        font_atlas.getGlyphIndexForCodepoint(0),
-    );
-    for (32..128) |ascii| {
-        const codepoint = @as(u21, @intCast(ascii));
-        const glyph_index = font_atlas.getGlyphIndexForCodepoint(codepoint);
-        _ = try font_atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
-    }
-
-    // const strings = @import("unicode_3_2_test.zig").strings;
-    const strings = [_][]const u8{
-        "Hello, World! - hgl dq - fi fl ff fj ffi ffl - WAV T. W. Lewis",
-        "this is in red",
-        "this is in green",
-        "this is in blue",
-        "this is half transparent",
-    };
-    const colors = [_]mt.RgbaF32{
-        .hexRgb(0xffffff),
-        .hexRgb(0xff0000),
-        .hexRgb(0x00ff00),
-        .hexRgb(0x0000ff),
-        .hexRgba(0xffffff7f),
-    };
-
-    var list = std.ArrayListUnmanaged(WgpuRenderer.RectInstance).empty;
-    defer list.deinit(gpa);
-
-    const line_height = font_face.lineHeight();
-    const origin = mt.Point(f32).all(200);
-    for (strings, 0..) |string, i| {
-        var pos = origin;
-        pos.y += line_height * @as(f32, @floatFromInt(i));
-
-        const color = colors[i];
-
-        const shaped = try ShapedText.init(&font_face, string);
-        defer shaped.deinit();
-
-        try shaped.generateRectsArrayList(
-            gpa,
-            &font_atlas,
-            &list,
-            pos,
-            color,
-            // .hexRgb(0xffffff),
-        );
-    }
-
-    // try font_atlas.writeToBmp("atlas.bmp");
-
-    try list.append(
-        gpa,
-        .recti(
-            .fromBounds(.bounds(origin, .square(200))),
-            .zero,
-            .hexRgb(0xff0000),
-            15,
-            0,
-            4,
-        ),
-    );
-
     //- wpgu
 
-    var renderer = try WgpuRenderer.init(
+    var renderer = try WgpuRenderer.init(gpa, .{
+        .surface_descriptor = //
         WgpuRenderer.wgpu.surfaceDescriptorFromWaylandSurface(.{
             .label = "wayland surface",
             .display = conn.wl_display,
             .surface = window.wl_surface,
         }),
-        window.size,
-        .{
+        .initial_surface_size = window.size,
+        .inspect = .{
             // .instance = gpa,
             // .adapter = gpa,
             // .device = gpa,
             // .surface = true,
         },
-    );
-    defer renderer.deinit();
+    });
+    defer renderer.deinit(gpa);
 
-    const render_pass_data = try WgpuRenderer.RenderPassData.init(
-        renderer.device,
-        renderer.queue,
-        renderer.texture_bind_group_layout,
-        font_atlas.textureDataRef(),
-        list.items,
+    // log.debug("dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
+    const dpi = mt.Point(u16).point(
+        @intFromFloat(@round(conn.hdpi)),
+        @intFromFloat(@round(conn.vdpi)),
     );
-    defer render_pass_data.deinit();
+
+    const font_face =
+        try renderer
+            .font_atlas_manager
+            .initFontFace(gpa, def_font_path, 0, 11, dpi);
 
     //- cu
 
-    const ui_state = try cu.State.init(
-        gpa,
-        WgpuRenderer.CuCallbacks.callbacks,
-    );
+    var cu_callbacks = try WgpuRenderer.CuCallbacks.init(&renderer, gpa);
+    defer cu_callbacks.deinit();
+
+    const ui_state = try cu.State.init(gpa, cu_callbacks.callbacks());
     defer ui_state.deinit();
 
     cu.state = ui_state;
 
     const default_font =
-        ui_state.registerFont(@alignCast(@ptrCast(&font_face)));
+        ui_state.registerFont(@alignCast(@ptrCast(font_face)));
 
-    ui_state.default_palette = cu.Atom.Palette{
+    ui_state.default_palette = .init(.{
         .background = .hexRgb(0x1d2021), // gruvbox bg0
         .text = .hexRgb(0xebdbb2), // gruvbox fg1
         .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
         .border = .hexRgb(0x3c3836), // gruvbox bg1
         .hot = .hexRgb(0x665c54), // grovbox bg3
         .active = .hexRgb(0xfbf1c7), // grovbox fg0
-    };
+    });
     ui_state.default_font = default_font;
+
+    //- arena
+
+    var arena_alloc = std.heap.ArenaAllocator.init(gpa);
+    defer arena_alloc.deinit();
+    const arena = arena_alloc.allocator();
 
     //- main loop
 
-    var pointer_pos = Point(f64).all(-1);
-    var pointer_enter_serial: u32 = 0;
+    var test_toggle = false;
 
     log.info("starting main loop", .{});
-
     window.commit();
 
     main_loop: while (true) {
+        defer {
+            _ = arena_alloc.reset(.retain_capacity);
+        }
+
         try conn.dispatch();
 
         var do_render = false;
 
-        while (conn.event_queue.dequeue()) |event| {
-            switch (event.kind) {
-                .surface_configure => |configure| {
-                    window.handleSurfaceConfigureEvent(configure);
-                    do_render = true;
-                },
+        while (conn.event_queue.dequeue()) |event| switch (event.kind) {
+            .surface_configure => |configure| {
+                window.handleSurfaceConfigureEvent(configure);
+                do_render = true;
+            },
 
-                .toplevel_configure => |conf| {
-                    if (window.handleToplevelConfigureEvent(conf)) |size| {
-                        // window was resized
-                        renderer.reconfigure(size);
+            .toplevel_configure => |conf| conf: {
+                do_render = true;
 
-                        cu.state.window_size = .axis(
-                            @floatFromInt(size.width),
-                            @floatFromInt(size.height),
+                const size =
+                    window.handleToplevelConfigureEvent(conf) orelse
+                    // null means no resize
+                    break :conf;
+
+                renderer.reconfigure(size);
+
+                cu.state.window_size = .size(
+                    @floatFromInt(size.width),
+                    @floatFromInt(size.height),
+                );
+            },
+
+            .toplevel_close => {
+                log.debug("close request", .{});
+                std.process.exit(0);
+                // break :main_loop;
+            },
+
+            .frame => {
+                // the compositor has told us this is a good time to render
+                // useful for animations or just rendering every time
+
+                do_render = true;
+            },
+
+            .keyboard_focus => |focus| {
+                _ = focus;
+            },
+
+            .key => |key| key: {
+                cu.state.pushEvent(.{ .key = .{
+                    .scancode = @intCast(key.scancode),
+                    .keycode = .unknown,
+                    .mod = .{},
+                    .state = if (key.state == .pressed)
+                        .pressed
+                    else
+                        .released,
+                } });
+
+                if (key.state != .pressed) break :key;
+
+                switch (@intFromEnum(key.keysym)) {
+                    xkb.Keysym.q, xkb.Keysym.Escape => break :main_loop,
+
+                    else => {},
+                }
+            },
+
+            .modifier => |mods| {
+                cu.state.pushEvent(.{ .key = .{
+                    .scancode = 0,
+                    .keycode = .unknown,
+                    .mod = .{
+                        .shift = mods.state.shift,
+                        .ctrl = mods.state.ctrl,
+                        .alt = mods.state.alt,
+                    },
+                    .state = .none,
+                } });
+            },
+
+            .text => |text| {
+                cu.state.pushEvent(.{ .text = .{
+                    .text = text.slice(),
+                } });
+            },
+
+            .pointer_focus => |focus| {
+                _ = focus;
+            },
+            .pointer_motion => |motion| {
+                cu.state.pushEvent(.{ .mouse_move = .{
+                    .pos = motion.point.floatCast(f32),
+                } });
+            },
+            .pointer_button => |button| {
+                cu.state.pushEvent(.{ .mouse_button = .{
+                    .button = switch (button.button) {
+                        .left => .left,
+                        .middle => .middle,
+                        .right => .right,
+                        .forward => .forward,
+                        .back => .back,
+                    },
+                    .pos = cu.state.mouse,
+                    .state = if (button.state == .pressed)
+                        .pressed
+                    else
+                        .released,
+                } });
+            },
+            .pointer_scroll => |scroll| scroll: {
+                const value = scroll.value orelse break :scroll;
+                cu.state.pushEvent(.{ .scroll = .{
+                    .scroll = if (scroll.axis == .vertical)
+                        .size(@floatCast(value), 0)
+                    else
+                        .size(0, @floatCast(value)),
+                    .pos = cu.state.mouse,
+                } });
+            },
+        };
+
+        if (!do_render) continue :main_loop;
+
+        b.startFrame();
+        defer b.endFrame();
+
+        b.startBuild(0); // @TODO: use proper window id
+        cu.state.ui_root.layout_axis = .y;
+        cu.state.ui_root.flags.draw_background = true;
+        cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
+
+        //- window inset
+        {
+            const window_rounding = 10;
+
+            const tiling = window.tiling;
+            b.stacks.flags.push(flags: {
+                var flags = AtomFlags.none.drawBackground();
+
+                if (!tiling.isTiled()) {
+                    flags.draw_border = true;
+                    b.stacks.corner_radius.push(window_rounding);
+                } else {
+                    flags.draw_side_top = !tiling.tiled_top;
+                    flags.draw_side_bottom = !tiling.tiled_bottom;
+                    flags.draw_side_left = !tiling.tiled_left;
+                    flags.draw_side_right = !tiling.tiled_right;
+                }
+
+                break :flags flags;
+            });
+            b.stacks.layout_axis.push(.y);
+            const window_inset_wrapper = WindowInsetWrapper.begin(window);
+            defer window_inset_wrapper.end();
+
+            //- top bar
+            {
+                b.stacks.flags.push(AtomFlags.none.drawSideBottom());
+                b.stacks.layout_axis.push(.x);
+                b.stacks.pref_size.push(.size(.fill, .fit));
+                const topbar = b.open("topbar");
+                defer b.close(topbar);
+
+                if (!tiling.isTiled()) {
+                    b.stacks.pref_size
+                        .push(.size(.px(window_rounding), .grow));
+                    _ = b.spacer();
+                }
+
+                //- menu items
+                const menu_items = [_][]const u8{
+                    "Fe",
+                    "File",
+                    "Edit",
+                    "Help",
+                    "qypgj",
+                    "WERTYUI",
+                    "WAV",
+                };
+
+                for (menu_items) |item_str| {
+                    b.stacks.flags
+                        .push(AtomFlags.none.clickable().drawText());
+                    b.stacks.pref_size.push(.square(.text_pad(8)));
+                    const item = b.build(item_str);
+
+                    const inter = item.interaction();
+                    if (inter.f.hovering) {
+                        item.flags.draw_border = true;
+                    }
+
+                    if (inter.f.isClicked()) {
+                        std.debug.print("clicked {s}\n", .{item_str});
+                        // dropdown_open = true;
+                    }
+                }
+
+                //- spacer
+                {
+                    b.stacks.flags.push(AtomFlags.none.clickable());
+                    b.stacks.pref_size.push(.square(.grow));
+                    const topbar_space = b.build("topbar spacer");
+
+                    const inter = topbar_space.interaction();
+                    if (inter.f.left_double_clicked)
+                        window.toggleMaximized();
+                    if (inter.f.right_pressed)
+                        window.showWindowMenu(.point(
+                            @intFromFloat(cu.state.mouse.x),
+                            @intFromFloat(cu.state.mouse.y),
+                        ));
+                    if (inter.f.left_dragging) {
+                        window.startMove();
+
+                        // @HACK:
+                        //  since we loose window focus after the we start
+                        //  a move/drag we never get a mouse button release
+                        //  event. So we push a synthetic one.
+                        conn.event_queue.queue(
+                            .{ .kind = .{ .pointer_button = .{
+                                .button = .left,
+                                .state = .released,
+                                .serial = 0,
+                            } } },
                         );
                     }
+                }
 
-                    do_render = true;
-                },
+                //- window buttons
+                for (0..3) |i| {
+                    b.stacks.flags
+                        .push(AtomFlags.none.clickable().drawBorder());
+                    b.stacks.pref_size
+                        .push(.square(.px(topbar.rect.height())));
+                    const button = b.openf("top bar button {d}", .{i});
+                    defer b.close(button);
 
-                .toplevel_close => {
-                    log.debug("close request", .{});
-                    break :main_loop;
-                },
+                    const int = button.interaction();
+                    if (int.f.hovering)
+                        button.palette.set(.border, .hexRgb(0xFF0000));
 
-                .frame => {
-                    // the compositor has told us this is a good time to render
-                    // useful for animations or just rendering every time
-
-                    do_render = true;
-                },
-
-                .keyboard_focus => |focus| {
-                    _ = focus;
-                    // log.debug(
-                    //     "keyboard_focus: state: {s}, serial: {d}",
-                    //     .{ @tagName(focus.state), focus.serial },
-                    // );
-                },
-
-                .key => |key| key: {
-                    // log.debug(
-                    //     "key: state: {s}, scancode: {d}, keysym: {}," ++
-                    //         " codepoint: 0x{x}",
-                    //     .{
-                    //         @tagName(key.state),
-                    //         key.scancode,
-                    //         key.keysym,
-                    //         key.codepoint,
-                    //     },
-                    // );
-
-                    cu.state.pushEvent(.{ .key = .{
-                        .scancode = @intCast(key.scancode),
-                        .keycode = .unknown,
-                        .mod = .{},
-                        .state = if (key.state == .pressed)
-                            .pressed
-                        else
-                            .released,
-                    } });
-
-                    if (key.state != .pressed) break :key;
-
-                    switch (@intFromEnum(key.keysym)) {
-                        xkb.Keysym.q, xkb.Keysym.Escape => break :main_loop,
-
-                        else => {},
-                    }
-                },
-
-                .modifier => |mods| {
-                    cu.state.pushEvent(.{ .key = .{
-                        .scancode = 0,
-                        .keycode = .unknown,
-                        .mod = .{
-                            .shift = mods.state.shift,
-                            .ctrl = mods.state.ctrl,
-                            .alt = mods.state.alt,
-                        },
-                        .state = .none,
-                    } });
-
-                    // _ = mods;
-                    // log.debug(
-                    //     "mods: shift: {}, caps_lock: {}, ctrl: {}, alt: {}," ++
-                    //         " gui: {}, serial: {d}",
-                    //     .{
-                    //         mods.state.shift,
-                    //         mods.state.caps_lock,
-                    //         mods.state.ctrl,
-                    //         mods.state.alt,
-                    //         mods.state.logo,
-                    //         mods.serial,
-                    //     },
-                    // );
-                },
-
-                .text => |text| {
-                    // const utf8 = text.sliceZ();
-                    // log.debug(
-                    //     "text: codepoint: 0x{x}, text: '{s}'",
-                    //     .{
-                    //         text.codepoint,
-                    //         std.fmt.fmtSliceEscapeLower(utf8),
-                    //     },
-                    // );
-
-                    cu.state.pushEvent(.{ .text = .{
-                        .text = text.slice(),
-                    } });
-                },
-
-                .pointer_focus => |focus| {
-                    // log.debug(
-                    //     "pointer_focus: state: {s}, serial: {d}",
-                    //     .{ @tagName(focus.state), focus.serial },
-                    // );
-
-                    switch (focus.state) {
-                        .enter => {
-                            pointer_enter_serial = focus.serial;
-                        },
-                        .leave => {},
-                    }
-                },
-                .pointer_motion => |motion| {
-                    // log.debug(
-                    //     "pointer_motion: {d}x{d}",
-                    //     .{ motion.x, motion.y },
-                    // );
-
-                    cu.state.pushEvent(.{ .mouse_move = .{
-                        .pos = .vec(
-                            @floatCast(motion.point.x),
-                            @floatCast(motion.point.y),
-                        ),
-                    } });
-
-                    pointer_pos = motion.point;
-
-                    const kind: wl.CursorKind =
-                        if (window.getEdge(pointer_pos)) |edge|
-                            switch (edge) {
-                                .top_left, .bottom_right => .resize_nwse,
-                                .top_right, .bottom_left => .resize_nesw,
-                                .left, .right => .resize_ew,
-                                .top, .bottom => .resize_ns,
-                            }
-                        else
-                            .default;
-
-                    try conn.cursor_manager.setCursor(
-                        pointer_enter_serial,
-                        kind,
-                    );
-                },
-                .pointer_button => |button| button: {
-                    // log.debug(
-                    //     "pointer_button: state: {s}, button: {s}, serial: {d}",
-                    //     .{
-                    //         @tagName(button.state),
-                    //         @tagName(button.button),
-                    //         button.serial,
-                    //     },
-                    // );
-
-                    cu.state.pushEvent(.{ .mouse_button = .{
-                        .button = switch (button.button) {
-                            .left => .left,
-                            .middle => .middle,
-                            .right => .right,
-                            .forward => .forward,
-                            .back => .back,
-                        },
-                        .pos = cu.state.mouse,
-                        .state = if (button.state == .pressed)
-                            .pressed
-                        else
-                            .released,
-                    } });
-
-                    if (button.state != .pressed) break :button;
-
-                    if (button.button == .left) {
-                        if (window.getEdge(pointer_pos)) |edge| {
-                            window.startResize(button.serial, edge);
-                        } else {
-                            window.startMove(button.serial);
+                    if (int.f.isClicked()) {
+                        switch (i) {
+                            0 => window.minimize(),
+                            1 => window.toggleMaximized(),
+                            2 => conn.event_queue.queue(
+                                .{ .kind = .{ .toplevel_close = void{} } },
+                            ),
+                            else => unreachable,
                         }
                     }
-                },
-                .pointer_scroll => |scroll| {
-                    // _ = scroll;
-                    // log.debug(
-                    //     "pointer_scroll: axis: {s}, source: {s}, value: {?d}",
-                    //     .{
-                    //         @tagName(scroll.axis),
-                    //         @tagName(scroll.source),
-                    //         scroll.value,
-                    //     },
-                    // );
+                }
 
-                    if (scroll.value) |value|
-                        cu.state.pushEvent(.{ .scroll = .{
-                            .scroll = if (scroll.axis == .vertical)
-                                .vec(@floatCast(value), 0)
-                            else
-                                .vec(0, @floatCast(value)),
-                            .pos = cu.state.mouse,
-                        } });
-                },
+                if (!tiling.isTiled()) {
+                    b.stacks.pref_size.push(.size(.px(window_rounding), .grow));
+                    _ = b.spacer();
+                }
+            }
+
+            //- main pane
+            {
+                b.stacks.layout_axis.push(.x);
+                b.stacks.pref_size.push(.square(.grow));
+                const main_pane = b.open("main pain");
+                defer b.close(main_pane);
+
+                //- left pane
+                {
+                    b.stacks.flags.push(AtomFlags.none.drawSideRight());
+                    b.stacks.layout_axis.push(.y);
+                    b.stacks.pref_size.push(.size(.percent(0.4), .fill));
+                    const pane = b.open("left pane");
+                    defer b.close(pane);
+
+                    //- header
+                    {
+                        b.stacks.flags
+                            .push(AtomFlags.none.drawSideBottom().drawText());
+                        b.stacks.text_align.push(.size(.end, .center));
+                        b.stacks.pref_size.push(.size(.grow, .text));
+                        const header = b.build("left header");
+                        header.display_string = "Left Header gylp";
+                    }
+
+                    //- content
+                    {
+                        b.stacks.flags
+                            .push(AtomFlags.none.clipRect().allowOverflow());
+                        b.stacks.layout_axis.push(.y);
+                        b.stacks.pref_size.push(.square(.grow));
+                        const content = b.open("left content");
+                        defer b.close(content);
+
+                        // cu.stacks.font.pushForMany(monospace_font);
+                        // defer _ = cu.stacks.font.pop();
+
+                        _ = b.label("Hello, World!");
+
+                        _ = b.lineSpacer();
+                    }
+                }
+
+                //- right pane
+                {
+                    b.stacks.layout_axis.push(.y);
+                    b.stacks.pref_size.push(.size(.grow, .fill));
+                    const pane = b.open("right pane");
+                    defer b.close(pane);
+
+                    //- header
+                    {
+                        b.stacks.flags
+                            .push(AtomFlags.none.drawSideBottom().drawText());
+                        b.stacks.layout_axis.push(.x);
+                        b.stacks.text_align.push(.square(.center));
+                        b.stacks.pref_size.push(.size(.grow, .text));
+                        const header = b.open("right header");
+                        defer b.close(header);
+                        header.display_string = "Right Header";
+
+                        if (header.interaction().f.mouse_over) {
+                            b.stacks.palette.pushForMany(.init(
+                                .{ .background = .hexRgb(0x001800) },
+                            ));
+                            defer _ = b.stacks.palette.pop();
+
+                            b.stacks.flags.push(
+                                AtomFlags.none.floating().drawBackground(),
+                            );
+                            b.stacks.layout_axis.push(.y);
+                            b.stacks.pref_size.push(.square(.fit));
+                            const float = b.open("floating");
+                            defer b.close(float);
+                            float.rel_position = cu.state.mouse
+                                .sub(header.rect.p0)
+                                .add(.splat(10));
+
+                            _ = b.label("tool tip!");
+                            _ = b.label("extra tips!");
+                        }
+                    }
+
+                    //- content
+                    {
+                        b.stacks.layout_axis.push(.y);
+                        b.stacks.pref_size.push(.square(.grow));
+                        const content = b.open("right content");
+                        defer b.close(content);
+
+                        b.stacks.pref_size.push(.square(.text_pad(8)));
+                        if (b.button("foo bar").f.isClicked()) {
+                            log.debug("foo bar clicked", .{});
+                        }
+
+                        _ = b.lineSpacer();
+
+                        b.stacks.pref_size.push(.size(.px(40), .px(20)));
+                        _ = b.toggleSwitch(&test_toggle);
+                    }
+                }
+
+                //- right bar
+                {
+                    const icon_size = cu.Atom.PrefSize.px(24);
+
+                    b.stacks.flags.push(AtomFlags.none.drawSideLeft());
+                    b.stacks.layout_axis.push(.y);
+                    b.stacks.pref_size.push(.size(icon_size, .grow));
+                    const bar = b.open("right bar");
+                    defer b.close(bar);
+
+                    //- inner
+                    {
+                        b.stacks.layout_axis.push(.y);
+                        b.stacks.pref_size.push(.size(icon_size, .fit));
+                        const inner = b.open("right bar inner");
+                        defer b.close(inner);
+
+                        for (0..5) |i| {
+                            {
+                                b.stacks.flags
+                                    .push(AtomFlags.none.drawBorder());
+                                b.stacks.pref_size.push(.square(icon_size));
+                                _ = b.buildf("right bar icon {d}", .{i});
+                            }
+
+                            b.stacks.pref_size.push(.size(icon_size, .px(4)));
+                            _ = b.spacer();
+                        }
+                    }
+                }
             }
         }
 
-        if (do_render) {
-            cu.startBuild(0);
-            cu.state.ui_root.layout_axis = .y;
-            cu.state.ui_root.flags.draw_background = true;
-            cu.state.ui_root.flags.draw_border = true;
+        b.endBuild();
 
-            cu.endBuild();
-
-            renderer.render(&render_pass_data);
-            renderer.surface.present();
-        }
+        try renderer.render(arena);
+        renderer.surface.present();
     }
 }
+
+/// Insets atoms created between `begin` and `end` based on the window inset
+/// with the current tiling
+///
+/// Handles resizing and cursor shape
+///
+// @TODO: use cu mouse cursor api when implemented
+pub const WindowInsetWrapper = struct {
+    window: *const wl.Window,
+    inset: f32,
+    vert_body: *cu.Atom,
+    hori_body: *cu.Atom,
+
+    pub fn begin(window: *const wl.Window) WindowInsetWrapper {
+        const inset_int = window.inset orelse 0;
+        const inset: f32 = @floatFromInt(inset_int);
+
+        const tiling = window.tiling;
+
+        // Since we create atoms before where we want to add this to the tree
+        // we create this as an orphan here as we want to be able to use
+        // any properties on the stacks.
+        cu.state.next_atom_orphan = true;
+        const hori_body = b.build("hori inset body");
+
+        if (!tiling.tiled_top) {
+            b.stacks.pref_size.push(.size(.fill, .px(inset)));
+            b.stacks.layout_axis.push(.x);
+            const top_inset_container = b.open("top inset container");
+            defer b.close(top_inset_container);
+
+            b.stacks.flags.pushForMany(AtomFlags.none.clickable());
+            defer _ = b.stacks.flags.pop();
+
+            b.stacks.pref_size.push(.square(.px(inset)));
+            const top_left = b.build("top-left inset").interaction();
+
+            b.stacks.pref_size.push(.square(.grow));
+            const top_middle = b.build("top-middle inset").interaction();
+
+            b.stacks.pref_size.push(.square(.px(inset)));
+            const top_right = b.build("top-right inset").interaction();
+
+            if (top_left.f.mouse_over)
+                window.conn.setCursor(.resize_nwse) catch {};
+            if (top_left.f.isPressed())
+                window.startResize(.top_left);
+
+            if (top_middle.f.mouse_over)
+                window.conn.setCursor(.resize_ns) catch {};
+            if (top_middle.f.isPressed())
+                window.startResize(.top);
+
+            if (top_right.f.mouse_over)
+                window.conn.setCursor(.resize_nesw) catch {};
+            if (top_right.f.isPressed())
+                window.startResize(.top_right);
+        }
+
+        b.stacks.layout_axis.push(.x);
+        b.stacks.pref_size.push(.square(.grow));
+        const vert_body = b.open("vert inset body");
+
+        if (!tiling.tiled_left) {
+            b.stacks.pref_size.push(.size(.px(inset), .fill));
+            b.stacks.flags.push(AtomFlags.none.clickable());
+            const left = b.build("left inset").interaction();
+
+            if (left.f.mouse_over)
+                window.conn.setCursor(.resize_ew) catch {};
+            if (left.f.isPressed())
+                window.startResize(.left);
+        }
+
+        // We put the atom into the tree here and as a parent
+        b.addToTopParent(hori_body);
+        b.pushParent(hori_body);
+
+        hori_body.pref_size = .square(.grow);
+
+        const hori_inter = hori_body.interaction();
+        if (hori_inter.f.mouse_over)
+            window.conn.setCursor(.default) catch {};
+
+        return .{
+            .window = window,
+            .inset = inset,
+            .vert_body = vert_body,
+            .hori_body = hori_body,
+        };
+    }
+
+    pub fn end(win_inset: WindowInsetWrapper) void {
+        const window = win_inset.window;
+        const tiling = window.tiling;
+        const inset = win_inset.inset;
+
+        b.close(win_inset.hori_body);
+
+        if (!tiling.tiled_right) {
+            b.stacks.pref_size.push(.size(.px(inset), .fill));
+            b.stacks.flags.push(AtomFlags.none.clickable());
+            const right = b.build("right inset").interaction();
+
+            if (right.f.mouse_over)
+                window.conn.setCursor(.resize_ew) catch {};
+            if (right.f.isPressed())
+                window.startResize(.right);
+        }
+
+        b.close(win_inset.vert_body);
+
+        if (!tiling.tiled_bottom) {
+            b.stacks.layout_axis.push(.x);
+            b.stacks.pref_size.push(.size(.fill, .px(inset)));
+            const bottom_inset_container = b.open("bottom inset container");
+            defer b.close(bottom_inset_container);
+
+            b.stacks.flags.pushForMany(AtomFlags.none.clickable());
+            defer _ = b.stacks.flags.pop();
+
+            b.stacks.pref_size.push(.square(.px(inset)));
+            const bottom_left = b.build("bottom-left inset").interaction();
+
+            b.stacks.pref_size.push(.square(.grow));
+            const bottom_middle = b.build("bottom-middle inset").interaction();
+
+            b.stacks.pref_size.push(.square(.px(inset)));
+            const bottom_right = b.build("bottom-right inset").interaction();
+
+            if (bottom_left.f.mouse_over)
+                window.conn.setCursor(.resize_nesw) catch {};
+            if (bottom_left.f.isPressed())
+                window.startResize(.bottom_left);
+
+            if (bottom_middle.f.mouse_over)
+                window.conn.setCursor(.resize_ns) catch {};
+            if (bottom_middle.f.isPressed())
+                window.startResize(.bottom);
+
+            if (bottom_right.f.mouse_over)
+                window.conn.setCursor(.resize_nwse) catch {};
+            if (bottom_right.f.isPressed())
+                window.startResize(.bottom_right);
+        }
+    }
+};

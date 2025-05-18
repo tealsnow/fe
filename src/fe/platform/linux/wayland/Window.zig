@@ -6,9 +6,7 @@ const Allocator = std.mem.Allocator;
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
 
-const Size = @import("../../../math.zig").Size;
-const Bounds = @import("../../../math.zig").Bounds;
-const Point = @import("../../../math.zig").Point;
+const mt = @import("cu").math;
 
 const Event = @import("events.zig").Event;
 const Connection = @import("Connection.zig");
@@ -26,17 +24,17 @@ xdg_surface: *xdg.Surface,
 xdg_toplevel_listener_data: *listeners.XdgToplevelListenerData,
 xdg_toplevel: *xdg.Toplevel,
 
-size: Size(u32),
+size: mt.Size(u32),
 
 /// This is in terms of window gemetry - excludes the inset
-minimium_size: ?Size(u32) = null,
+minimium_size: ?mt.Size(u32) = null,
 inset: ?u32 = null,
 tiling: Event.ToplevelConfigureState = .{},
 
 pub fn init(
     gpa: Allocator,
     conn: *Connection,
-    size: Size(u32),
+    size: mt.Size(u32),
 ) !*Window {
     const wl_surface = try conn.wl_compositor.createSurface();
 
@@ -114,12 +112,9 @@ pub fn deinit(window: *Window, gpa: Allocator) void {
     defer window.xdg_toplevel.destroy();
 }
 
-pub fn innerBounds(window: Window) Bounds(i32) {
+pub fn innerBounds(window: Window) mt.Bounds(i32) {
     return insetBounds(
-        .{
-            .origin = .{ .x = 0, .y = 0 },
-            .size = window.size,
-        },
+        .bounds(.zero, window.size),
         window.inset,
         window.tiling,
     );
@@ -139,15 +134,15 @@ pub fn commit(window: Window) void {
     window.wl_surface.commit();
 }
 
-pub fn getEdge(window: Window, point: Point(f64)) ?Edge {
+pub fn getEdge(window: Window, point: mt.Point(f64)) ?Edge {
     return if (window.inset) |inset|
         Edge.fromPoint(point, window.size, inset, window.tiling)
     else
         null;
 }
 
-pub fn startResize(window: Window, mouse_button_serial: u32, edge: Edge) void {
-    const resize: xdg.Toplevel.ResizeEdge = switch (edge) {
+pub fn startResize(window: Window, edge: Edge) void {
+    const resize_edge: xdg.Toplevel.ResizeEdge = switch (edge) {
         .left => .left,
         .right => .right,
         .top => .top,
@@ -160,13 +155,35 @@ pub fn startResize(window: Window, mouse_button_serial: u32, edge: Edge) void {
 
     window.xdg_toplevel.resize(
         window.conn.wl_seat,
-        mouse_button_serial,
-        resize,
+        window.conn.last_pointer_button_serial,
+        resize_edge,
     );
 }
 
-pub fn startMove(window: Window, mouse_button_serial: u32) void {
-    window.xdg_toplevel.move(window.conn.wl_seat, mouse_button_serial);
+pub fn startMove(window: Window) void {
+    window.xdg_toplevel
+        .move(window.conn.wl_seat, window.conn.last_pointer_button_serial);
+}
+
+pub fn toggleMaximized(window: Window) void {
+    if (window.tiling.maximized) {
+        window.xdg_toplevel.unsetMaximized();
+    } else {
+        window.xdg_toplevel.setMaximized();
+    }
+}
+
+pub fn minimize(window: Window) void {
+    window.xdg_toplevel.setMinimized();
+}
+
+pub fn showWindowMenu(window: Window, origin: mt.Point(i32)) void {
+    window.xdg_toplevel.showWindowMenu(
+        window.conn.wl_seat,
+        window.conn.last_pointer_button_serial,
+        origin.x,
+        origin.y,
+    );
 }
 
 pub fn handleSurfaceConfigureEvent(
@@ -190,14 +207,14 @@ pub fn handleSurfaceConfigureEvent(
 pub fn handleToplevelConfigureEvent(
     window: *Window,
     conf: Event.ToplevelConfigure,
-) ?Size(u32) {
+) ?mt.Size(u32) {
     window.tiling = conf.state;
 
     // This configure event is in terms on window geometry
     // so we need to add back our inset for the real size
     const new_size_geometry = conf.size orelse window.size;
 
-    const new_size_wo_inset: Size(u32) = if (window.minimium_size) |min|
+    const new_size_wo_inset: mt.Size(u32) = if (window.minimium_size) |min|
         .{
             .width = @max(min.width, new_size_geometry.width),
             .height = @max(min.height, new_size_geometry.height),
@@ -223,9 +240,9 @@ pub fn handleToplevelConfigureEvent(
 
 pub fn computeOuterSize(
     window_inset: ?u32,
-    new_size_inner: Size(u32),
+    new_size_inner: mt.Size(u32),
     tiling: Event.ToplevelConfigureState,
-) Size(u32) {
+) mt.Size(u32) {
     const inset = window_inset orelse return new_size_inner;
 
     var size = new_size_inner;
@@ -243,10 +260,10 @@ pub fn computeOuterSize(
 }
 
 fn insetBounds(
-    bounds: Bounds(u32),
+    bounds: mt.Bounds(u32),
     window_inset: ?u32,
     tiling: Event.ToplevelConfigureState,
-) Bounds(i32) {
+) mt.Bounds(i32) {
     var out = bounds.intCast(i32);
     const inset: i32 = @intCast(window_inset orelse return out);
 
@@ -279,8 +296,8 @@ pub const Edge = enum {
     bottom_right,
 
     pub fn fromPoint(
-        point: Point(f64),
-        window_size: Size(u32),
+        point: mt.Point(f64),
+        window_size: mt.Size(u32),
         window_inset: u32,
         tiling: Event.ToplevelConfigureState,
     ) ?Edge {

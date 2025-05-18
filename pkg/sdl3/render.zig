@@ -3,12 +3,12 @@ const c = @cImport({
 });
 const sdl = @import("sdl3.zig");
 const Error = sdl.Error;
-const Window = sdl.Window;
-const Color = sdl.Color;
-const Rect = sdl.Rect;
-const FRect = sdl.FRect;
-const Surface = sdl.Surface;
-const PixelFormat = sdl.PixelFormat;
+const Window = sdl.video.Window;
+const Color = sdl.pixels.Color;
+const Rect = sdl.rect.Rect;
+const FRect = sdl.rect.FRect;
+const Surface = sdl.surface.Surface;
+const PixelFormat = sdl.pixels.PixelFormat;
 
 pub const Renderer = opaque {
     pub fn init(window: *Window, name: ?[:0]const u8) Error!*Renderer {

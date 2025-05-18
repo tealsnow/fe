@@ -3,7 +3,7 @@ const Atom = @This();
 const std = @import("std");
 
 const cu = @import("cu.zig");
-const Color = cu.Color;
+const math = cu.math;
 
 // per-build links
 children: ?struct {
@@ -22,7 +22,7 @@ key: Key,
 string: []const u8 = "",
 display_string: []const u8 = "",
 flags: Flags = .{},
-pref_size: cu.Axis2(PrefSize) = .zero,
+pref_size: math.Size(PrefSize) = .zero,
 layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
 // hover_cursor
 // group_key
@@ -30,34 +30,41 @@ layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if
 // custom_draw_data
 
 // @FIXME: these could be scope locals, its worth looking into performance implications first though
-text_align: cu.Axis2(TextAlignment) = .square(.center),
-palette: Palette = undefined,
+text_align: math.Size(TextAlignment) = .square(.center),
+palette: pallete.Pallete = undefined,
 font: cu.State.FontId = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
+border_width: f32 = 1, // draw_border, draw_side_top/bottom/left/right
+corner_radius: f32 = 0, // draw_border, draw_background
 
 // per-build artifacts
-fixed_size: cu.Axis2(f32) = .zero,
-rel_position: cu.Axis2(f32) = .zero,
-rect: cu.Range2(f32) = .zero,
-text_size: cu.Axis2(f32) = .zero,
-text_rect: cu.Range2(f32) = .zero,
+fixed_size: math.Size(f32) = .zero,
+rel_position: math.Point(f32) = .zero,
+rect: math.Rect(f32) = .zero,
+text_size: math.Size(f32) = .zero,
+text_rect: math.Rect(f32) = .zero,
 
 // persistant data
 build_index_touched_first: u64,
 build_index_touched_last: u64,
 // build_index_first_disabled: u64,
-view_bounds: cu.Axis2(f32) = .zero,
+view_bounds: math.Size(f32) = .zero,
 hot_t: f32,
 active_t: f32,
 
-pub const LayoutAxis = cu.Axis2(void).Kind;
+pub const LayoutAxis = math.Dim2D;
 
-pub inline fn interaction(atom: *Atom) cu.Interation {
-    return cu.interactionFromAtom(atom);
+pub inline fn interaction(atom: *Atom) cu.Interaction {
+    return cu.input.interactionFromAtom(atom);
 }
 
-pub fn format(self: *const Atom, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+pub fn format(
+    self: *const Atom,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
     _ = fmt;
     _ = options;
     try writer.print("atom['{s}'#{}]", .{ self.string, self.key });
@@ -395,21 +402,126 @@ pub const PrefSize = extern struct {
     /// value(px): value * top font size,
     /// strictness: 1,
     pub fn em(value: f32) PrefSize {
-        const top_font = cu.state.font_stack.topNoPop().?;
-        const font_handle = cu.state.getFont(top_font);
-        const font_size = cu.state.callbacks.fontSize(font_handle);
+        const font_size = fontSize();
         return .px(value * font_size);
+    }
+
+    /// Returns the font size (px) of the top font
+    pub fn fontSize() f32 {
+        const top_font = cu.stacks.font.topStable().?;
+        const font_handle = cu.state.getFont(top_font);
+        return cu.state.callbacks.fontSize(font_handle);
     }
 };
 
-pub const Palette = struct {
-    background: Color,
-    text: Color,
-    text_weak: Color,
-    border: Color,
-    hot: Color,
-    active: Color,
-    // overlay: Color,
-    // cursor: Color,
-    // selection: Color,
+pub const pallete = struct {
+    pub const PalleteColor = enum {
+        background,
+        text,
+        text_weak,
+        border,
+        hot,
+        active,
+        // overlay,
+        // cursor,
+        // selection,
+    };
+
+    pub const Pallete = struct {
+        const List = std.EnumArray(PalleteColor, math.RgbaU8);
+
+        list: List,
+
+        pub fn init(
+            init_values: std.enums.EnumFieldStruct(
+                List.Key,
+                List.Value,
+                null,
+            ),
+        ) Pallete {
+            return .{ .list = .init(init_values) };
+        }
+
+        pub fn get(self: Pallete, key: PalleteColor) math.RgbaU8 {
+            return self.list.get(key);
+        }
+
+        pub fn set(self: *Pallete, key: PalleteColor, value: math.RgbaU8) void {
+            return self.list.set(key, value);
+        }
+    };
+
+    pub const PalletePartial = struct {
+        const List = std.EnumArray(PalleteColor, ?math.RgbaU8);
+
+        list: List,
+
+        pub fn init(
+            init_values: std.enums.EnumFieldStruct(
+                List.Key,
+                List.Value,
+                @as(?math.RgbaU8, null),
+            ),
+        ) PalletePartial {
+            return .{ .list = .initDefault(@as(?math.RgbaU8, null), init_values) };
+        }
+
+        pub fn get(self: PalletePartial, key: PalleteColor) ?math.RgbaU8 {
+            return self.list.get(key);
+        }
+
+        pub fn set(
+            self: *PalletePartial,
+            key: PalleteColor,
+            value: ?math.RgbaU8,
+        ) void {
+            return self.list.set(key, value);
+        }
+    };
+
+    /// Merge the left with the right pallete, prioritizes the left one.
+    pub fn mergePartials(
+        left_: PalletePartial,
+        right: PalletePartial,
+    ) PalletePartial {
+        var left = left_;
+
+        inline for (0..PalletePartial.List.Indexer.count) |i| {
+            const key = PalletePartial.List.Indexer.keyForIndex(i);
+            left.set(key, left.get(key) orelse right.get(key));
+        }
+
+        return left;
+    }
+
+    pub fn partialIsFull(partial: PalletePartial) bool {
+        inline for (0..PalletePartial.List.Indexer.count) |i| {
+            const key = PalletePartial.List.Indexer.keyForIndex(i);
+            if (partial.get(key) == null)
+                return false;
+        }
+        return true;
+    }
+
+    pub fn partialToFull(partial: PalletePartial) ?Pallete {
+        var list = Pallete{ .list = .initUndefined() };
+
+        inline for (0..Pallete.List.Indexer.count) |i| {
+            const key = Pallete.List.Indexer.keyForIndex(i);
+            list.set(key, partial.get(key) orelse return null);
+        }
+
+        return list;
+    }
+
+    pub fn fullToPartial(full: Pallete) PalletePartial {
+        var list = PalletePartial{ .list = .initUndefined() };
+
+        inline for (0..PalletePartial.List.Indexer.count) |i| {
+            const key = PalletePartial.List.Indexer.keyForIndex(i);
+            list.set(key, full.get(key));
+        }
+
+        return list;
+    }
 };

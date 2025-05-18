@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
             bool,
             "use_llvm",
             "switch to use llvm or not " ++
-                "(defaults to false for debug and true for release)",
+                "(defaults to false for debug and true for release or when profiling is enabled)",
         ) orelse
         if (optimize == .Debug) profile else false;
 
@@ -147,7 +147,7 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             });
 
-            const wgpu = b.lazyDependency("wgpu", .{
+            const wgpu = b.lazyDependency("wgpu_native", .{
                 .target = target,
                 .optimize = optimize,
             });
@@ -201,7 +201,7 @@ pub fn build(b: *std.Build) void {
 
             //- wgpu
 
-            const wgpu = b.lazyDependency("wgpu", .{
+            const wgpu = b.lazyDependency("wgpu_native", .{
                 .target = target,
                 .optimize = optimize,
             });

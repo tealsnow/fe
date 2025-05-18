@@ -1,11 +1,12 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const log = std.log.scoped(.@"cu::layout");
+const log = std.log.scoped(.@"cu.layout");
 
 const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
-const AxisKind = cu.Axis2(void).Kind;
+const math = cu.math;
+const AxisKind = math.Dim2D;
 
 const TermColor = @import("../TermColor.zig");
 

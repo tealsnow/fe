@@ -1,10 +1,10 @@
 const std = @import("std");
-const log = std.log.scoped(.@"cu::input");
+const log = std.log.scoped(.@"cu.input");
 
 const cu = @import("cu.zig");
+const math = cu.math;
 const Atom = cu.Atom;
 
-// @TODO: remove reliance on sdl
 pub const Event = struct {
     kind: EventKind,
     timestamp_us: u64,
@@ -27,17 +27,17 @@ pub const EventKind = union(enum) {
 
     pub const MouseButtonEvent = struct {
         button: MouseButton,
-        pos: cu.Vec2(f32),
+        pos: math.Point(f32), // @TODO: remove
         state: PressState,
     };
 
     pub const MouseMoveEvent = struct {
-        pos: cu.Vec2(f32),
+        pos: math.Point(f32),
     };
 
     pub const ScrollEvent = struct {
-        scroll: cu.Vec2(f32),
-        pos: cu.Vec2(f32),
+        scroll: math.Size(f32),
+        pos: math.Point(f32),
     };
 
     pub const TextEvent = struct {
@@ -187,14 +187,15 @@ pub const InteractionFlags = packed struct(u32) {
     }
 
     pub inline fn isDragging(self: InteractionFlags) bool {
-        return self.containsAny(.dragging);
+        return self.containsAny(.any_dragging);
     }
 
     pub inline fn buttonPressed(f: InteractionFlags, button: MouseButton) bool {
         return switch (button) {
             .left, .middle, .right => {
                 const button_int: u5 = @intCast(@intFromEnum(button));
-                const base_int: u32 = @bitCast(InteractionFlags{ .left_pressed = true });
+                const base_int: u32 =
+                    @bitCast(InteractionFlags{ .left_pressed = true });
                 const f_int: u32 = @bitCast(f);
                 return (f_int & (base_int << button_int)) != 0;
             },
@@ -204,9 +205,9 @@ pub const InteractionFlags = packed struct(u32) {
     }
 };
 
-pub const Interation = struct {
+pub const Interaction = struct {
     atom: *Atom,
-    scroll: cu.Vec2(f32) = .zero,
+    scroll: math.Size(f32) = .zero,
     modifiers: Modifiers = .{},
     f: InteractionFlags = .{},
 };
@@ -228,8 +229,8 @@ fn setButtonGeneric(
     }
 }
 
-pub fn interactionFromAtom(atom: *Atom) Interation {
-    var inter = Interation{ .atom = atom };
+pub fn interactionFromAtom(atom: *Atom) Interaction {
+    var inter = Interaction{ .atom = atom };
 
     var rect = atom.rect;
 
@@ -243,20 +244,26 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
 
     // determine if we're under the context menu or not
     maybe_parent = atom;
-    const ctx_menu_is_ancestor = while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
-        if (parent == cu.state.ui_ctx_menu_root)
-            break true;
-    } else false;
+    const ctx_menu_is_ancestor =
+        while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+            if (parent == cu.state.ui_ctx_menu_root)
+                break true;
+        } else false;
 
     // calculate blacklist rectagele
     const blacklist_rect = if (!ctx_menu_is_ancestor and cu.state.ctx_menu_open)
         cu.state.ui_ctx_menu_root.rect
     else
-        cu.Range2(f32).zero;
+        math.Rect(f32).zero;
 
-    var maybe_event = cu.state.event_list.first;
-    while (maybe_event) |node| : (maybe_event = node.next) {
-        const event = node.data;
+    // var maybe_event = cu.state.event_list.first;
+    // while (maybe_event) |node| : (maybe_event = node.next) {
+    // var i: usize = 0;
+    // while (cu.state.event_queue.peekPtr(i)) |event| : (i += 1) {
+    var i: usize = 0;
+    while (i < cu.state.event_list.len) : (i += 1) {
+        const event = &cu.state.event_list.buffer[i];
+        // const event = node.data;
         if (event.consumed) continue;
 
         const button = switch (event.kind) {
@@ -273,7 +280,8 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
             },
         };
 
-        const in_bounds = !blacklist_rect.contains(cu.state.mouse) and rect.contains(cu.state.mouse);
+        const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
+            rect.contains(cu.state.mouse);
         const button_idx = @intFromEnum(button.button);
 
         // mouse down in box -> set box as hot/active -> press event
@@ -289,35 +297,56 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
 
             cu.state.start_drag_pos = cu.state.mouse;
 
-            inter.f = setButtonGeneric(inter.f, .{ .left_pressed = true }, button.button);
+            inter.f = setButtonGeneric(
+                inter.f,
+                .{ .left_pressed = true },
+                button.button,
+            );
 
-            const double_click_time_us = cu.state.graphics_info.double_click_time_us;
+            const double_click_time_us =
+                cu.state.graphics_info.double_click_time_us;
 
             const last_pressed_key =
-                cu.state.press_history_key[button_idx].indexBack(0) orelse Atom.Key.nil;
+                cu.state.press_history_key[button_idx].indexBack(0) orelse
+                Atom.Key.nil;
             const last_pressed_timestamp_us =
-                cu.state.press_history_timestamp_us[button_idx].indexBack(0) orelse std.math.maxInt(u64);
+                cu.state.press_history_timestamp_us[button_idx]
+                    .indexBack(0) orelse std.math.maxInt(u64);
 
             if (Atom.Key.eql(atom.key, last_pressed_key) and
-                event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us)
+                event.timestamp_us -
+                    last_pressed_timestamp_us <= double_click_time_us)
             {
-                inter.f = setButtonGeneric(inter.f, .{ .left_double_clicked = true }, button.button);
+                inter.f = setButtonGeneric(
+                    inter.f,
+                    .{ .left_double_clicked = true },
+                    button.button,
+                );
             }
 
             const last_last_pressed_key =
-                cu.state.press_history_key[button_idx].indexBack(1) orelse Atom.Key.nil;
+                cu.state.press_history_key[button_idx]
+                    .indexBack(1) orelse Atom.Key.nil;
             const last_last_pressed_timestamp_us =
-                cu.state.press_history_timestamp_us[button_idx].indexBack(1) orelse std.math.maxInt(u64);
+                cu.state.press_history_timestamp_us[button_idx]
+                    .indexBack(1) orelse std.math.maxInt(u64);
 
             if (Atom.Key.eql(atom.key, last_pressed_key) and
                 Atom.Key.eql(atom.key, last_last_pressed_key) and
-                event.timestamp_us - last_pressed_timestamp_us <= double_click_time_us and
-                last_pressed_timestamp_us - last_last_pressed_timestamp_us <= double_click_time_us)
+                event.timestamp_us - last_pressed_timestamp_us <=
+                    double_click_time_us and
+                last_pressed_timestamp_us - last_last_pressed_timestamp_us <=
+                    double_click_time_us)
             {
-                inter.f = setButtonGeneric(inter.f, .{ .left_triple_clicked = true }, button.button);
+                inter.f = setButtonGeneric(
+                    inter.f,
+                    .{ .left_triple_clicked = true },
+                    button.button,
+                );
             }
 
-            cu.state.press_history_timestamp_us[button_idx].push(event.timestamp_us);
+            cu.state.press_history_timestamp_us[button_idx]
+                .push(event.timestamp_us);
             cu.state.press_history_key[button_idx].push(atom.key);
         }
 
@@ -332,15 +361,25 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
             const click = in_bounds;
             if (click) cu.state.hot_atom_key = .nil;
 
-            inter.f = setButtonGeneric(inter.f, .{ .left_released = true }, button.button);
+            inter.f = setButtonGeneric(
+                inter.f,
+                .{ .left_released = true },
+                button.button,
+            );
             if (click)
-                inter.f = setButtonGeneric(inter.f, .{ .left_clicked = true }, button.button);
+                inter.f = setButtonGeneric(
+                    inter.f,
+                    .{ .left_clicked = true },
+                    button.button,
+                );
 
             event.consumed = true;
         }
     }
 
-    if (rect.contains(cu.state.mouse) and !blacklist_rect.contains(cu.state.mouse)) {
+    if (rect.contains(cu.state.mouse) and
+        !blacklist_rect.contains(cu.state.mouse))
+    {
         inter.f.mouse_over = true;
     }
 
@@ -348,11 +387,14 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
     {
         if (atom.flags.mouse_clickable and
             inter.f.mouse_over and
-            (cu.state.hot_atom_key.eql(.nil) or cu.state.hot_atom_key.eql(atom.key)))
+            (cu.state.hot_atom_key.eql(.nil) or
+                cu.state.hot_atom_key.eql(atom.key)))
         {
             var none_active_or_we_are_active = true;
             for (cu.state.active_atom_key) |key| {
-                none_active_or_we_are_active = none_active_or_we_are_active and (key == .nil or key.eql(atom.key));
+                none_active_or_we_are_active =
+                    none_active_or_we_are_active and
+                    (key == .nil or key.eql(atom.key));
             }
             if (none_active_or_we_are_active) {
                 cu.state.hot_atom_key = atom.key;
@@ -368,13 +410,21 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
             if (Atom.Key.eql(atom.key, cu.state.active_atom_key[idx]) or
                 inter.f.buttonPressed(button))
             {
-                inter.f = setButtonGeneric(inter.f, .{ .left_dragging = true }, button);
+                inter.f = setButtonGeneric(
+                    inter.f,
+                    .{ .left_dragging = true },
+                    button,
+                );
             }
         }
     }
 
-    if (!ctx_menu_is_ancestor and inter.f.containsAny(.{ .left_pressed = true, .right_pressed = true, .middle_pressed = true })) {
-        cu.ctxMenuClose();
+    if (!ctx_menu_is_ancestor and inter.f.containsAny(.{
+        .left_pressed = true,
+        .right_pressed = true,
+        .middle_pressed = true,
+    })) {
+        cu.builder.ctxMenuClose();
     }
 
     return inter;
@@ -383,6 +433,7 @@ pub fn interactionFromAtom(atom: *Atom) Interation {
 pub const Keycode = enum(u32) {
     // @TODO
     unknown,
+    _,
 };
 
 pub const Modifiers = packed struct {

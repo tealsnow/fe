@@ -2,15 +2,17 @@ const Renderer = @This();
 
 const builtin = @import("builtin");
 const std = @import("std");
-const fc = @import("fontconfig.zig");
 
+const fc = @import("fontconfig.zig");
 const sdl = @import("sdl3");
+
 const cu = @import("cu");
+const math = cu.math;
 
 const tracy = @import("tracy");
 
-sdl_rend: *sdl.Renderer,
-bg_color_stack: std.ArrayListUnmanaged(cu.Color) = .empty,
+sdl_rend: *sdl.render.Renderer,
+bg_color_stack: std.ArrayListUnmanaged(cu.math.RgbaU8) = .empty,
 
 pub fn render(self: *Renderer) !void {
     if (!cu.state.ui_built) return;
@@ -20,7 +22,7 @@ pub fn render(self: *Renderer) !void {
 
     defer self.bg_color_stack.clearAndFree(cu.state.arena);
 
-    const color = cu.Color.hexRgb(0x000000);
+    const color = math.RgbaU8.hexRgb(0x000000);
     try self.bg_color_stack.append(cu.state.arena, color);
     defer _ = self.bg_color_stack.pop().?;
 
@@ -32,19 +34,19 @@ pub fn render(self: *Renderer) !void {
     try self.sdl_rend.present();
 }
 
-fn setDrawColor(self: *Renderer, color: cu.Color) !void {
+fn setDrawColor(self: *Renderer, color: math.RgbaU8) !void {
     try self.sdl_rend.setDrawColorT(sdlColorFromCuColor(color));
 }
 
-fn fillRect(self: *Renderer, rect: sdl.FRect) !void {
+fn fillRect(self: *Renderer, rect: sdl.rect.FRect) !void {
     try self.sdl_rend.fillRect(&rect);
 }
 
-fn drawRect(self: *Renderer, rect: sdl.FRect) !void {
+fn drawRect(self: *Renderer, rect: sdl.rect.FRect) !void {
     try self.sdl_rend.renderRect(&rect);
 }
 
-fn drawLine(self: *Renderer, p0: cu.Vec2(f32), p1: cu.Vec2(f32)) !void {
+fn drawLine(self: *Renderer, p0: math.Point(f32), p1: math.Point(f32)) !void {
     try self.sdl_rend.renderLine(p0.x, p0.y, p1.x, p1.y);
 }
 
@@ -60,7 +62,7 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
     const rect = sdlRectFromCuRect(atom.rect);
 
     if (atom.flags.clip_rect) {
-        const view_bounds = sdl.Rect{
+        const view_bounds = sdl.rect.Rect{
             .x = @intFromFloat(rect.x),
             .y = @intFromFloat(rect.y),
             .w = @intFromFloat(rect.w),
@@ -73,9 +75,11 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
     };
 
     if (atom.flags.draw_background) {
-        try self.bg_color_stack.append(cu.state.arena, atom.palette.background);
+        const background = atom.palette.get(.background);
 
-        try self.setDrawColor(atom.palette.background);
+        try self.bg_color_stack.append(cu.state.arena, background);
+
+        try self.setDrawColor(background);
         try self.fillRect(rect);
     }
     defer if (atom.flags.draw_background) {
@@ -86,27 +90,27 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
         try self.renderText(atom);
 
     if (atom.flags.draw_border) {
-        try self.setDrawColor(atom.palette.border);
+        try self.setDrawColor(atom.palette.get(.border));
         try self.drawRect(rect);
     }
 
     if (atom.flags.draw_side_top) {
-        try self.setDrawColor(atom.palette.border);
+        try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topLeft(), atom.rect.topRight());
     }
 
     if (atom.flags.draw_side_bottom) {
-        try self.setDrawColor(atom.palette.border);
+        try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.bottomLeft(), atom.rect.bottomRight());
     }
 
     if (atom.flags.draw_side_left) {
-        try self.setDrawColor(atom.palette.border);
+        try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topLeft(), atom.rect.bottomLeft());
     }
 
     if (atom.flags.draw_side_right) {
-        try self.setDrawColor(atom.palette.border);
+        try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topRight(), atom.rect.bottomRight());
     }
 
@@ -121,9 +125,9 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
 fn renderText(self: *Renderer, atom: *cu.Atom) !void {
     const color =
         if (atom.flags.draw_text_weak)
-            atom.palette.text_weak
+            atom.palette.get(.text_weak)
         else if (atom.flags.draw_text)
-            atom.palette.text
+            atom.palette.get(.text)
         else
             unreachable;
 
@@ -145,12 +149,12 @@ fn renderText(self: *Renderer, atom: *cu.Atom) !void {
     try self.sdl_rend.renderTexture(texture, null, &dst_rect);
 }
 
-fn sdlColorFromCuColor(color: cu.Color) sdl.Color {
+fn sdlColorFromCuColor(color: math.RgbaU8) sdl.pixels.Color {
     return @bitCast(color);
 }
 
-fn sdlRectFromCuRect(rect: cu.Range2(f32)) sdl.FRect {
-    return sdl.FRect{
+fn sdlRectFromCuRect(rect: math.Rect(f32)) sdl.rect.FRect {
+    return .{
         .x = rect.p0.x,
         .y = rect.p0.y,
         .w = rect.p1.x - rect.p0.x,
@@ -159,7 +163,11 @@ fn sdlRectFromCuRect(rect: cu.Range2(f32)) sdl.FRect {
 }
 
 /// ensure fonconfig is initialized
-pub fn createFontFromFamilyName(gpa: std.mem.Allocator, family: [:0]const u8, ptsize: f32) !*sdl.ttf.Font {
+pub fn createFontFromFamilyName(
+    gpa: std.mem.Allocator,
+    family: [:0]const u8,
+    ptsize: f32,
+) !*sdl.ttf.Font {
     const path = try getFontPathFromFamilyName(gpa, family);
     defer gpa.free(path);
     return try sdl.ttf.Font.open(path, ptsize);
@@ -193,12 +201,12 @@ pub const Callbacks = struct {
         context: *anyopaque,
         text: []const u8,
         font_handle: cu.State.FontHandle,
-    ) cu.Axis2(f32) {
+    ) math.Size(f32) {
         _ = context;
         const font: *sdl.ttf.Font = @alignCast(@ptrCast(font_handle));
         const w, const h = font.getStringSize(text) catch
             @panic("failed to measure text");
-        return .axis(@floatFromInt(w), @floatFromInt(h));
+        return .size(@floatFromInt(w), @floatFromInt(h));
     }
 
     fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {

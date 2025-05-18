@@ -1,7 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
-const log = std.log.scoped(.@"wl[listeners]");
+const log = std.log.scoped(.@"wayland.listeners");
 
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
@@ -9,7 +9,7 @@ const wp = @import("wayland").client.wp;
 
 const xkb = @import("xkbcommon");
 
-const Size = @import("../../../math.zig").Size;
+const Size = @import("cu").math.Size;
 
 const EventQueue = @import("events.zig").EventQueue;
 const Event = @import("events.zig").Event;

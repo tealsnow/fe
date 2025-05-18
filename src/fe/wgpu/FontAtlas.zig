@@ -8,7 +8,7 @@ const assert = std.debug.assert;
 
 const log = std.log.scoped(.FontAtlas);
 
-const mt = @import("../math.zig");
+const mt = @import("cu").math;
 const FontFace = @import("FontFace.zig");
 
 const ft = @import("freetype");
@@ -18,7 +18,7 @@ const ft = @import("freetype");
 bytes: []u8 = &[_]u8{}, // 1 bit format
 size: mt.Size(u32) = .zero,
 
-cursor: mt.Point(u32) = .all(0),
+cursor: mt.Point(u32) = .splat(0),
 max_y: u32 = 0,
 
 face: *const FontFace,
@@ -39,10 +39,12 @@ pub const GlyphInfo = struct {
     tex_coords: mt.Rect(u32),
     /// Per character pos data to be used in conjuction with shaping
     /// in 26.6 fixed point
-    bearing: mt.Point(i32),
+    bearing: mt.Point(i64),
     /// physical size of glyph
     /// in 26.6 fixed point
-    size: mt.Size(i32),
+    size: mt.Size(i64),
+    /// px
+    bitmap_offset: mt.Point(i32),
 };
 
 pub const TextureDataRef = struct {
@@ -89,13 +91,17 @@ pub fn getInfoOrCacheForGlyphIndex(
     // of bearing or size for a single glyph
     const info = GlyphInfo{
         .tex_coords = rect,
-        .bearing = .pt(
-            @intCast(glyph.metrics.horiBearingX),
-            @intCast(glyph.metrics.horiBearingY),
+        .bearing = .point(
+            glyph.metrics.horiBearingX,
+            glyph.metrics.horiBearingY,
         ),
         .size = .size(
-            @intCast(glyph.metrics.width),
-            @intCast(glyph.metrics.height),
+            glyph.metrics.width,
+            glyph.metrics.height,
+        ),
+        .bitmap_offset = .point(
+            glyph.bitmap_left,
+            glyph.bitmap_top,
         ),
     };
 
@@ -249,4 +255,18 @@ pub fn textureDataRef(
         .bytes = atlas.bytes.ptr,
         .size = atlas.size,
     };
+}
+
+pub fn cacheAscii(atlas: *FontAtlas, gpa: Allocator) !void {
+    // pre-cache all basic ascii chars
+    // 0, 32..128
+    _ = try atlas.getInfoOrCacheForGlyphIndex(
+        gpa,
+        atlas.getGlyphIndexForCodepoint(0),
+    );
+    for (32..128) |ascii| {
+        const codepoint = @as(u21, @intCast(ascii));
+        const glyph_index = atlas.getGlyphIndexForCodepoint(codepoint);
+        _ = try atlas.getInfoOrCacheForGlyphIndex(gpa, glyph_index);
+    }
 }

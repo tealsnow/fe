@@ -10,7 +10,7 @@ const wgpu = @import("wgpu");
 
 // const cu = @import("cu");
 
-const mt = @import("math.zig");
+const mt = @import("cu").math;
 
 const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
 

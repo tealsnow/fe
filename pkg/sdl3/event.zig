@@ -4,8 +4,8 @@ const c = @cImport({
 });
 const sdl = @import("sdl3.zig");
 const Error = sdl.Error;
-const WindowID = sdl.WindowID;
-const DisplayID = sdl.DisplayID;
+const WindowID = sdl.video.WindowID;
+const DisplayID = sdl.video.DisplayID;
 
 pub const Scancode = @import("scancode.zig").Scancode;
 pub const Keycode = @import("keycode.zig").Keycode;

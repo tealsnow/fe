@@ -21,9 +21,11 @@
             .path = "./pkg/freetype",
             .lazy = true,
         },
-        .wgpu = .{
-            .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.0.0.tar.gz",
-            .hash = "wgpu_native_zig-5.0.0-B9jeDOGZAgAkyePsJjgwsgHgo0guYS7S9cQqDcZx9kXL",
+        .wgpu_native = .{
+            // .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.1.0.tar.gz",
+            // .hash = "wgpu_native_zig-5.1.0-B9jeDPmZAgAqCtg1bpt30WiO4lATvvQ9xKGTwfT2mzb0",
+            .url = "git+https://github.com/tealsnow/wgpu_native_zig.git?ref=remove-usingnamespace#193365e56329a1e0484a0874211d696e5929e6cb",
+            .hash = "wgpu_native_zig-5.1.0-B9jeDHzVAgCRQ48ysPqnIMxqWE41K1Q5uZIQmo72d3Xp",
             .lazy = true,
         },
         .wayland = .{

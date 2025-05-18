@@ -2,7 +2,7 @@
  * Rectangle drawing
  */
 
-//= types 
+//= types
 
 struct Cpu2Vertex {
     //- instance data
@@ -65,7 +65,7 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     let dst_center = (in.dst_p1 + in.dst_p0) * 0.5;
     let dst_pos = corners[in.index] * dst_half_size + dst_center;
 
-    let ndc = (dst_pos / surface_size_px) - 1;
+    let ndc = (2 * dst_pos / surface_size_px) - 1;
     let flipped_ndc = vec2f(ndc.x, -ndc.y); // flip y
 
     //- position texture
@@ -121,40 +121,52 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     );
 
     // map distance => a blend color
-    let sdf_factor = 1f - smoothstep(0f, 2f * softness, dist);
+    // let dist_dx = dpdx(dist);
+    // let dist_dy = dpdy(dist);
+    // let dist_aa_width = 2f * length(vec2f(dist_dx, dist_dy));
+    // let rounding_factor = 1f - smoothstep(-dist_aa_width, dist_aa_width, dist);
+    let rounding_factor = 1f - smoothstep(0f, 2f * softness, dist);
 
     //- hollow rects / border thickness
     var border_factor = 1f;
     if (in.border_thickness != 0f) {
-        let interior_half_size =
-            in.dst_half_size - vec2f(in.border_thickness);
+        let pixel_scale = length(vec2f(
+            dpdx(in.dst_pos.x),
+            dpdy(in.dst_pos.y)
+        ));
 
-        // reduction factor for the internal corner
-        // radius. not 100% sure the best way to go
-        // about this, but this is the best thing I've
-        // found so far!
-        //
-        // this is necessary because otherwise it looks
-        // weird
+        let is_thin_border = in.border_thickness <= pixel_scale;
+        let adjusted_thickness = max(in.border_thickness, pixel_scale);
+
+        let interior_half_size =
+            in.dst_half_size - vec2f(adjusted_thickness);
+
         let interior_radius_reduce_f = min(
             interior_half_size.x / in.dst_half_size.x,
             interior_half_size.y / in.dst_half_size.y
         );
 
+        let radius_scale = select(1.0, 0.75, is_thin_border);
         let interior_corner_radius =
-            in.corner_radius *
-            interior_radius_reduce_f *
-            interior_radius_reduce_f;
+            in.corner_radius * interior_radius_reduce_f * radius_scale;
 
         let inside_d = roundedRectSDF(
             in.dst_pos,
             in.dst_center,
-            interior_half_size - softness_padding,
+            interior_half_size,
             interior_corner_radius,
         );
 
-        let inside_f = smoothstep(0f, 2f * softness, inside_d);
-        border_factor = inside_f;
+        let inside_dx = dpdx(inside_d);
+        let inside_dy = dpdy(inside_d);
+        let inside_aa_width = length(vec2f(inside_dx, inside_dy));
+
+        let aa_scale = select(1.0, 0.33, is_thin_border);
+        border_factor = smoothstep(
+            -inside_aa_width * aa_scale,
+            inside_aa_width * aa_scale,
+            inside_d
+        );
     }
 
     //- color / texture
@@ -162,7 +174,7 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     let font_sample = textureSample(atlas_texture, atlas_sampler, in.uv);
     let font_c = font_sample.r;
 
-    let smoothing = 1f / 16f;
+    let smoothing = 1f / 32f;
     let font_alpha = smoothstep(0.5 - smoothing, 0.5 + smoothing, font_c);
 
     let in_rgb = in.color.rgb;
@@ -175,7 +187,7 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     let out_rgb = linear_in_rgb;
     let out_a = in_a * font_alpha;
 
-    let out_color = vec4f(out_rgb, out_a) * sdf_factor * border_factor;
+    let out_color = vec4f(out_rgb, out_a) * rounding_factor * border_factor;
     return out_color;
 }
 
@@ -187,10 +199,8 @@ fn roundedRectSDF(
     rect_half_size: vec2f,
     r: f32,
 ) -> f32 {
-    let d2 = 
-        abs(rect_center - sample_pos) -
-        rect_half_size + 
-        vec2f(r, r);
-    return min(max(d2.x, d2.y), 0f) + length(max(d2, vec2f(0f, 0f))) - r;
+    let offset = abs(rect_center - sample_pos) - rect_half_size + vec2f(r, r);
+    let outer_dist = length(max(offset, vec2f(0f, 0f)));
+    let inner_dist = min(max(offset.x, offset.y), 0f);
+    return outer_dist + inner_dist - r;
 }
-
