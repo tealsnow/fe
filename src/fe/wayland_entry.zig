@@ -96,7 +96,7 @@ fn run(gpa: Allocator) !void {
 
     const font_face =
         try renderer
-            .font_atlas_manager
+            .font_manager
             .initFontFace(gpa, def_font_path, 0, 11, dpi);
 
     //- cu

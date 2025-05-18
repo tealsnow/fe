@@ -39,7 +39,7 @@ uniform_bind_group: *wgpu.BindGroup,
 
 texture_bind_group_layout: *wgpu.BindGroupLayout,
 
-font_atlas_manager: *FontAtlasManager,
+font_manager: *FontManager,
 batch_processor: *BatchProcessor,
 
 //= methods
@@ -176,11 +176,11 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
 
     //- return
 
-    const font_atlas_manager = try gpa.create(FontAtlasManager);
-    font_atlas_manager.* = try .init();
+    const font_manager = try gpa.create(FontManager);
+    font_manager.* = try .init();
 
     const batch_processor = try gpa.create(BatchProcessor);
-    batch_processor.* = try .init(font_atlas_manager);
+    batch_processor.* = try .init(font_manager);
 
     return .{
         .surface = surface,
@@ -200,7 +200,7 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
 
         .texture_bind_group_layout = texture_bind_group_layout,
 
-        .font_atlas_manager = font_atlas_manager,
+        .font_manager = font_manager,
         .batch_processor = batch_processor,
     };
 }
@@ -222,8 +222,8 @@ pub fn deinit(renderer: Renderer, gpa: Allocator) void {
 
     defer renderer.texture_bind_group_layout.release();
 
-    defer gpa.destroy(renderer.font_atlas_manager);
-    defer renderer.font_atlas_manager.deinit(gpa);
+    defer gpa.destroy(renderer.font_manager);
+    defer renderer.font_manager.deinit(gpa);
 
     defer gpa.destroy(renderer.batch_processor);
     defer renderer.batch_processor.deinit();
@@ -691,7 +691,7 @@ pub fn render(renderer: Renderer, arena: Allocator) !void {
 
     for (batch_data, 0..) |data, i| {
         render_pass_data[i] =
-            try renderer.batchToRenderPass(renderer.font_atlas_manager, data);
+            try renderer.batchToRenderPass(renderer.font_manager, data);
     }
 
     renderer.renderPassData(render_pass_data);
@@ -924,7 +924,7 @@ pub const CuCallbacks = struct {
 
         // @TODO: It might be work caching this for later use in rendering
 
-        const font_atlas = cb.renderer.font_atlas_manager.getAtlas(font_face);
+        const font_atlas = cb.renderer.font_manager.getAtlas(font_face);
 
         const shaped = cb.renderer.batch_processor.shaper
             .shape(font_face, font_atlas, text) catch
@@ -1102,18 +1102,18 @@ pub const RenderPassData = struct {
     }
 };
 
-//= atlas manager
+//= font manager
 
-pub const FontAtlasManager = struct {
+pub const FontManager = struct {
     ft_lib: *ft.Library,
     atlas_map: std.AutoHashMapUnmanaged(*FontFace, *FontAtlas) = .empty,
 
-    pub fn init() !FontAtlasManager {
+    pub fn init() !FontManager {
         const ft_lib = try ft.Library.init();
         return .{ .ft_lib = ft_lib };
     }
 
-    pub fn deinit(self: *FontAtlasManager, gpa: Allocator) void {
+    pub fn deinit(self: *FontManager, gpa: Allocator) void {
         var iter = self.atlas_map.iterator();
         while (iter.next()) |entry| {
             const font_face = entry.key_ptr.*;
@@ -1131,7 +1131,7 @@ pub const FontAtlasManager = struct {
     }
 
     pub fn initFontFace(
-        self: *FontAtlasManager,
+        self: *FontManager,
         gpa: Allocator,
         path: [:0]const u8,
         index: i32,
@@ -1155,7 +1155,7 @@ pub const FontAtlasManager = struct {
     }
 
     pub fn getAtlas(
-        self: *const FontAtlasManager,
+        self: *const FontManager,
         font_face: *const FontFace,
     ) *FontAtlas {
         // const cast since we don't actually modify it
@@ -1173,7 +1173,7 @@ pub const BatchData = struct {
 
 pub fn batchToRenderPass(
     renderer: *const Renderer,
-    font_atlas_manager: *const FontAtlasManager,
+    font_atlas_manager: *const FontManager,
     batch_data: BatchData,
 ) !RenderPassData {
     const font_atlas =
@@ -1195,7 +1195,7 @@ pub fn batchToRenderPass(
 //  then put text rects into own buffer based on font used
 //  this means we need an empty texture
 pub const BatchProcessor = struct {
-    font_atlas_manager: *const FontAtlasManager,
+    font_atlas_manager: *const FontManager,
     batches: std.ArrayListUnmanaged(BatchData) = .empty,
     shaper: TextShaper,
 
@@ -1203,7 +1203,7 @@ pub const BatchProcessor = struct {
     font: ?*const FontFace = null,
 
     pub fn init(
-        font_atlas_manager: *const FontAtlasManager,
+        font_atlas_manager: *const FontManager,
     ) !BatchProcessor {
         const shaper = try TextShaper.init();
         return .{
