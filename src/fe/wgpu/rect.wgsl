@@ -4,7 +4,7 @@
 
 //= types
 
-struct Cpu2Vertex {
+struct RectInstance {
     //- instance data
     @location(0) dst_p0: vec2f, // top left corner on screen
     @location(1) dst_p1: vec2f, // bottom right corner on screen
@@ -23,7 +23,7 @@ struct Cpu2Vertex {
     @builtin(vertex_index) index: u32,
 }
 
-struct Vertex2Fragment {
+struct FragmentInput {
     @builtin(position) position: vec4f,
 
     // fragment input
@@ -47,10 +47,10 @@ struct Vertex2Fragment {
 @group(1) @binding(0) var atlas_texture: texture_2d<f32>;
 @group(1) @binding(1) var atlas_sampler: sampler;
 
-//= vertex
+//= rect pass
 
 @vertex
-fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
+fn vsMain(in: RectInstance) -> FragmentInput {
     // This could easily be provided by the vertex buffer
     // This is a var to allow for runtime indexing
     var corners = array<vec2f, 4>(
@@ -78,7 +78,7 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     let tex_uv = tex_pos / atlas_size;
 
     //- fill output
-    var out: Vertex2Fragment;
+    var out: FragmentInput;
 
     out.position = vec4f(flipped_ndc, 0, 1);
     out.uv = tex_uv;
@@ -96,10 +96,8 @@ fn vsMain(in: Cpu2Vertex) -> Vertex2Fragment {
     return out;
 }
 
-//= fragment
-
 @fragment
-fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
+fn fsMain(in: FragmentInput) -> @location(0) vec4f {
     //- rounding / drop shadows
 
     // we need to shrink the rectangle's half-size
@@ -121,13 +119,20 @@ fn fsMain(in: Vertex2Fragment) -> @location(0) vec4f {
     );
 
     // map distance => a blend color
-    // let dist_dx = dpdx(dist);
-    // let dist_dy = dpdy(dist);
-    // let dist_aa_width = 2f * length(vec2f(dist_dx, dist_dy));
-    // let rounding_factor = 1f - smoothstep(-dist_aa_width, dist_aa_width, dist);
-    let rounding_factor = 1f - smoothstep(0f, 2f * softness, dist);
+    let dist_dx = dpdx(dist);
+    let dist_dy = dpdy(dist);
+    let dist_aa_width = 2f * length(vec2f(dist_dx, dist_dy));
+    
+    // Use different anti-aliasing approaches based on corner radius
+    let has_corners = in.corner_radius > 0.0001;
+    let soft_factor = 1f - smoothstep(0f, 2f * softness, dist);
+    let aa_factor = 1f - smoothstep(-dist_aa_width, dist_aa_width, dist);
+    
+    // Choose appropriate factor based on whether we have rounded corners
+    let rounding_factor = select(soft_factor, aa_factor, has_corners);
 
     //- hollow rects / border thickness
+
     var border_factor = 1f;
     if (in.border_thickness != 0f) {
         let pixel_scale = length(vec2f(

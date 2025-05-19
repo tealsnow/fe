@@ -29,6 +29,29 @@ pub fn entry(gpa: Allocator) !void {
     std.process.cleanExit();
 }
 
+fn getFontFromFamilyName(
+    gpa: Allocator,
+    font_family: [:0]const u8,
+) ![:0]const u8 {
+    try fc.init();
+    defer fc.deinit();
+
+    const pattern = try fc.Pattern.create();
+    defer pattern.destroy();
+    try pattern.addString(.family, font_family);
+    try pattern.addBool(.outline, .true);
+
+    const config = try fc.Config.getCurrent();
+    try config.substitute(pattern, .pattern);
+    fc.defaultSubsitute(pattern);
+
+    const match = try fc.fontMatch(config, pattern);
+    defer match.destroy();
+
+    const path = try match.getString(.file, 0);
+    return try gpa.dupeZ(u8, path);
+}
+
 fn run(gpa: Allocator) !void {
     //- window
     const conn = try wl.Connection.init(gpa);
@@ -44,30 +67,13 @@ fn run(gpa: Allocator) !void {
     window.minimium_size = .{ .width = 200, .height = 100 };
 
     //- font loading
-    const def_font_path = def_font_path: {
-        const font_family = "sans";
-
-        try fc.init();
-        defer fc.deinit();
-
-        const pattern = try fc.Pattern.create();
-        defer pattern.destroy();
-        try pattern.addString(.family, font_family);
-        try pattern.addBool(.outline, .true);
-
-        const config = try fc.Config.getCurrent();
-        try config.substitute(pattern, .pattern);
-        fc.defaultSubsitute(pattern);
-
-        const match = try fc.fontMatch(config, pattern);
-        defer match.destroy();
-
-        const path = try match.getString(.file, 0);
-        break :def_font_path try gpa.dupeZ(u8, path);
-    };
+    const def_font_path = try getFontFromFamilyName(gpa, "sans");
     defer gpa.free(def_font_path);
+    const mono_font_path = try getFontFromFamilyName(gpa, "mono");
+    defer gpa.free(mono_font_path);
 
     log.debug("default font path (sans): {s}", .{def_font_path});
+    log.debug("mono font path (mono): {s}", .{mono_font_path});
 
     //- wpgu
 
@@ -94,10 +100,12 @@ fn run(gpa: Allocator) !void {
         @intFromFloat(@round(conn.vdpi)),
     );
 
-    const font_face =
-        try renderer
-            .font_manager
-            .initFontFace(gpa, def_font_path, 0, 11, dpi);
+    const def_font_face = try renderer
+        .font_manager
+        .initFontFace(gpa, def_font_path, 0, 11, dpi);
+    const mono_font_face = try renderer
+        .font_manager
+        .initFontFace(gpa, mono_font_path, 0, 11, dpi);
 
     //- cu
 
@@ -110,7 +118,10 @@ fn run(gpa: Allocator) !void {
     cu.state = ui_state;
 
     const default_font =
-        ui_state.registerFont(@alignCast(@ptrCast(font_face)));
+        ui_state.registerFont(@alignCast(@ptrCast(def_font_face)));
+
+    const mono_font =
+        ui_state.registerFont(@alignCast(@ptrCast(mono_font_face)));
 
     ui_state.default_palette = .init(.{
         .background = .hexRgb(0x1d2021), // gruvbox bg0
@@ -316,6 +327,9 @@ fn run(gpa: Allocator) !void {
                     "WERTYUI",
                     "WAV",
                 };
+
+                b.stacks.font.pushForMany(mono_font);
+                defer _ = b.stacks.font.pop();
 
                 for (menu_items) |item_str| {
                     b.stacks.flags

@@ -4,7 +4,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
-const log_scope = .@"wgpu renderer";
+const log_scope = .WgpuRenderer;
 const log = std.log.scoped(log_scope);
 
 pub const wgpu = @import("wgpu");
@@ -37,7 +37,8 @@ uniform_buffer: *wgpu.Buffer,
 uniform_bind_group_layout: *wgpu.BindGroupLayout,
 uniform_bind_group: *wgpu.BindGroup,
 
-texture_bind_group_layout: *wgpu.BindGroupLayout,
+atlas_texture_bind_group_layout: *wgpu.BindGroupLayout,
+null_atlas_texture: RenderPassAtlasTexture,
 
 font_manager: *FontManager,
 batch_processor: *BatchProcessor,
@@ -128,7 +129,7 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
 
     const shader_module, //
     const uniform_bind_group_layout, //
-    const texture_bind_group_layout, //
+    const atlas_texture_bind_group_layout, //
     const pipeline_layout, //
     const pipeline =
         try createPipeline(device, surface_format);
@@ -174,6 +175,15 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
         return error.wgpu;
     };
 
+    //- null atlas
+    const null_atlas_texture = try RenderPassAtlasTexture.init(
+        device,
+        queue,
+        atlas_texture_bind_group_layout,
+        &[_]u8{255},
+        .square(1),
+    );
+
     //- return
 
     const font_manager = try gpa.create(FontManager);
@@ -198,7 +208,8 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
         .uniform_bind_group_layout = uniform_bind_group_layout,
         .uniform_bind_group = uniform_bind_group,
 
-        .texture_bind_group_layout = texture_bind_group_layout,
+        .atlas_texture_bind_group_layout = atlas_texture_bind_group_layout,
+        .null_atlas_texture = null_atlas_texture,
 
         .font_manager = font_manager,
         .batch_processor = batch_processor,
@@ -220,7 +231,8 @@ pub fn deinit(renderer: Renderer, gpa: Allocator) void {
     defer renderer.uniform_bind_group_layout.release();
     defer renderer.uniform_bind_group.release();
 
-    defer renderer.texture_bind_group_layout.release();
+    defer renderer.atlas_texture_bind_group_layout.release();
+    defer renderer.null_atlas_texture.deinit();
 
     defer gpa.destroy(renderer.font_manager);
     defer renderer.font_manager.deinit(gpa);
@@ -691,7 +703,7 @@ pub fn render(renderer: Renderer, arena: Allocator) !void {
 
     for (batch_data, 0..) |data, i| {
         render_pass_data[i] =
-            try renderer.batchToRenderPass(renderer.font_manager, data);
+            try renderer.batchToRenderPass(data);
     }
 
     renderer.renderPassData(render_pass_data);
@@ -834,29 +846,18 @@ fn doRenderPass(
 
     pass.setPipeline(renderer.pipeline);
 
-    pass.setBindGroup(
-        0,
-        renderer.uniform_bind_group,
-        0,
-        null,
-    );
+    pass.setBindGroup(0, renderer.uniform_bind_group, 0, null);
 
     for (pass_data) |data| {
-        pass.setBindGroup(
-            1,
-            data.atlas_texture_bind_group,
-            0,
-            null,
-        );
+        const atlas_texture =
+            data.atlas_texture orelse renderer.null_atlas_texture;
 
-        pass.setVertexBuffer(
-            0,
-            data.rect_buffer,
-            0,
-            data.rect_buffer.getSize(),
-        );
+        pass.setBindGroup(1, atlas_texture.bind_group, 0, null);
 
-        pass.draw(4, data.rect_buffer_count, 0, 0);
+        const buffer = data.rect_buffer.buffer;
+        pass.setVertexBuffer(0, buffer, 0, buffer.getSize());
+
+        pass.draw(4, data.rect_buffer.count, 0, 0);
     }
 
     pass.end();
@@ -899,7 +900,6 @@ pub const CuCallbacks = struct {
 
     pub fn deinit(cb: CuCallbacks) void {
         _ = cb;
-        // cb.shaper.deinit();
     }
 
     pub fn callbacks(cb: *CuCallbacks) cu.State.Callbacks {
@@ -919,13 +919,11 @@ pub const CuCallbacks = struct {
         font_handle: cu.State.FontHandle,
     ) mt.Size(f32) {
         const cb: *CuCallbacks = @ptrCast(@alignCast(context));
-
-        const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
-
-        // @TODO: It might be work caching this for later use in rendering
+        const font_face: *FontFace = @ptrCast(@alignCast(font_handle));
 
         const font_atlas = cb.renderer.font_manager.getAtlas(font_face);
 
+        // @TODO: It might be work caching this for later use in rendering
         const shaped = cb.renderer.batch_processor.shaper
             .shape(font_face, font_atlas, text) catch
             @panic("failed to shape text");
@@ -965,50 +963,47 @@ pub const CuCallbacks = struct {
 
 //= render pass data
 
-pub const RenderPassData = struct {
-    atlas_texture: *wgpu.Texture,
-    atlas_texture_view: *wgpu.TextureView,
-    atlas_texture_sampler: *wgpu.Sampler,
-    atlas_texture_bind_group: *wgpu.BindGroup,
-
-    rect_buffer: *wgpu.Buffer,
-    rect_buffer_count: u32,
+pub const RenderPassAtlasTexture = struct {
+    texture: *wgpu.Texture,
+    view: *wgpu.TextureView,
+    sampler: *wgpu.Sampler,
+    bind_group: *wgpu.BindGroup,
 
     pub fn init(
         device: *wgpu.Device,
         queue: *wgpu.Queue,
-        texture_bind_group_layout: *wgpu.BindGroupLayout,
-        font_atlas_texture: FontAtlas.TextureDataRef,
-        rect_buffer_data: []const RectInstance,
-    ) !RenderPassData {
+        bind_group_layout: *wgpu.BindGroupLayout,
+        bytes: [*]const u8,
+        size: mt.Size(u32),
+    ) !RenderPassAtlasTexture {
         //- create texture
-        const atlas_texture_size = wgpu.Extent3D{
-            .width = font_atlas_texture.size.width,
-            .height = font_atlas_texture.size.height,
+        const texture_size = wgpu.Extent3D{
+            .width = size.width,
+            .height = size.height,
             .depth_or_array_layers = 1,
         };
 
-        const atlas_texture_desc = wgpu.TextureDescriptor{
+        const texture_desc = wgpu.TextureDescriptor{
             .label = "font atlas",
             .usage = wgpu.TextureUsage.texture_binding |
                 wgpu.TextureUsage.copy_dst,
             .dimension = .@"2d",
-            .size = atlas_texture_size,
+            .size = texture_size,
             .format = .r8_unorm,
         };
-        const atlas_texture =
-            device.createTexture(&atlas_texture_desc) orelse {
+        const texture =
+            device.createTexture(&texture_desc) orelse {
                 log.err("Failed to create atlas texture", .{});
                 return error.wgpu;
             };
 
-        const atlas_texture_view = atlas_texture.createView(&.{
+        const texture_view = texture.createView(&.{
             .label = "atlas texture view",
         }) orelse {
             log.err("failed to create atlas texture view", .{});
             return error.wgpu;
         };
-        const atlas_texture_sampler = device.createSampler(&.{
+        const texture_sampler = device.createSampler(&.{
             .label = "atlas texture sampler",
             .mag_filter = .linear,
             .min_filter = .linear,
@@ -1020,38 +1015,34 @@ pub const RenderPassData = struct {
         //- write texture
         queue.writeTexture(
             &.{
-                .texture = atlas_texture,
+                .texture = texture,
                 .origin = .{},
             },
-            font_atlas_texture.bytes,
-            font_atlas_texture.size.width *
-                font_atlas_texture.size.height,
+            bytes,
+            size.width * size.height,
             &.{
                 .offset = 0,
-                .bytes_per_row = font_atlas_texture.size.width,
-                .rows_per_image = font_atlas_texture.size.height,
+                .bytes_per_row = size.width,
+                .rows_per_image = size.height,
             },
-            &atlas_texture_size,
+            &texture_size,
         );
 
         //- bind group
-        const texture_bind_group_entry = wgpu.BindGroupEntry{
-            .binding = 0,
-            .texture_view = atlas_texture_view,
-        };
-        const sampler_bind_group_entry = wgpu.BindGroupEntry{
-            .binding = 1,
-            .sampler = atlas_texture_sampler,
-        };
-
         const texture_bind_group_entries = [_]wgpu.BindGroupEntry{
-            texture_bind_group_entry,
-            sampler_bind_group_entry,
+            .{
+                .binding = 0,
+                .texture_view = texture_view,
+            },
+            .{
+                .binding = 1,
+                .sampler = texture_sampler,
+            },
         };
 
-        const atlas_texture_bind_group = device.createBindGroup(&.{
+        const bind_group = device.createBindGroup(&.{
             .label = "atlas texture bind group",
-            .layout = texture_bind_group_layout,
+            .layout = bind_group_layout,
             .entry_count = texture_bind_group_entries.len,
             .entries = &texture_bind_group_entries,
         }) orelse {
@@ -1059,6 +1050,31 @@ pub const RenderPassData = struct {
             return error.wgpu;
         };
 
+        return .{
+            .texture = texture,
+            .view = texture_view,
+            .sampler = texture_sampler,
+            .bind_group = bind_group,
+        };
+    }
+
+    pub fn deinit(self: RenderPassAtlasTexture) void {
+        defer self.texture.release();
+        defer self.view.release();
+        defer self.sampler.release();
+        defer self.bind_group.release();
+    }
+};
+
+pub const RenderPassRectBuffer = struct {
+    buffer: *wgpu.Buffer,
+    count: u32,
+
+    pub fn init(
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        rect_buffer_data: []const RectInstance,
+    ) !RenderPassRectBuffer {
         //- create rect buffer
         const rect_buffer = device.createBuffer(&.{
             .label = "rect instance buffer",
@@ -1079,26 +1095,24 @@ pub const RenderPassData = struct {
             rect_buffer.getSize(),
         );
 
-        //- return
-
         return .{
-            .atlas_texture = atlas_texture,
-            .atlas_texture_view = atlas_texture_view,
-            .atlas_texture_sampler = atlas_texture_sampler,
-            .atlas_texture_bind_group = atlas_texture_bind_group,
-
-            .rect_buffer = rect_buffer,
-            .rect_buffer_count = @intCast(rect_buffer_data.len),
+            .buffer = rect_buffer,
+            .count = @intCast(rect_buffer_data.len),
         };
     }
 
-    pub fn deinit(data: RenderPassData) void {
-        defer data.atlas_texture.release();
-        defer data.atlas_texture_view.release();
-        defer data.atlas_texture_sampler.release();
-        defer data.atlas_texture_bind_group.release();
+    pub fn deinit(self: RenderPassRectBuffer) void {
+        self.buffer.release();
+    }
+};
 
-        defer data.rect_buffer.release();
+pub const RenderPassData = struct {
+    atlas_texture: ?RenderPassAtlasTexture,
+    rect_buffer: RenderPassRectBuffer,
+
+    pub fn deinit(data: RenderPassData) void {
+        data.rect_buffer.deinit();
+        if (data.atlas_texture) |atlas_texture| atlas_texture.deinit();
     }
 };
 
@@ -1106,7 +1120,7 @@ pub const RenderPassData = struct {
 
 pub const FontManager = struct {
     ft_lib: *ft.Library,
-    atlas_map: std.AutoHashMapUnmanaged(*FontFace, *FontAtlas) = .empty,
+    atlas_map: std.AutoHashMapUnmanaged(*const FontFace, *FontAtlas) = .empty,
 
     pub fn init() !FontManager {
         const ft_lib = try ft.Library.init();
@@ -1144,9 +1158,6 @@ pub const FontManager = struct {
         const atlas = try gpa.create(FontAtlas);
         atlas.* = try FontAtlas.init(face);
 
-        // create a small white square at 0,0 for texture-less rects
-        _ = try atlas.blit(gpa, .square(2), 0, &(.{255} ** (3 * 2 * 2)), 0);
-
         try atlas.cacheAscii(gpa);
 
         try self.atlas_map.put(gpa, face, atlas);
@@ -1158,8 +1169,7 @@ pub const FontManager = struct {
         self: *const FontManager,
         font_face: *const FontFace,
     ) *FontAtlas {
-        // const cast since we don't actually modify it
-        return self.atlas_map.get(@constCast(font_face)) orelse
+        return self.atlas_map.get(font_face) orelse
             @panic("given font face not owned by this atlas manager");
     }
 };
@@ -1167,47 +1177,58 @@ pub const FontManager = struct {
 //= batch data
 
 pub const BatchData = struct {
-    font_face: *const FontFace,
+    font_face: ?*const FontFace,
     rects: []const RectInstance,
 };
 
 pub fn batchToRenderPass(
     renderer: *const Renderer,
-    font_atlas_manager: *const FontManager,
     batch_data: BatchData,
 ) !RenderPassData {
-    const font_atlas =
-        font_atlas_manager.getAtlas(batch_data.font_face);
+    const atlas_texture = if (batch_data.font_face) |font_face| atlas: {
+        const font_atlas =
+            renderer.font_manager.getAtlas(font_face);
 
-    const render_pass_data = try RenderPassData.init(
+        const atlas_texture = try RenderPassAtlasTexture.init(
+            renderer.device,
+            renderer.queue,
+            renderer.atlas_texture_bind_group_layout,
+            font_atlas.bytes.ptr,
+            font_atlas.size,
+        );
+
+        break :atlas atlas_texture;
+    } else null;
+
+    const rect_buffer = try RenderPassRectBuffer.init(
         renderer.device,
         renderer.queue,
-        renderer.texture_bind_group_layout,
-        font_atlas.textureDataRef(),
         batch_data.rects,
     );
 
-    return render_pass_data;
+    return .{
+        .atlas_texture = atlas_texture,
+        .rect_buffer = rect_buffer,
+    };
 }
 
-// @TODO:
-//  put non text rects all in one buffer
-//  then put text rects into own buffer based on font used
-//  this means we need an empty texture
 pub const BatchProcessor = struct {
-    font_atlas_manager: *const FontManager,
-    batches: std.ArrayListUnmanaged(BatchData) = .empty,
+    font_manager: *const FontManager,
     shaper: TextShaper,
 
-    list: std.ArrayListUnmanaged(RectInstance) = .empty,
-    font: ?*const FontFace = null,
+    rect_list: std.ArrayListUnmanaged(RectInstance) = .empty,
+
+    text_lists: std.AutoHashMapUnmanaged(
+        *const FontFace,
+        std.ArrayListUnmanaged(RectInstance),
+    ) = .empty,
 
     pub fn init(
-        font_atlas_manager: *const FontManager,
+        font_manager: *const FontManager,
     ) !BatchProcessor {
         const shaper = try TextShaper.init();
         return .{
-            .font_atlas_manager = font_atlas_manager,
+            .font_manager = font_manager,
             .shaper = shaper,
         };
     }
@@ -1217,8 +1238,8 @@ pub const BatchProcessor = struct {
     }
 
     pub fn reset(self: *BatchProcessor) void {
-        self.batches = .empty;
-        self.list = .empty;
+        self.rect_list = .empty;
+        self.text_lists = .empty;
     }
 
     pub fn process(
@@ -1229,14 +1250,23 @@ pub const BatchProcessor = struct {
 
         try self.processAtom(arena, cu.state.ui_root);
 
-        const rects = try self.list.toOwnedSlice(arena);
-        const batch = BatchData{
-            .font_face = self.font orelse @panic(""),
-            .rects = rects,
-        };
-        try self.batches.append(arena, batch);
+        var batches = try arena.alloc(BatchData, self.text_lists.size + 1);
 
-        return self.batches.items;
+        batches[0] = .{
+            .font_face = null,
+            .rects = try self.rect_list.toOwnedSlice(arena),
+        };
+
+        var i: usize = 1;
+        var iter = self.text_lists.iterator();
+        while (iter.next()) |entry| : (i += 1) {
+            batches[i] = .{
+                .font_face = entry.key_ptr.*,
+                .rects = entry.value_ptr.items,
+            };
+        }
+
+        return batches;
     }
 
     pub fn processAtom(
@@ -1260,7 +1290,7 @@ pub const BatchProcessor = struct {
 
         if (atom.flags.draw_background) {
             const color = atom.palette.get(.background).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = rect,
                 .color = color,
                 .corner_radius = atom.corner_radius,
@@ -1269,7 +1299,7 @@ pub const BatchProcessor = struct {
 
         if (atom.flags.draw_border) {
             const color = atom.palette.get(.border).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = rect,
                 .color = color,
                 .corner_radius = atom.corner_radius,
@@ -1287,7 +1317,7 @@ pub const BatchProcessor = struct {
             );
 
             const color = atom.palette.get(.border).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = border_rect,
                 .color = color,
             });
@@ -1303,7 +1333,7 @@ pub const BatchProcessor = struct {
             );
 
             const color = atom.palette.get(.border).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = border_rect,
                 .color = color,
             });
@@ -1319,7 +1349,7 @@ pub const BatchProcessor = struct {
             );
 
             const color = atom.palette.get(.border).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = border_rect,
                 .color = color,
             });
@@ -1335,19 +1365,20 @@ pub const BatchProcessor = struct {
             );
 
             const color = atom.palette.get(.border).toRgbaF32();
-            try self.list.append(arena, .{
+            try self.rect_list.append(arena, .{
                 .dst = border_rect,
                 .color = color,
             });
         }
 
-        const font_ptr = cu.state.getFont(atom.font);
-        const font_face: *const FontFace = @ptrCast(@alignCast(font_ptr));
-
-        self.font = font_face;
-
         if (atom.flags.draw_text or atom.flags.draw_text_weak) {
-            const font_atlas = self.font_atlas_manager.getAtlas(font_face);
+            const font_ptr = cu.state.getFont(atom.font);
+            const font_face: *const FontFace = @ptrCast(@alignCast(font_ptr));
+
+            const entry =
+                try self.text_lists.getOrPutValue(arena, font_face, .empty);
+
+            const font_atlas = self.font_manager.getAtlas(font_face);
 
             const shaped_text = try self.shaper
                 .shape(font_face, font_atlas, atom.display_string);
@@ -1361,7 +1392,7 @@ pub const BatchProcessor = struct {
 
             try shaped_text.generateRects(
                 arena,
-                &self.list,
+                entry.value_ptr,
                 atom.text_rect.p0,
                 color,
             );
