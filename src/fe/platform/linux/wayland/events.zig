@@ -4,6 +4,8 @@ const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
 const xkb = @import("xkbcommon");
 
+const Window = @import("Window.zig");
+
 const mt = @import("cu").math;
 const EventQueueCircleBuffer =
     @import("cu").circle_buffers.EventQueueCircleBuffer;
@@ -20,7 +22,7 @@ pub const Event = struct {
         surface_configure: SurfaceConfigure,
 
         toplevel_configure: ToplevelConfigure,
-        toplevel_close: void,
+        toplevel_close: ToplevelClose,
 
         // popup_configure: PopupConfigure,
         // popup_done: PopupDone,
@@ -55,12 +57,12 @@ pub const Event = struct {
     };
 
     pub const SurfaceConfigure = struct {
-        wl_surface: *wl.Surface,
-        xdg_surface: *xdg.Surface,
+        window: *Window,
         serial: u32,
     };
 
     pub const ToplevelConfigure = struct {
+        window: *Window,
         size: ?mt.Size(u32),
         state: ToplevelConfigureState,
     };
@@ -84,6 +86,10 @@ pub const Event = struct {
                 state.tiled_top or
                 state.tiled_bottom;
         }
+    };
+
+    pub const ToplevelClose = struct {
+        window: *Window,
     };
 
     // pub const PopupConfigure = struct {

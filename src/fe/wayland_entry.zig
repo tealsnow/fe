@@ -33,8 +33,10 @@ pub fn entry(gpa: Allocator) !void {
         .{ .width = 1024, .height = 576 },
     );
     defer window.deinit(gpa);
+    window.setTitle("fe");
+    window.setAppId("me.ketanr.fe");
     window.inset = 15;
-    window.minimium_size = .{ .width = 200, .height = 100 };
+    window.setMinSize(.size(200, 100));
 
     //- wpgu
 
@@ -147,7 +149,9 @@ pub fn entry(gpa: Allocator) !void {
                 );
             },
 
-            .toplevel_close => {
+            .toplevel_close => |close| {
+                _ = close;
+
                 log.debug("close request", .{});
                 // std.process.exit(0);
                 break :main_loop;
@@ -244,7 +248,7 @@ pub fn entry(gpa: Allocator) !void {
         b.startFrame();
         defer b.endFrame();
 
-        b.startBuild(0); // @TODO: use proper window id
+        b.startBuild(@intFromPtr(window));
         cu.state.ui_root.layout_axis = .y;
         cu.state.ui_root.flags.insert(.draw_background);
         cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
@@ -367,7 +371,9 @@ pub fn entry(gpa: Allocator) !void {
                             0 => window.minimize(),
                             1 => window.toggleMaximized(),
                             2 => conn.event_queue.queue(
-                                .{ .kind = .{ .toplevel_close = void{} } },
+                                .{ .kind = .{ .toplevel_close = .{
+                                    .window = window,
+                                } } },
                             ),
                             else => unreachable,
                         }

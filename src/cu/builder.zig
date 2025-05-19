@@ -28,7 +28,7 @@ pub fn endFrame() void {
     //
 }
 
-pub fn startBuild(window_id: u32) void {
+pub fn startBuild(window_id: usize) void {
     trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
     const trace_start = tracy.beginZone(@src(), .{ .name = "ui build setup" });
     defer trace_start.end();

@@ -59,7 +59,7 @@ pub fn init(gpa: Allocator) !*Connection {
         } else null;
     defer if (wl_display_name) |name| gpa.free(name);
 
-    // the `orelse null` is nessesary for the slice coercion
+    // the `orelse null` is nessesary for the type coercion
     const wl_display = try wl.Display.connect(wl_display_name orelse null);
 
     const wl_registry = try wl_display.getRegistry();

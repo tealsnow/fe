@@ -14,6 +14,8 @@ const Size = @import("cu").math.Size;
 const EventQueue = @import("events.zig").EventQueue;
 const Event = @import("events.zig").Event;
 
+const Window = @import("Window.zig");
+
 //= wl registry
 
 pub const WlRegistryListenerData = struct {
@@ -232,8 +234,7 @@ pub fn xdgWmBaseListener(
 
 pub const XdgSurfaceListenerData = struct {
     event_queue: *EventQueue,
-
-    wl_surface: *wl.Surface,
+    window: *Window,
 };
 
 pub fn xdgSurfaceListener(
@@ -241,14 +242,15 @@ pub fn xdgSurfaceListener(
     event: xdg.Surface.Event,
     data: *XdgSurfaceListenerData,
 ) void {
+    _ = xdg_surface;
+
     const configure = switch (event) {
         .configure => |configure| configure,
     };
 
     data.event_queue.queue(.{ .kind = .{
         .surface_configure = .{
-            .wl_surface = data.wl_surface,
-            .xdg_surface = xdg_surface,
+            .window = data.window,
             .serial = configure.serial,
         },
     } });
@@ -258,6 +260,7 @@ pub fn xdgSurfaceListener(
 
 pub const XdgToplevelListenerData = struct {
     event_queue: *EventQueue,
+    window: *Window,
 };
 
 pub fn xdgToplevelListener(
@@ -303,6 +306,7 @@ pub fn xdgToplevelListener(
 
             data.event_queue.queue(.{ .kind = .{
                 .toplevel_configure = .{
+                    .window = data.window,
                     .size = size,
                     .state = state,
                 },
@@ -310,7 +314,9 @@ pub fn xdgToplevelListener(
         },
         .close => {
             data.event_queue.queue(.{ .kind = .{
-                .toplevel_close = void{},
+                .toplevel_close = .{
+                    .window = data.window,
+                },
             } });
         },
         .configure_bounds => |configure_bounds| {
