@@ -2,7 +2,6 @@ const std = @import("std");
 
 pub const EntryPoint = enum {
     sdl,
-    glfw,
     wayland,
 };
 
@@ -139,27 +138,6 @@ pub fn build(b: *std.Build) void {
 
                 fe_mod.linkSystemLibrary("sdl3", .{ .needed = true });
                 fe_mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
-            }
-        },
-        .glfw => {
-            const glfw = b.lazyDependency("glfw", .{
-                .target = target,
-                .optimize = optimize,
-            });
-
-            const wgpu = b.lazyDependency("wgpu_native", .{
-                .target = target,
-                .optimize = optimize,
-            });
-
-            if (glfw) |m| {
-                fe_mod.addImport("glfw", m.module("glfw"));
-                fe_mod.linkLibrary(m.artifact("glfw"));
-            }
-
-            if (wgpu) |m| {
-                fe_mod.addImport("wgpu", m.module("wgpu"));
-                fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
             }
         },
         .wayland => {

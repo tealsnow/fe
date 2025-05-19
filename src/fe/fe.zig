@@ -91,7 +91,6 @@ pub fn main() !void {
 
     const entry = switch (build_options.entry_point) {
         .sdl => @import("sdl_entry.zig").entry,
-        .glfw => @import("glfw_entry.zig").entry,
         .wayland => @import("wayland_entry.zig").entry,
     };
 
