@@ -129,8 +129,8 @@ fn downwardsDependnt(root: *Atom, axis_kind: AxisKind) void {
 
 inline fn floatingForAxis(flags: Atom.Flags, axis_kind: AxisKind) bool {
     return switch (axis_kind) {
-        .x => flags.floating_x,
-        .y => flags.floating_y,
+        .x => flags.contains(.floating_x),
+        .y => flags.contains(.floating_y),
         else => unreachable,
     };
 }
@@ -147,8 +147,8 @@ fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
     const axis = @intFromEnum(axis_kind);
 
     const allow_overflow = switch (axis_kind) {
-        .x => root.flags.allow_overflow_x,
-        .y => root.flags.allow_overflow_y,
+        .x => root.flags.contains(.allow_overflow_x),
+        .y => root.flags.contains(.allow_overflow_y),
         else => unreachable,
     };
 

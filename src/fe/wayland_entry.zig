@@ -13,7 +13,6 @@ const WgpuRenderer = @import("wgpu/WgpuRenderer.zig");
 
 const cu = @import("cu");
 const mt = cu.math;
-const AtomFlags = cu.AtomFlags;
 const b = cu.builder;
 
 const xkb = @import("xkbcommon");
@@ -24,35 +23,6 @@ const fc = @import("fontconfig.zig");
 const pretty = @import("pretty");
 
 pub fn entry(gpa: Allocator) !void {
-    try run(gpa);
-
-    std.process.cleanExit();
-}
-
-fn getFontFromFamilyName(
-    gpa: Allocator,
-    font_family: [:0]const u8,
-) ![:0]const u8 {
-    try fc.init();
-    defer fc.deinit();
-
-    const pattern = try fc.Pattern.create();
-    defer pattern.destroy();
-    try pattern.addString(.family, font_family);
-    try pattern.addBool(.outline, .true);
-
-    const config = try fc.Config.getCurrent();
-    try config.substitute(pattern, .pattern);
-    fc.defaultSubsitute(pattern);
-
-    const match = try fc.fontMatch(config, pattern);
-    defer match.destroy();
-
-    const path = try match.getString(.file, 0);
-    return try gpa.dupeZ(u8, path);
-}
-
-fn run(gpa: Allocator) !void {
     //- window
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
@@ -65,15 +35,6 @@ fn run(gpa: Allocator) !void {
     defer window.deinit(gpa);
     window.inset = 15;
     window.minimium_size = .{ .width = 200, .height = 100 };
-
-    //- font loading
-    const def_font_path = try getFontFromFamilyName(gpa, "sans");
-    defer gpa.free(def_font_path);
-    const mono_font_path = try getFontFromFamilyName(gpa, "mono");
-    defer gpa.free(mono_font_path);
-
-    log.debug("default font path (sans): {s}", .{def_font_path});
-    log.debug("mono font path (mono): {s}", .{mono_font_path});
 
     //- wpgu
 
@@ -94,11 +55,20 @@ fn run(gpa: Allocator) !void {
     });
     defer renderer.deinit(gpa);
 
-    // log.debug("dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
+    log.info("display dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
     const dpi = mt.Point(u16).point(
         @intFromFloat(@round(conn.hdpi)),
         @intFromFloat(@round(conn.vdpi)),
     );
+
+    //- font loading
+    const def_font_path = try getFontFromFamilyName(gpa, "sans");
+    defer gpa.free(def_font_path);
+    const mono_font_path = try getFontFromFamilyName(gpa, "mono");
+    defer gpa.free(mono_font_path);
+
+    log.debug("default font path (sans): {s}", .{def_font_path});
+    log.debug("mono font path (mono): {s}", .{mono_font_path});
 
     const def_font_face = try renderer
         .font_manager
@@ -179,8 +149,8 @@ fn run(gpa: Allocator) !void {
 
             .toplevel_close => {
                 log.debug("close request", .{});
-                std.process.exit(0);
-                // break :main_loop;
+                // std.process.exit(0);
+                break :main_loop;
             },
 
             .frame => {
@@ -276,7 +246,7 @@ fn run(gpa: Allocator) !void {
 
         b.startBuild(0); // @TODO: use proper window id
         cu.state.ui_root.layout_axis = .y;
-        cu.state.ui_root.flags.draw_background = true;
+        cu.state.ui_root.flags.insert(.draw_background);
         cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
 
         //- window inset
@@ -285,16 +255,16 @@ fn run(gpa: Allocator) !void {
 
             const tiling = window.tiling;
             b.stacks.flags.push(flags: {
-                var flags = AtomFlags.none.drawBackground();
+                var flags = cu.AtomFlags.draw_background;
 
                 if (!tiling.isTiled()) {
-                    flags.draw_border = true;
+                    flags.insert(.draw_border);
                     b.stacks.corner_radius.push(window_rounding);
                 } else {
-                    flags.draw_side_top = !tiling.tiled_top;
-                    flags.draw_side_bottom = !tiling.tiled_bottom;
-                    flags.draw_side_left = !tiling.tiled_left;
-                    flags.draw_side_right = !tiling.tiled_right;
+                    flags.setPresent(.draw_side_top, !tiling.tiled_top);
+                    flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
+                    flags.setPresent(.draw_side_left, !tiling.tiled_left);
+                    flags.setPresent(.draw_side_right, !tiling.tiled_right);
                 }
 
                 break :flags flags;
@@ -305,7 +275,7 @@ fn run(gpa: Allocator) !void {
 
             //- top bar
             {
-                b.stacks.flags.push(AtomFlags.none.drawSideBottom());
+                b.stacks.flags.push(.draw_side_bottom);
                 b.stacks.layout_axis.push(.x);
                 b.stacks.pref_size.push(.size(.fill, .fit));
                 const topbar = b.open("topbar");
@@ -333,13 +303,13 @@ fn run(gpa: Allocator) !void {
 
                 for (menu_items) |item_str| {
                     b.stacks.flags
-                        .push(AtomFlags.none.clickable().drawText());
+                        .push(.unionWith(.clickable, .draw_text));
                     b.stacks.pref_size.push(.square(.text_pad(8)));
                     const item = b.build(item_str);
 
                     const inter = item.interaction();
                     if (inter.f.hovering) {
-                        item.flags.draw_border = true;
+                        item.flags.insert(.draw_border);
                     }
 
                     if (inter.f.isClicked()) {
@@ -350,7 +320,7 @@ fn run(gpa: Allocator) !void {
 
                 //- spacer
                 {
-                    b.stacks.flags.push(AtomFlags.none.clickable());
+                    b.stacks.flags.push(.clickable);
                     b.stacks.pref_size.push(.square(.grow));
                     const topbar_space = b.build("topbar spacer");
 
@@ -382,7 +352,7 @@ fn run(gpa: Allocator) !void {
                 //- window buttons
                 for (0..3) |i| {
                     b.stacks.flags
-                        .push(AtomFlags.none.clickable().drawBorder());
+                        .push(.unionWith(.clickable, .draw_border));
                     b.stacks.pref_size
                         .push(.square(.px(topbar.rect.height())));
                     const button = b.openf("top bar button {d}", .{i});
@@ -419,7 +389,7 @@ fn run(gpa: Allocator) !void {
 
                 //- left pane
                 {
-                    b.stacks.flags.push(AtomFlags.none.drawSideRight());
+                    b.stacks.flags.push(.draw_side_right);
                     b.stacks.layout_axis.push(.y);
                     b.stacks.pref_size.push(.size(.percent(0.4), .fill));
                     const pane = b.open("left pane");
@@ -428,7 +398,7 @@ fn run(gpa: Allocator) !void {
                     //- header
                     {
                         b.stacks.flags
-                            .push(AtomFlags.none.drawSideBottom().drawText());
+                            .push(.unionWith(.draw_side_bottom, .draw_text));
                         b.stacks.text_align.push(.size(.end, .center));
                         b.stacks.pref_size.push(.size(.grow, .text));
                         const header = b.build("left header");
@@ -438,16 +408,21 @@ fn run(gpa: Allocator) !void {
                     //- content
                     {
                         b.stacks.flags
-                            .push(AtomFlags.none.clipRect().allowOverflow());
+                            .push(.unionWith(.clip_rect, .allow_overflow));
                         b.stacks.layout_axis.push(.y);
                         b.stacks.pref_size.push(.square(.grow));
                         const content = b.open("left content");
                         defer b.close(content);
 
-                        // cu.stacks.font.pushForMany(monospace_font);
-                        // defer _ = cu.stacks.font.pop();
-
                         _ = b.label("Hello, World!");
+
+                        _ = b.lineSpacer();
+
+                        b.stacks.font.pushForMany(mono_font);
+                        defer _ = b.stacks.font.pop();
+
+                        _ = b.label("This is a set of text");
+                        _ = b.label("in monospace font");
 
                         _ = b.lineSpacer();
                     }
@@ -463,7 +438,7 @@ fn run(gpa: Allocator) !void {
                     //- header
                     {
                         b.stacks.flags
-                            .push(AtomFlags.none.drawSideBottom().drawText());
+                            .push(.unionWith(.draw_side_bottom, .draw_text));
                         b.stacks.layout_axis.push(.x);
                         b.stacks.text_align.push(.square(.center));
                         b.stacks.pref_size.push(.size(.grow, .text));
@@ -477,9 +452,8 @@ fn run(gpa: Allocator) !void {
                             ));
                             defer _ = b.stacks.palette.pop();
 
-                            b.stacks.flags.push(
-                                AtomFlags.none.floating().drawBackground(),
-                            );
+                            b.stacks.flags
+                                .push(.unionWith(.floating, .draw_background));
                             b.stacks.layout_axis.push(.y);
                             b.stacks.pref_size.push(.square(.fit));
                             const float = b.open("floating");
@@ -516,7 +490,7 @@ fn run(gpa: Allocator) !void {
                 {
                     const icon_size = cu.Atom.PrefSize.px(24);
 
-                    b.stacks.flags.push(AtomFlags.none.drawSideLeft());
+                    b.stacks.flags.push(.draw_side_left);
                     b.stacks.layout_axis.push(.y);
                     b.stacks.pref_size.push(.size(icon_size, .grow));
                     const bar = b.open("right bar");
@@ -532,7 +506,7 @@ fn run(gpa: Allocator) !void {
                         for (0..5) |i| {
                             {
                                 b.stacks.flags
-                                    .push(AtomFlags.none.drawBorder());
+                                    .push(.draw_border);
                                 b.stacks.pref_size.push(.square(icon_size));
                                 _ = b.buildf("right bar icon {d}", .{i});
                             }
@@ -550,6 +524,8 @@ fn run(gpa: Allocator) !void {
         try renderer.render(arena);
         renderer.surface.present();
     }
+
+    std.process.cleanExit(); // skip defers on release builds
 }
 
 /// Insets atoms created between `begin` and `end` based on the window inset
@@ -582,7 +558,7 @@ pub const WindowInsetWrapper = struct {
             const top_inset_container = b.open("top inset container");
             defer b.close(top_inset_container);
 
-            b.stacks.flags.pushForMany(AtomFlags.none.clickable());
+            b.stacks.flags.pushForMany(.clickable);
             defer _ = b.stacks.flags.pop();
 
             b.stacks.pref_size.push(.square(.px(inset)));
@@ -616,7 +592,7 @@ pub const WindowInsetWrapper = struct {
 
         if (!tiling.tiled_left) {
             b.stacks.pref_size.push(.size(.px(inset), .fill));
-            b.stacks.flags.push(AtomFlags.none.clickable());
+            b.stacks.flags.push(.clickable);
             const left = b.build("left inset").interaction();
 
             if (left.f.mouse_over)
@@ -652,7 +628,7 @@ pub const WindowInsetWrapper = struct {
 
         if (!tiling.tiled_right) {
             b.stacks.pref_size.push(.size(.px(inset), .fill));
-            b.stacks.flags.push(AtomFlags.none.clickable());
+            b.stacks.flags.push(.clickable);
             const right = b.build("right inset").interaction();
 
             if (right.f.mouse_over)
@@ -669,7 +645,7 @@ pub const WindowInsetWrapper = struct {
             const bottom_inset_container = b.open("bottom inset container");
             defer b.close(bottom_inset_container);
 
-            b.stacks.flags.pushForMany(AtomFlags.none.clickable());
+            b.stacks.flags.pushForMany(.clickable);
             defer _ = b.stacks.flags.pop();
 
             b.stacks.pref_size.push(.square(.px(inset)));
@@ -698,3 +674,26 @@ pub const WindowInsetWrapper = struct {
         }
     }
 };
+
+fn getFontFromFamilyName(
+    gpa: Allocator,
+    font_family: [:0]const u8,
+) ![:0]const u8 {
+    try fc.init();
+    defer fc.deinit();
+
+    const pattern = try fc.Pattern.create();
+    defer pattern.destroy();
+    try pattern.addString(.family, font_family);
+    try pattern.addBool(.outline, .true);
+
+    const config = try fc.Config.getCurrent();
+    try config.substitute(pattern, .pattern);
+    fc.defaultSubsitute(pattern);
+
+    const match = try fc.fontMatch(config, pattern);
+    defer match.destroy();
+
+    const path = try match.getString(.file, 0);
+    return try gpa.dupeZ(u8, path);
+}

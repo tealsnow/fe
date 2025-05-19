@@ -368,7 +368,7 @@ pub fn label(string: []const u8) *Atom {
     // should this stay? or let the user decide with pushPrefSize
     atom.pref_size = .square(.text);
     atom.display_string = string;
-    atom.flags = atom.flags.drawText();
+    atom.flags.insert(.draw_text);
     return atom;
 }
 
@@ -417,7 +417,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
 
 pub fn button(string: []const u8) cu.Interaction {
     const atom = build(string);
-    atom.flags = atom.flags.clickable().drawText().drawBorder();
+    atom.flags = .unionOf(&.{ .clickable, .draw_text, .draw_border });
 
     const interaction = atom.interaction();
     baseClickableInteractionStyles(interaction);
@@ -432,7 +432,7 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
 }
 
 pub fn toggleSwitch(toggled: *bool) cu.Interaction {
-    stacks.flags.push(AtomFlags.none.drawBorder().clickable());
+    stacks.flags.push(.unionWith(.draw_border, .clickable));
     stacks.layout_axis.push(.y);
     const toggle = open("toggle box");
     defer close(toggle);
@@ -458,7 +458,7 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
         stacks.pref_size.push(.size(.px(track.active_t), .grow));
         _ = spacer();
 
-        stacks.flags.push(AtomFlags.none.drawBackground());
+        stacks.flags.push(.draw_background);
         stacks.palette.push(.init(.{
             .background = stacks.palette.topStable().?.get(.text),
         }));

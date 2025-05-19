@@ -1284,11 +1284,11 @@ pub const BatchProcessor = struct {
 
         const rect = atom.rect;
 
-        if (atom.flags.clip_rect) {
+        if (atom.flags.contains(.clip_rect)) {
             // @TODO
         }
 
-        if (atom.flags.draw_background) {
+        if (atom.flags.contains(.draw_background)) {
             const color = atom.palette.get(.background).toRgbaF32();
             try self.rect_list.append(arena, .{
                 .dst = rect,
@@ -1297,7 +1297,7 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_border) {
+        if (atom.flags.contains(.draw_border)) {
             const color = atom.palette.get(.border).toRgbaF32();
             try self.rect_list.append(arena, .{
                 .dst = rect,
@@ -1307,7 +1307,7 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_side_top) {
+        if (atom.flags.contains(.draw_side_top)) {
             const topleft = rect.topLeft();
             const topright = rect.topRight();
 
@@ -1323,7 +1323,7 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_side_bottom) {
+        if (atom.flags.contains(.draw_side_bottom)) {
             const bottomleft = rect.bottomLeft();
             const bottomright = rect.bottomRight();
 
@@ -1339,7 +1339,7 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_side_left) {
+        if (atom.flags.contains(.draw_side_left)) {
             const topleft = rect.topLeft();
             const bottomleft = rect.bottomLeft();
 
@@ -1355,7 +1355,7 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_side_right) {
+        if (atom.flags.contains(.draw_side_right)) {
             const topright = rect.topRight();
             const bottomright = rect.bottomRight();
 
@@ -1371,7 +1371,9 @@ pub const BatchProcessor = struct {
             });
         }
 
-        if (atom.flags.draw_text or atom.flags.draw_text_weak) {
+        if (atom.flags.contains(.draw_text) or
+            atom.flags.contains(.draw_text_weak))
+        {
             const font_ptr = cu.state.getFont(atom.font);
             const font_face: *const FontFace = @ptrCast(@alignCast(font_ptr));
 
@@ -1383,10 +1385,10 @@ pub const BatchProcessor = struct {
             const shaped_text = try self.shaper
                 .shape(font_face, font_atlas, atom.display_string);
 
-            const color = if (atom.flags.draw_text)
-                atom.palette.get(.text).toRgbaF32()
-            else if (atom.flags.draw_text_weak)
+            const color = if (atom.flags.contains(.draw_text_weak))
                 atom.palette.get(.text_weak).toRgbaF32()
+            else if (atom.flags.contains(.draw_text))
+                atom.palette.get(.text).toRgbaF32()
             else
                 unreachable;
 

@@ -430,19 +430,18 @@ fn update() !void {
     // build ui
     b.startBuild(@intFromEnum(window.window_handle.getID()));
     cu.state.ui_root.layout_axis = .y;
-    cu.state.ui_root.flags.draw_background = true;
+    cu.state.ui_root.flags.insert(.draw_background);
     // Don't ask me why, but no matter how I slice it without the if, it doesn't work
     // I know it should, I don't know why it doesn't
-    cu.state.ui_root.flags.draw_border =
-        if (window.window_handle.getFlags() &
+    cu.state.ui_root.flags.setPresent(.draw_border, if (window.window_handle.getFlags() &
         (sdl.video.WindowFlag.fullscreen |
             sdl.video.WindowFlag.maximized) != 0)
-            false
-        else
-            true;
+        false
+    else
+        true);
 
     { // topbar
-        b.stacks.flags.push(AtomFlags.none.drawSideBottom());
+        b.stacks.flags.push(.draw_side_bottom);
         b.stacks.layout_axis.push(.x);
         b.stacks.pref_size.push(.size(.fill, .px(24)));
         const topbar = b.open("topbar");
@@ -456,13 +455,13 @@ fn update() !void {
         };
 
         for (menu_items) |item_str| {
-            b.stacks.flags.push(AtomFlags.none.clickable().drawText());
+            b.stacks.flags.push(.unionWith(.clickable, .draw_text));
             b.stacks.pref_size.push(.square(.text_pad(8)));
             const item = b.build(item_str);
 
             const inter = item.interaction();
             if (inter.f.hovering) {
-                item.flags.draw_border = true;
+                item.flags.insert(.draw_border);
             }
 
             if (inter.f.isClicked()) {
@@ -472,7 +471,7 @@ fn update() !void {
         }
 
         {
-            b.stacks.flags.push(AtomFlags.none.clickable());
+            b.stacks.flags.push(.clickable);
             b.stacks.pref_size.push(.square(.grow));
             const topbar_space = b.build("topbar spacer");
 
@@ -489,7 +488,7 @@ fn update() !void {
         }
 
         for (0..3) |i| {
-            b.stacks.flags.push(AtomFlags.none.clickable().drawBorder());
+            b.stacks.flags.push(.unionWith(.clickable, .draw_border));
             b.stacks.pref_size.push(.square(.px(24)));
             const button = b.openf("top bar button {d}", .{i});
             defer b.close(button);
@@ -526,7 +525,7 @@ fn update() !void {
         defer b.close(main_pane);
 
         { // left pane
-            b.stacks.flags.push(AtomFlags.none.drawSideRight());
+            b.stacks.flags.push(.draw_side_right);
             b.stacks.layout_axis.push(.y);
             b.stacks.pref_size.push(.size(.percent(0.4), .fill));
             const pane = b.open("left pane");
@@ -534,7 +533,7 @@ fn update() !void {
 
             { // header
                 b.stacks.flags
-                    .push(AtomFlags.none.drawSideBottom().drawText());
+                    .push(.unionWith(.draw_side_bottom, .draw_text));
                 b.stacks.text_align.push(.size(.end, .center));
                 b.stacks.pref_size.push(.size(.grow, .text));
                 const header = b.build("left header");
@@ -543,7 +542,7 @@ fn update() !void {
 
             { // content
                 b.stacks.flags
-                    .push(AtomFlags.none.clipRect().allowOverflow());
+                    .push(.unionWith(.clip_rect, .allow_overflow));
                 b.stacks.layout_axis.push(.y);
                 b.stacks.pref_size.push(.square(.grow));
                 const content = b.open("left content");
@@ -554,7 +553,7 @@ fn update() !void {
 
                 _ = b.labelf(
                     "draw window border: {}",
-                    .{cu.state.ui_root.flags.draw_border},
+                    .{cu.state.ui_root.flags.contains(.draw_border)},
                 );
 
                 _ = b.lineSpacer();
@@ -568,7 +567,7 @@ fn update() !void {
             defer b.close(pane);
 
             { // header
-                b.stacks.flags.push(AtomFlags.none.drawSideBottom().drawText());
+                b.stacks.flags.push(.unionWith(.draw_side_bottom, .draw_text));
                 b.stacks.layout_axis.push(.x);
                 b.stacks.text_align.push(.square(.center));
                 b.stacks.pref_size.push(.size(.grow, .text));
@@ -582,7 +581,7 @@ fn update() !void {
                     ));
                     defer _ = b.stacks.palette.pop();
 
-                    b.stacks.flags.push(AtomFlags.none.floating().drawBackground());
+                    b.stacks.flags.push(.unionWith(.floating, .draw_background));
                     b.stacks.layout_axis.push(.y);
                     b.stacks.pref_size.push(.square(.fit));
                     const float = b.open("floating");
@@ -617,7 +616,7 @@ fn update() !void {
         { // right bar
             const icon_size = cu.Atom.PrefSize.px(24);
 
-            b.stacks.flags.push(AtomFlags.none.drawSideLeft());
+            b.stacks.flags.push(.draw_side_left);
             b.stacks.layout_axis.push(.y);
             b.stacks.pref_size.push(.size(icon_size, .grow));
             const bar = b.open("right bar");
@@ -631,7 +630,7 @@ fn update() !void {
 
                 for (0..5) |i| {
                     {
-                        b.stacks.flags.push(AtomFlags.none.drawBorder());
+                        b.stacks.flags.push(.draw_border);
                         b.stacks.pref_size.push(.square(icon_size));
                         _ = b.buildf("right bar icon {d}", .{i});
                     }
@@ -657,7 +656,7 @@ pub fn updateDbgWindow() !void {
 
     b.startBuild(@intFromEnum(window.window_handle.getID()));
     cu.state.ui_root.layout_axis = .y;
-    cu.state.ui_root.flags = cu.state.ui_root.flags.drawBackground().allowOverflow();
+    cu.state.ui_root.flags = .unionWith(.draw_background, .allow_overflow);
 
     {
         b.stacks.palette
@@ -698,7 +697,7 @@ pub fn updateDbgWindow() !void {
         _ = b.label("active atom: none");
 
     const hot = main_state.atom_map.get(main_state.hot_atom_key);
-    b.stacks.flags.push(AtomFlags.none.drawTextWeak());
+    b.stacks.flags.push(.draw_text_weak);
     _ = b.labelf("hot atom: {?}", .{hot});
 
     b.endBuild();

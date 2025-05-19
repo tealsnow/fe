@@ -237,7 +237,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     // calculate possibly cliped rect
     var maybe_parent: ?*Atom = atom.parent;
     while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
-        if (parent.flags.clip_rect) {
+        if (parent.flags.contains(.clip_rect)) {
             rect = rect.intersect(parent.rect);
         }
     }
@@ -285,7 +285,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         const button_idx = @intFromEnum(button.button);
 
         // mouse down in box -> set box as hot/active -> press event
-        if (atom.flags.mouse_clickable and
+        if (atom.flags.contains(.mouse_clickable) and
             button.state == .pressed and
             in_bounds and
             button.button != .none)
@@ -351,7 +351,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         }
 
         // mouse in/out release in box -> unset as active -> release (and maybe click) event
-        if (atom.flags.mouse_clickable and
+        if (atom.flags.contains(.mouse_clickable) and
             button.state == .released and
             button.button != .none and
             cu.state.active_atom_key[button_idx].eql(atom.key))
@@ -385,7 +385,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
 
     // mouse over atom, without any other hot key -> set hot, mark hovering
     {
-        if (atom.flags.mouse_clickable and
+        if (atom.flags.contains(.mouse_clickable) and
             inter.f.mouse_over and
             (cu.state.hot_atom_key.eql(.nil) or
                 cu.state.hot_atom_key.eql(atom.key)))
@@ -404,7 +404,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     }
 
     // active -> dragging
-    if (atom.flags.mouse_clickable) {
+    if (atom.flags.contains(.mouse_clickable)) {
         for (MouseButton.array) |button| {
             const idx = @intFromEnum(button);
             if (Atom.Key.eql(atom.key, cu.state.active_atom_key[idx]) or

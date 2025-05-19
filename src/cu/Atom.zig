@@ -21,7 +21,7 @@ parent: ?*Atom = null,
 key: Key,
 string: []const u8 = "",
 display_string: []const u8 = "",
-flags: Flags = .{},
+flags: Flags = .none,
 pref_size: math.Size(PrefSize) = .zero,
 layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
 // hover_cursor
@@ -147,155 +147,116 @@ pub const Key = enum(u32) {
     }
 };
 
-pub const Flags = packed struct(u32) {
-    const Self = @This();
-    pub const none = Self{};
-
-    // interation
-    mouse_clickable: bool = false,
-    keyboard_clickable: bool = false,
+pub const Flag = enum(u32) {
+    //- interation
+    mouse_clickable,
+    keyboard_clickable,
     // drop_site: bool = false,
     // view_scroll: bool = false,
     // focusable: bool = false,
     // disabled: bool = false,
 
-    // layout
-    floating_x: bool = false,
-    floating_y: bool = false,
+    //- layout
+    floating_x,
+    floating_y,
     // fixed_width: bool = false,
     // fixed_height: bool = false,
-    allow_overflow_x: bool = false,
-    allow_overflow_y: bool = false,
+    allow_overflow_x,
+    allow_overflow_y,
 
-    // appearance
+    //- appearance
     // draw_drop_shadow: bool = false,
-    draw_background: bool = false,
-    draw_border: bool = false,
-    draw_side_top: bool = false,
-    draw_side_bottom: bool = false,
-    draw_side_left: bool = false,
-    draw_side_right: bool = false,
-    draw_text: bool = false,
-    draw_text_weak: bool = false,
-    clip_rect: bool = false,
-    // text_truncate_ellipsis: bool = false,
+    draw_background,
+    draw_border,
+    draw_side_top,
+    draw_side_bottom,
+    draw_side_left,
+    draw_side_right,
+    draw_text,
+    draw_text_weak,
+    clip_rect,
+};
 
-    // hot_animation: bool = false,
-    // have_animation: bool = false,
+pub const Flags = struct {
+    enum_set: std.EnumSet(Flag),
 
-    // render_custom: bool = false,
+    pub const none = Flags{ .enum_set = .initEmpty() };
 
-    _padding: enum(u17) { zero } = .zero,
+    //- interation
+    pub const mouse_clickable = initOne(.mouse_clickable);
+    pub const keyboard_clickable = initOne(.keyboard_clickable);
+    // drop_site: bool = false,
+    // view_scroll: bool = false,
+    // focusable: bool = false,
+    // disabled: bool = false,
+    pub const clickable =
+        initMany(&.{ .mouse_clickable, .keyboard_clickable });
 
-    pub fn mouseClickable(self: Self) Self {
-        var this = self;
-        this.mouse_clickable = true;
-        return this;
+    //- layout
+    pub const floating_x = initOne(.floating_x);
+    pub const floating_y = initOne(.floating_y);
+    pub const floating = initMany(&.{ .floating_x, .floating_y });
+    // fixed_width: bool = false,
+    // fixed_height: bool = false,
+    pub const allow_overflow_x = initOne(.allow_overflow_x);
+    pub const allow_overflow_y = initOne(.allow_overflow_y);
+    pub const allow_overflow =
+        initMany(&.{ .allow_overflow_x, .allow_overflow_y });
+
+    //- appearance
+    // draw_drop_shadow: bool = false,
+    pub const draw_background = initOne(.draw_background);
+    pub const draw_border = initOne(.draw_border);
+    pub const draw_side_top = initOne(.draw_side_top);
+    pub const draw_side_bottom = initOne(.draw_side_bottom);
+    pub const draw_side_left = initOne(.draw_side_left);
+    pub const draw_side_right = initOne(.draw_side_right);
+    pub const draw_text = initOne(.draw_text);
+    pub const draw_text_weak = initOne(.draw_text_weak);
+    pub const clip_rect = initOne(.clip_rect);
+
+    pub fn initMany(flags: []const Flag) Flags {
+        return .{ .enum_set = .initMany(flags) };
     }
 
-    pub fn keyboardClickable(self: Self) Self {
-        var this = self;
-        this.keyboard_clickable = true;
-        return this;
+    pub fn initOne(flag: Flag) Flags {
+        return .{ .enum_set = .initOne(flag) };
     }
 
-    pub fn clickable(self: Self) Self {
-        var this = self;
-        this.mouse_clickable = true;
-        this.keyboard_clickable = true;
-        return this;
+    pub fn contains(flags: Flags, flag: Flag) bool {
+        return flags.enum_set.contains(flag);
     }
 
-    pub fn floatingX(self: Self) Self {
-        var this = self;
-        this.floating_x = true;
-        return this;
+    pub fn insert(flags: *Flags, flag: Flag) void {
+        flags.enum_set.insert(flag);
     }
 
-    pub fn floatingY(self: Self) Self {
-        var this = self;
-        this.floating_y = true;
-        return this;
+    pub fn remove(flags: *Flags, flag: Flag) void {
+        flags.enum_set.remove(flag);
     }
 
-    pub fn floating(self: Self) Self {
-        var this = self;
-        this.floating_x = true;
-        this.floating_y = true;
-        return this;
+    pub fn setPresent(flags: *Flags, flag: Flag, present: bool) void {
+        flags.enum_set.setPresent(flag, present);
     }
 
-    pub fn allowOverflowX(self: Self) Self {
-        var this = self;
-        this.allow_overflow_x = true;
-        return this;
+    pub fn unionWith(flags: Flags, other: Flags) Flags {
+        return .{ .enum_set = .unionWith(flags.enum_set, other.enum_set) };
     }
 
-    pub fn allowOverflowY(self: Self) Self {
-        var this = self;
-        this.allow_overflow_y = true;
-        return this;
+    pub fn unionOf(flags: []const Flags) Flags {
+        var out = Flags.none;
+        for (flags) |set| {
+            out = out.unionWith(set);
+        }
+        return out;
     }
 
-    pub fn allowOverflow(self: Self) Self {
-        var this = self;
-        this.allow_overflow_x = true;
-        this.allow_overflow_y = true;
-        return this;
+    pub fn subsetOf(flags: Flags, other: Flags) bool {
+        return flags.enum_set.subsetOf(other.enum_set);
     }
 
-    pub fn drawBackground(self: Self) Self {
-        var this = self;
-        this.draw_background = true;
-        return this;
-    }
-
-    pub fn drawBorder(self: Self) Self {
-        var this = self;
-        this.draw_border = true;
-        return this;
-    }
-
-    pub fn drawSideTop(self: Self) Self {
-        var this = self;
-        this.draw_side_top = true;
-        return this;
-    }
-
-    pub fn drawSideBottom(self: Self) Self {
-        var this = self;
-        this.draw_side_bottom = true;
-        return this;
-    }
-
-    pub fn drawSideLeft(self: Self) Self {
-        var this = self;
-        this.draw_side_left = true;
-        return this;
-    }
-
-    pub fn drawSideRight(self: Self) Self {
-        var this = self;
-        this.draw_side_right = true;
-        return this;
-    }
-
-    pub fn drawText(self: Self) Self {
-        var this = self;
-        this.draw_text = true;
-        return this;
-    }
-
-    pub fn drawTextWeak(self: Self) Self {
-        var this = self;
-        this.draw_text_weak = true;
-        return this;
-    }
-
-    pub fn clipRect(self: Self) Self {
-        var this = self;
-        this.clip_rect = true;
-        return this;
+    pub fn supersetOf(flags: Flags, other: Flags) bool {
+        return flags.enum_set.supersetOf(other.enum_set);
     }
 };
 

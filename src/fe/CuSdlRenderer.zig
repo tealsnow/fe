@@ -61,7 +61,7 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
 
     const rect = sdlRectFromCuRect(atom.rect);
 
-    if (atom.flags.clip_rect) {
+    if (atom.flags.contains(.clip_rect)) {
         const view_bounds = sdl.rect.Rect{
             .x = @intFromFloat(rect.x),
             .y = @intFromFloat(rect.y),
@@ -70,11 +70,11 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
         };
         try self.sdl_rend.setClipRect(&view_bounds);
     }
-    defer if (atom.flags.clip_rect) {
+    defer if (atom.flags.contains(.clip_rect)) {
         self.sdl_rend.setClipRect(null) catch @panic("unset clip");
     };
 
-    if (atom.flags.draw_background) {
+    if (atom.flags.contains(.draw_background)) {
         const background = atom.palette.get(.background);
 
         try self.bg_color_stack.append(cu.state.arena, background);
@@ -82,34 +82,37 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
         try self.setDrawColor(background);
         try self.fillRect(rect);
     }
-    defer if (atom.flags.draw_background) {
+    defer if (atom.flags.contains(.draw_background)) {
         _ = self.bg_color_stack.pop().?;
     };
 
-    if (atom.flags.draw_text or atom.flags.draw_text_weak)
+    if (atom.flags.contains(.draw_text) or
+        atom.flags.contains(.draw_text_weak))
+    {
         try self.renderText(atom);
+    }
 
-    if (atom.flags.draw_border) {
+    if (atom.flags.contains(.draw_border)) {
         try self.setDrawColor(atom.palette.get(.border));
         try self.drawRect(rect);
     }
 
-    if (atom.flags.draw_side_top) {
+    if (atom.flags.contains(.draw_side_top)) {
         try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topLeft(), atom.rect.topRight());
     }
 
-    if (atom.flags.draw_side_bottom) {
+    if (atom.flags.contains(.draw_side_bottom)) {
         try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.bottomLeft(), atom.rect.bottomRight());
     }
 
-    if (atom.flags.draw_side_left) {
+    if (atom.flags.contains(.draw_side_left)) {
         try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topLeft(), atom.rect.bottomLeft());
     }
 
-    if (atom.flags.draw_side_right) {
+    if (atom.flags.contains(.draw_side_right)) {
         try self.setDrawColor(atom.palette.get(.border));
         try self.drawLine(atom.rect.topRight(), atom.rect.bottomRight());
     }
@@ -124,9 +127,9 @@ fn renderAtom(self: *Renderer, atom: *cu.Atom) !void {
 
 fn renderText(self: *Renderer, atom: *cu.Atom) !void {
     const color =
-        if (atom.flags.draw_text_weak)
+        if (atom.flags.contains(.draw_text_weak))
             atom.palette.get(.text_weak)
-        else if (atom.flags.draw_text)
+        else if (atom.flags.contains(.draw_text))
             atom.palette.get(.text)
         else
             unreachable;
