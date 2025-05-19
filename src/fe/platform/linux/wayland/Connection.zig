@@ -195,11 +195,11 @@ pub fn init(gpa: Allocator) !*Connection {
         log.debug("xdp: getting cursor theme", .{});
         const cursor_theme = try xdp_settings.getCursorTheme(gpa);
         defer gpa.free(cursor_theme);
-        log.debug("xdp: got cursor theme: '{s}'", .{cursor_theme});
+        log.info("xdp: got cursor theme: '{s}'", .{cursor_theme});
 
         log.debug("xdp: getting cursor size", .{});
         const cursor_size = try xdp_settings.getCursorSize();
-        log.debug("xdp: got cursor size: {d}", .{cursor_size});
+        log.info("xdp: got cursor size: {d}", .{cursor_size});
 
         break :manager try CursorManager.initPointerManager(
             gpa,
