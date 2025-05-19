@@ -469,7 +469,7 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
     const inter = toggle.interaction();
     baseClickableInteractionStyles(inter);
 
-    if (inter.f.isClicked())
+    if (inter.clicked())
         toggled.* = !toggled.*;
 
     return inter;

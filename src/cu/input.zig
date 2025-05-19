@@ -63,145 +63,210 @@ pub const MouseButton = enum(u8) {
     pub const array = [_]MouseButton{ .left, .middle, .right, .forward, .back };
 };
 
-pub const InteractionFlags = packed struct(u32) {
-    const Self = @This();
+pub const InteractionFlag = enum(u8) {
+    left_pressed = 0,
+    middle_pressed,
+    right_pressed,
+
+    left_released,
+    middle_released,
+    right_released,
+
+    left_clicked,
+    middle_clicked,
+    right_clicked,
+
+    left_dragging,
+    middle_dragging,
+    right_dragging,
+
+    left_double_clicked,
+    middle_double_clicked,
+    right_double_clicked,
+
+    left_double_dragging,
+    middle_double_dragging,
+    right_double_dragging,
+
+    left_triple_clicked,
+    middle_triple_clicked,
+    right_triple_clicked,
+
+    left_triple_dragging,
+    middle_triple_dragging,
+    right_triple_dragging,
+
+    keyboard_pressed,
+
+    hovering,
+    mouse_over,
+
+    pub fn fromButton(
+        base: MouseButtonKind,
+        button: MouseButton,
+    ) ?InteractionFlag {
+        switch (button) {
+            .none, .forward, .back => return null,
+            else => {},
+        }
+
+        const base_int: u8 = @intFromEnum(base);
+        const inter_base_int = base_int * 3;
+
+        const button_int: u8 = @intFromEnum(button);
+        const inter_int = inter_base_int + button_int;
+
+        return @enumFromInt(inter_int);
+    }
+
+    // must be kept up to date with InterationFlag
+    pub const MouseButtonKind = enum(u8) {
+        pressed = 0,
+        released,
+        clicked,
+        dragging,
+        double_clicked,
+        double_dragging,
+        tripple_clicked,
+        tripple_dragging,
+    };
+};
+
+pub const InteractionFlags = struct {
+    enum_set: std.EnumSet(InteractionFlag),
+
+    pub const none = InteractionFlags{ .enum_set = .{} };
 
     // mouse press -> atom pressed while hovering
-    left_pressed: bool = false,
-    middle_pressed: bool = false,
-    right_pressed: bool = false,
+    pub const left_pressed = initOne(.left_pressed);
+    pub const middle_pressed = initOne(.middle_pressed);
+    pub const right_pressed = initOne(.right_pressed);
 
     // released -> atom was pressed & released, in or out of bounds
-    left_released: bool = false,
-    middle_released: bool = false,
-    right_released: bool = false,
+    pub const left_released = initOne(.left_released);
+    pub const middle_released = initOne(.middle_released);
+    pub const right_released = initOne(.right_released);
 
     // clicked -> atom was pressed & released, in bounds
-    left_clicked: bool = false,
-    middle_clicked: bool = false,
-    right_clicked: bool = false,
+    pub const left_clicked = initOne(.left_clicked);
+    pub const middle_clicked = initOne(.middle_clicked);
+    pub const right_clicked = initOne(.right_clicked);
 
     // dragging -> atom was pressed, still holding
-    left_dragging: bool = false,
-    middle_dragging: bool = false,
-    right_dragging: bool = false,
+    pub const left_dragging = initOne(.left_dragging);
+    pub const middle_dragging = initOne(.middle_dragging);
+    pub const right_dragging = initOne(.right_dragging);
 
     // double clicked -> atom was clicked, pressed again
-    left_double_clicked: bool = false,
-    middle_double_clicked: bool = false,
-    right_double_clicked: bool = false,
+    pub const left_double_clicked = initOne(.left_double_clicked);
+    pub const middle_double_clicked = initOne(.middle_double_clicked);
+    pub const right_double_clicked = initOne(.right_double_clicked);
 
     // double dragging -> atom was double-clicked, still holding
-    left_double_dragging: bool = false,
-    middle_double_dragging: bool = false,
-    right_double_dragging: bool = false,
+    pub const left_double_dragging = initOne(.left_double_dragging);
+    pub const middle_double_dragging = initOne(.middle_double_dragging);
+    pub const right_double_dragging = initOne(.right_double_dragging);
 
     // triple clicked -> atom was double-clicked, pressed again
-    left_triple_clicked: bool = false,
-    middle_triple_clicked: bool = false,
-    right_triple_clicked: bool = false,
+    pub const left_triple_clicked = initOne(.left_triple_clicked);
+    pub const middle_triple_clicked = initOne(.middle_triple_clicked);
+    pub const right_triple_clicked = initOne(.right_triple_clicked);
 
     // triple dragging -> atom was triple-clicked, still holding
-    left_triple_dragging: bool = false,
-    middle_triple_dragging: bool = false,
-    right_triple_dragging: bool = false,
+    pub const left_triple_dragging = initOne(.left_triple_dragging);
+    pub const middle_triple_dragging = initOne(.middle_triple_dragging);
+    pub const right_triple_dragging = initOne(.right_triple_dragging);
 
     // keyboard pressed -> atom has focus, activated via keyboard
-    keyboard_pressed: bool = false,
+    pub const keyboard_pressed = initOne(.keyboard_pressed);
 
-    hovering: bool = false, // hovering specifically over this atom
-    mouse_over: bool = false, // mouse is over, but may be occluded
+    // hovering specifically over this atom
+    pub const hovering = initOne(.hovering);
+    // mouse is over, but may be occluded
+    pub const mouse_over = initOne(.mouse_over);
 
-    _padding: enum(u5) { zero } = .zero,
+    pub const pressed = initMany(&.{
+        .left_pressed,
+        .keyboard_pressed,
+    });
 
-    pub const pressed = InteractionFlags{
-        .left_pressed = true,
-        .keyboard_pressed = true,
-    };
+    pub const released = initMany(&.{
+        .left_released,
+    });
 
-    pub const released = InteractionFlags{
-        .left_released = true,
-    };
+    pub const clicked = initMany(&.{
+        .left_clicked,
+        .keyboard_pressed,
+    });
 
-    pub const clicked = InteractionFlags{
-        .left_clicked = true,
-        .keyboard_pressed = true,
-    };
+    pub const any_clicked = initMany(&.{
+        .left_clicked,
+        .middle_clicked,
+        .right_clicked,
+        .keyboard_pressed,
+    });
 
-    pub const any_clicked = InteractionFlags{
-        .left_clicked = true,
-        .middle_clicked = true,
-        .right_clicked = true,
-        .keyboard_pressed = true,
-    };
+    pub const any_dragging = initMany(&.{
+        .left_dragging,
+        .middle_dragging,
+        .right_dragging,
+    });
 
-    pub const any_dragging = InteractionFlags{
-        .left_dragging = true,
-        .middle_dragging = true,
-        .right_dragging = true,
-        .keyboard_pressed = true,
-    };
+    const Flags = InteractionFlags;
+    const Flag = InteractionFlag;
 
-    inline fn asInt(self: Self) u32 {
-        return @bitCast(self);
+    pub fn initMany(flags: []const Flag) Flags {
+        return .{ .enum_set = .initMany(flags) };
     }
 
-    inline fn fromInt(value: u32) Self {
-        return @bitCast(value);
+    pub fn initOne(flag: Flag) Flags {
+        return .{ .enum_set = .initOne(flag) };
     }
 
-    inline fn bitOr(self: Self, other: Self) Self {
-        return fromInt(self.asInt() | other.asInt());
+    pub fn contains(flags: Flags, flag: Flag) bool {
+        return flags.enum_set.contains(flag);
     }
 
-    inline fn bitAnd(self: Self, other: Self) Self {
-        return fromInt(self.asInt() & other.asInt());
+    pub fn containsAny(flags: Flags, set: Flags) bool {
+        var iter = set.enum_set.iterator();
+        while (iter.next()) |flag| {
+            if (flags.contains(flag))
+                return true;
+        }
+        return false;
     }
 
-    pub inline fn combine(self: Self, other: Self) Self {
-        return bitOr(self, other);
+    pub fn insert(flags: *Flags, flag: Flag) void {
+        flags.enum_set.insert(flag);
     }
 
-    pub inline fn containsAny(self: Self, other: Self) bool {
-        return bitAnd(self, other).asInt() > 0;
+    pub fn remove(flags: *Flags, flag: Flag) void {
+        flags.enum_set.remove(flag);
     }
 
-    pub inline fn isPressed(self: InteractionFlags) bool {
-        return self.containsAny(.pressed);
+    pub fn setPresent(flags: *Flags, flag: Flag, present: bool) void {
+        flags.enum_set.setPresent(flag, present);
     }
 
-    pub inline fn isReleased(self: InteractionFlags) bool {
-        return self.containsAny(.released);
+    pub fn unionWith(flags: Flags, other: Flags) Flags {
+        return .{ .enum_set = .unionWith(flags.enum_set, other.enum_set) };
     }
 
-    pub inline fn isClicked(self: InteractionFlags) bool {
-        return self.containsAny(.clicked);
+    pub fn unionOf(flags: []const Flags) Flags {
+        // @FIXME: could propably do some bit stuff here
+        var out = Flags.none;
+        for (flags) |set| {
+            out = out.unionWith(set);
+        }
+        return out;
     }
 
-    pub inline fn isDoubleClicked(self: InteractionFlags) bool {
-        return self.containsAny(.double_clicked);
+    pub fn subsetOf(flags: Flags, other: Flags) bool {
+        return flags.enum_set.subsetOf(other.enum_set);
     }
 
-    pub inline fn isTripleClicked(self: InteractionFlags) bool {
-        return self.containsAny(.triple_clicked);
-    }
-
-    pub inline fn isDragging(self: InteractionFlags) bool {
-        return self.containsAny(.any_dragging);
-    }
-
-    pub inline fn buttonPressed(f: InteractionFlags, button: MouseButton) bool {
-        return switch (button) {
-            .left, .middle, .right => {
-                const button_int: u5 = @intCast(@intFromEnum(button));
-                const base_int: u32 =
-                    @bitCast(InteractionFlags{ .left_pressed = true });
-                const f_int: u32 = @bitCast(f);
-                return (f_int & (base_int << button_int)) != 0;
-            },
-            .back, .forward => false,
-            else => false,
-        };
+    pub fn supersetOf(flags: Flags, other: Flags) bool {
+        return flags.enum_set.supersetOf(other.enum_set);
     }
 };
 
@@ -209,24 +274,51 @@ pub const Interaction = struct {
     atom: *Atom,
     scroll: math.Size(f32) = .zero,
     modifiers: Modifiers = .{},
-    f: InteractionFlags = .{},
+    f: InteractionFlags = .none,
+
+    pub fn pressed(self: Interaction) bool {
+        return self.f.containsAny(.pressed);
+    }
+
+    pub fn released(self: Interaction) bool {
+        return self.f.containsAny(.released);
+    }
+
+    pub fn clicked(self: Interaction) bool {
+        return self.f.containsAny(.clicked);
+    }
+
+    pub fn doubleClicked(self: Interaction) bool {
+        return self.f.containsAny(.left_double_clicked);
+    }
+
+    pub fn tripleClicked(self: Interaction) bool {
+        return self.f.containsAny(.left_triple_clicked);
+    }
+
+    pub fn dragging(self: Interaction) bool {
+        return self.f.containsAny(.left_dragging);
+    }
+
+    pub fn hovering(self: Interaction) bool {
+        return self.f.contains(.hovering);
+    }
+
+    pub fn buttonPressed(self: Interaction, button: MouseButton) bool {
+        const flag =
+            InteractionFlag.fromButton(.pressed, button) orelse
+            return false;
+        return self.f.contains(flag);
+    }
 };
 
 fn setButtonGeneric(
-    f: InteractionFlags,
-    base: InteractionFlags,
+    f: *InteractionFlags,
+    base: InteractionFlag.MouseButtonKind,
     button: MouseButton,
-) InteractionFlags {
-    switch (button) {
-        .left, .middle, .right => {
-            const f_int: u32 = @bitCast(f);
-            const base_int: u32 = @bitCast(base);
-            const button_int: u5 = @intCast(@intFromEnum(button));
-            return @bitCast(f_int | (base_int << button_int));
-        },
-        .back, .forward => return f, // @TODO
-        else => return f,
-    }
+) void {
+    const flag = InteractionFlag.fromButton(base, button) orelse return;
+    f.insert(flag);
 }
 
 pub fn interactionFromAtom(atom: *Atom) Interaction {
@@ -297,11 +389,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
 
             cu.state.start_drag_pos = cu.state.mouse;
 
-            inter.f = setButtonGeneric(
-                inter.f,
-                .{ .left_pressed = true },
-                button.button,
-            );
+            setButtonGeneric(&inter.f, .pressed, button.button);
 
             const double_click_time_us =
                 cu.state.graphics_info.double_click_time_us;
@@ -317,11 +405,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 event.timestamp_us -
                     last_pressed_timestamp_us <= double_click_time_us)
             {
-                inter.f = setButtonGeneric(
-                    inter.f,
-                    .{ .left_double_clicked = true },
-                    button.button,
-                );
+                setButtonGeneric(&inter.f, .double_clicked, button.button);
             }
 
             const last_last_pressed_key =
@@ -338,11 +422,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 last_pressed_timestamp_us - last_last_pressed_timestamp_us <=
                     double_click_time_us)
             {
-                inter.f = setButtonGeneric(
-                    inter.f,
-                    .{ .left_triple_clicked = true },
-                    button.button,
-                );
+                setButtonGeneric(&inter.f, .tripple_clicked, button.button);
             }
 
             cu.state.press_history_timestamp_us[button_idx]
@@ -361,17 +441,9 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             const click = in_bounds;
             if (click) cu.state.hot_atom_key = .nil;
 
-            inter.f = setButtonGeneric(
-                inter.f,
-                .{ .left_released = true },
-                button.button,
-            );
+            setButtonGeneric(&inter.f, .released, button.button);
             if (click)
-                inter.f = setButtonGeneric(
-                    inter.f,
-                    .{ .left_clicked = true },
-                    button.button,
-                );
+                setButtonGeneric(&inter.f, .clicked, button.button);
 
             event.consumed = true;
         }
@@ -380,13 +452,13 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     if (rect.contains(cu.state.mouse) and
         !blacklist_rect.contains(cu.state.mouse))
     {
-        inter.f.mouse_over = true;
+        inter.f.insert(.mouse_over);
     }
 
     // mouse over atom, without any other hot key -> set hot, mark hovering
     {
         if (atom.flags.contains(.mouse_clickable) and
-            inter.f.mouse_over and
+            inter.f.contains(.mouse_over) and
             (cu.state.hot_atom_key.eql(.nil) or
                 cu.state.hot_atom_key.eql(atom.key)))
         {
@@ -398,7 +470,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             }
             if (none_active_or_we_are_active) {
                 cu.state.hot_atom_key = atom.key;
-                inter.f.hovering = true;
+                inter.f.insert(.hovering);
             }
         }
     }
@@ -408,30 +480,26 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         for (MouseButton.array) |button| {
             const idx = @intFromEnum(button);
             if (Atom.Key.eql(atom.key, cu.state.active_atom_key[idx]) or
-                inter.f.buttonPressed(button))
+                inter.buttonPressed(button))
             {
-                inter.f = setButtonGeneric(
-                    inter.f,
-                    .{ .left_dragging = true },
-                    button,
-                );
+                setButtonGeneric(&inter.f, .dragging, button);
             }
         }
     }
 
-    if (!ctx_menu_is_ancestor and inter.f.containsAny(.{
-        .left_pressed = true,
-        .right_pressed = true,
-        .middle_pressed = true,
-    })) {
+    if (!ctx_menu_is_ancestor and inter.f.containsAny(.initMany(&.{
+        .left_pressed,
+        .right_pressed,
+        .middle_pressed,
+    }))) {
         cu.builder.ctxMenuClose();
     }
 
     return inter;
 }
 
+// @TODO
 pub const Keycode = enum(u32) {
-    // @TODO
     unknown,
     _,
 };

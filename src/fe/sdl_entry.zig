@@ -460,11 +460,11 @@ fn update() !void {
             const item = b.build(item_str);
 
             const inter = item.interaction();
-            if (inter.f.hovering) {
+            if (inter.hovering()) {
                 item.flags.insert(.draw_border);
             }
 
-            if (inter.f.isClicked()) {
+            if (inter.clicked()) {
                 std.debug.print("clicked {s}\n", .{item_str});
                 // dropdown_open = true;
             }
@@ -476,7 +476,7 @@ fn update() !void {
             const topbar_space = b.build("topbar spacer");
 
             const inter = topbar_space.interaction();
-            if (inter.f.left_double_clicked) {
+            if (inter.f.contains(.left_double_clicked)) {
                 if (window.window_handle.getFlags() &
                     sdl.video.WindowFlag.maximized == 0)
                 {
@@ -494,12 +494,12 @@ fn update() !void {
             defer b.close(button);
 
             const int = button.interaction();
-            if (int.f.hovering) {
+            if (int.hovering()) {
                 // button.palette.border = cu.Color.hexRgb(0xFF0000);
                 button.palette.set(.border, .hexRgb(0xFF0000));
             }
 
-            if (int.f.isClicked()) {
+            if (int.clicked()) {
                 switch (i) {
                     0 => try window.window_handle.minimize(),
                     1 => if (window.window_handle.getFlags() &
@@ -575,7 +575,7 @@ fn update() !void {
                 defer b.close(header);
                 header.display_string = "Right Header";
 
-                if (header.interaction().f.mouse_over) {
+                if (header.interaction().f.contains(.mouse_over)) {
                     b.stacks.palette.pushForMany(.init(
                         .{ .background = .hexRgb(0x001800) },
                     ));
@@ -602,7 +602,7 @@ fn update() !void {
                 defer b.close(content);
 
                 b.stacks.pref_size.push(.square(.text_pad(8)));
-                if (b.button("foo bar").f.isClicked()) {
+                if (b.button("foo bar").clicked()) {
                     log.debug("foo bar clicked", .{});
                 }
 

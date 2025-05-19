@@ -308,11 +308,11 @@ pub fn entry(gpa: Allocator) !void {
                     const item = b.build(item_str);
 
                     const inter = item.interaction();
-                    if (inter.f.hovering) {
+                    if (inter.hovering()) {
                         item.flags.insert(.draw_border);
                     }
 
-                    if (inter.f.isClicked()) {
+                    if (inter.clicked()) {
                         std.debug.print("clicked {s}\n", .{item_str});
                         // dropdown_open = true;
                     }
@@ -325,14 +325,14 @@ pub fn entry(gpa: Allocator) !void {
                     const topbar_space = b.build("topbar spacer");
 
                     const inter = topbar_space.interaction();
-                    if (inter.f.left_double_clicked)
+                    if (inter.doubleClicked())
                         window.toggleMaximized();
-                    if (inter.f.right_pressed)
+                    if (inter.f.contains(.right_pressed))
                         window.showWindowMenu(.point(
                             @intFromFloat(cu.state.mouse.x),
                             @intFromFloat(cu.state.mouse.y),
                         ));
-                    if (inter.f.left_dragging) {
+                    if (inter.dragging()) {
                         window.startMove();
 
                         // @HACK:
@@ -359,10 +359,10 @@ pub fn entry(gpa: Allocator) !void {
                     defer b.close(button);
 
                     const int = button.interaction();
-                    if (int.f.hovering)
+                    if (int.hovering())
                         button.palette.set(.border, .hexRgb(0xFF0000));
 
-                    if (int.f.isClicked()) {
+                    if (int.clicked()) {
                         switch (i) {
                             0 => window.minimize(),
                             1 => window.toggleMaximized(),
@@ -446,7 +446,7 @@ pub fn entry(gpa: Allocator) !void {
                         defer b.close(header);
                         header.display_string = "Right Header";
 
-                        if (header.interaction().f.mouse_over) {
+                        if (header.interaction().f.contains(.mouse_over)) {
                             b.stacks.palette.pushForMany(.init(
                                 .{ .background = .hexRgb(0x001800) },
                             ));
@@ -475,7 +475,7 @@ pub fn entry(gpa: Allocator) !void {
                         defer b.close(content);
 
                         b.stacks.pref_size.push(.square(.text_pad(8)));
-                        if (b.button("foo bar").f.isClicked()) {
+                        if (b.button("foo bar").clicked()) {
                             log.debug("foo bar clicked", .{});
                         }
 
@@ -570,19 +570,19 @@ pub const WindowInsetWrapper = struct {
             b.stacks.pref_size.push(.square(.px(inset)));
             const top_right = b.build("top-right inset").interaction();
 
-            if (top_left.f.mouse_over)
+            if (top_left.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_nwse) catch {};
-            if (top_left.f.isPressed())
+            if (top_left.pressed())
                 window.startResize(.top_left);
 
-            if (top_middle.f.mouse_over)
+            if (top_middle.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_ns) catch {};
-            if (top_middle.f.isPressed())
+            if (top_middle.pressed())
                 window.startResize(.top);
 
-            if (top_right.f.mouse_over)
+            if (top_right.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_nesw) catch {};
-            if (top_right.f.isPressed())
+            if (top_right.pressed())
                 window.startResize(.top_right);
         }
 
@@ -595,9 +595,9 @@ pub const WindowInsetWrapper = struct {
             b.stacks.flags.push(.clickable);
             const left = b.build("left inset").interaction();
 
-            if (left.f.mouse_over)
+            if (left.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_ew) catch {};
-            if (left.f.isPressed())
+            if (left.pressed())
                 window.startResize(.left);
         }
 
@@ -608,7 +608,7 @@ pub const WindowInsetWrapper = struct {
         hori_body.pref_size = .square(.grow);
 
         const hori_inter = hori_body.interaction();
-        if (hori_inter.f.mouse_over)
+        if (hori_inter.f.contains(.mouse_over))
             window.conn.setCursor(.default) catch {};
 
         return .{
@@ -631,9 +631,9 @@ pub const WindowInsetWrapper = struct {
             b.stacks.flags.push(.clickable);
             const right = b.build("right inset").interaction();
 
-            if (right.f.mouse_over)
+            if (right.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_ew) catch {};
-            if (right.f.isPressed())
+            if (right.pressed())
                 window.startResize(.right);
         }
 
@@ -657,19 +657,19 @@ pub const WindowInsetWrapper = struct {
             b.stacks.pref_size.push(.square(.px(inset)));
             const bottom_right = b.build("bottom-right inset").interaction();
 
-            if (bottom_left.f.mouse_over)
+            if (bottom_left.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_nesw) catch {};
-            if (bottom_left.f.isPressed())
+            if (bottom_left.pressed())
                 window.startResize(.bottom_left);
 
-            if (bottom_middle.f.mouse_over)
+            if (bottom_middle.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_ns) catch {};
-            if (bottom_middle.f.isPressed())
+            if (bottom_middle.pressed())
                 window.startResize(.bottom);
 
-            if (bottom_right.f.mouse_over)
+            if (bottom_right.f.contains(.mouse_over))
                 window.conn.setCursor(.resize_nwse) catch {};
-            if (bottom_right.f.isPressed())
+            if (bottom_right.pressed())
                 window.startResize(.bottom_right);
         }
     }

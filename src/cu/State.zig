@@ -123,7 +123,9 @@ pub fn pushEvent(state: *State, kind: cu.input.EventKind) void {
         .kind = kind,
         .timestamp_us = @intCast(std.time.microTimestamp()),
         .consumed = false,
-    }) catch @panic("event list overflow");
+    }) catch {
+        log.warn("event list overflow", .{});
+    };
 }
 
 pub fn registerFont(state: *State, font: FontHandle) FontId {
