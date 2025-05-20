@@ -58,7 +58,6 @@ pub const MouseButton = enum(u8) {
     right,
     forward,
     back,
-    _,
 
     pub const array = [_]MouseButton{ .left, .middle, .right, .forward, .back };
 };
@@ -374,7 +373,6 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
 
         const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
             rect.contains(cu.state.mouse);
-        const button_idx = @intFromEnum(button.button);
 
         // mouse down in box -> set box as hot/active -> press event
         if (atom.flags.contains(.mouse_clickable) and
@@ -385,7 +383,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             event.consumed = true;
 
             cu.state.hot_atom_key = atom.key;
-            cu.state.active_atom_key[button_idx] = atom.key;
+            cu.state.active_atom_key.set(button.button, atom.key);
 
             cu.state.start_drag_pos = cu.state.mouse;
 
@@ -394,12 +392,12 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             const double_click_time_us =
                 cu.state.graphics_info.double_click_time_us;
 
-            const last_pressed_key =
-                cu.state.press_history_key[button_idx].indexBack(0) orelse
+            const last_pressed_key = cu.state.press_history_key
+                .get(button.button).indexBack(0) orelse
                 Atom.Key.nil;
-            const last_pressed_timestamp_us =
-                cu.state.press_history_timestamp_us[button_idx]
-                    .indexBack(0) orelse std.math.maxInt(u64);
+            const last_pressed_timestamp_us = cu.state.press_history_timestamp_us
+                .get(button.button).indexBack(0) orelse
+                std.math.maxInt(u64);
 
             if (Atom.Key.eql(atom.key, last_pressed_key) and
                 event.timestamp_us -
@@ -408,11 +406,12 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 setButtonGeneric(&inter.f, .double_clicked, button.button);
             }
 
-            const last_last_pressed_key =
-                cu.state.press_history_key[button_idx]
-                    .indexBack(1) orelse Atom.Key.nil;
+            const last_last_pressed_key = cu.state.press_history_key
+                .get(button.button).indexBack(1) orelse
+                Atom.Key.nil;
             const last_last_pressed_timestamp_us =
-                cu.state.press_history_timestamp_us[button_idx]
+                cu.state.press_history_timestamp_us
+                    .get(button.button)
                     .indexBack(1) orelse std.math.maxInt(u64);
 
             if (Atom.Key.eql(atom.key, last_pressed_key) and
@@ -425,18 +424,21 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 setButtonGeneric(&inter.f, .tripple_clicked, button.button);
             }
 
-            cu.state.press_history_timestamp_us[button_idx]
+            cu.state.press_history_timestamp_us
+                .getPtr(button.button)
                 .push(event.timestamp_us);
-            cu.state.press_history_key[button_idx].push(atom.key);
+            cu.state.press_history_key
+                .getPtr(button.button)
+                .push(atom.key);
         }
 
         // mouse in/out release in box -> unset as active -> release (and maybe click) event
         if (atom.flags.contains(.mouse_clickable) and
             button.state == .released and
             button.button != .none and
-            cu.state.active_atom_key[button_idx].eql(atom.key))
+            cu.state.active_atom_key.get(button.button).eql(atom.key))
         {
-            cu.state.active_atom_key[button_idx] = .nil;
+            cu.state.active_atom_key.set(button.button, .nil);
 
             const click = in_bounds;
             if (click) cu.state.hot_atom_key = .nil;
@@ -463,7 +465,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 cu.state.hot_atom_key.eql(atom.key)))
         {
             var none_active_or_we_are_active = true;
-            for (cu.state.active_atom_key) |key| {
+            for (cu.state.active_atom_key.values) |key| {
                 none_active_or_we_are_active =
                     none_active_or_we_are_active and
                     (key == .nil or key.eql(atom.key));
@@ -478,8 +480,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     // active -> dragging
     if (atom.flags.contains(.mouse_clickable)) {
         for (MouseButton.array) |button| {
-            const idx = @intFromEnum(button);
-            if (Atom.Key.eql(atom.key, cu.state.active_atom_key[idx]) or
+            if (Atom.Key.eql(atom.key, cu.state.active_atom_key.get(button)) or
                 inter.buttonPressed(button))
             {
                 setButtonGeneric(&inter.f, .dragging, button);

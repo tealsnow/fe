@@ -396,7 +396,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
     const atom = inter.atom;
 
     const is_hot = cu.state.hot_atom_key.eql(atom.key);
-    const is_active = for (cu.state.active_atom_key) |key| {
+    const is_active = for (cu.state.active_atom_key.values) |key| {
         if (key.eql(atom.key)) break true;
     } else false;
 

@@ -53,7 +53,7 @@ next_ctx_menu_open: bool = false,
 // (about to be interacting with this item)
 hot_atom_key: Atom.Key = .nil,
 // currently interacting atom for mouse button
-active_atom_key: [MouseButton.array.len]Atom.Key = @splat(.nil),
+active_atom_key: std.EnumArray(MouseButton, Atom.Key) = .initFill(.nil),
 
 event_list: std.BoundedArray(cu.input.Event, 32) = .{},
 
@@ -65,11 +65,14 @@ start_drag_pos: math.Point(f32) = .nan,
 
 fonthandles: std.ArrayListUnmanaged(FontHandle) = .empty,
 
-// @FIXME: use std.EnumArray
-press_history_key: [MouseButton.array.len] //
-cu.CircleBuffer(HistoySize, Atom.Key) = @splat(.empty),
-press_history_timestamp_us: [MouseButton.array.len] //
-cu.CircleBuffer(HistoySize, u64) = @splat(.empty),
+press_history_key: std.EnumArray(
+    MouseButton,
+    cu.CircleBuffer(HistoySize, Atom.Key),
+) = .initFill(.empty),
+press_history_timestamp_us: std.EnumArray(
+    MouseButton,
+    cu.CircleBuffer(HistoySize, u64),
+) = .initFill(.empty),
 
 const HistoySize = 8;
 
