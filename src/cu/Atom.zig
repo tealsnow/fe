@@ -243,7 +243,7 @@ pub const Flags = struct {
         return .{ .enum_set = .unionWith(flags.enum_set, other.enum_set) };
     }
 
-    pub fn unionOf(flags: []const Flags) Flags {
+    pub fn unionWithMany(flags: []const Flags) Flags {
         var out = Flags.none;
         for (flags) |set| {
             out = out.unionWith(set);

@@ -417,7 +417,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
 
 pub fn button(string: []const u8) cu.Interaction {
     const atom = build(string);
-    atom.flags = .unionOf(&.{ .clickable, .draw_text, .draw_border });
+    atom.flags = .unionWithMany(&.{ .clickable, .draw_text, .draw_border });
 
     const interaction = atom.interaction();
     baseClickableInteractionStyles(interaction);

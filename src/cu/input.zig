@@ -250,23 +250,6 @@ pub const InteractionFlags = struct {
     pub fn unionWith(flags: Flags, other: Flags) Flags {
         return .{ .enum_set = .unionWith(flags.enum_set, other.enum_set) };
     }
-
-    pub fn unionOf(flags: []const Flags) Flags {
-        // @FIXME: could propably do some bit stuff here
-        var out = Flags.none;
-        for (flags) |set| {
-            out = out.unionWith(set);
-        }
-        return out;
-    }
-
-    pub fn subsetOf(flags: Flags, other: Flags) bool {
-        return flags.enum_set.subsetOf(other.enum_set);
-    }
-
-    pub fn supersetOf(flags: Flags, other: Flags) bool {
-        return flags.enum_set.supersetOf(other.enum_set);
-    }
 };
 
 pub const Interaction = struct {
