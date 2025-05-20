@@ -18,7 +18,7 @@ pub const math = @import("math.zig");
 pub const builder = @import("builder.zig");
 pub const input = @import("input.zig");
 pub const Interaction = input.Interaction;
-pub const circle_buffers = @import("circle_buffers.zig");
+pub const CircleBuffer = @import("circle_buffer.zig").CircleBuffer;
 
 // const scope_locals = @import("scope_locals.zig");
 

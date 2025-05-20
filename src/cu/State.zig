@@ -67,9 +67,9 @@ fonthandles: std.ArrayListUnmanaged(FontHandle) = .empty,
 
 // @FIXME: use std.EnumArray
 press_history_key: [MouseButton.array.len] //
-cu.circle_buffers.CircleBuffer(HistoySize, Atom.Key) = @splat(.empty),
+cu.CircleBuffer(HistoySize, Atom.Key) = @splat(.empty),
 press_history_timestamp_us: [MouseButton.array.len] //
-cu.circle_buffers.CircleBuffer(HistoySize, u64) = @splat(.empty),
+cu.CircleBuffer(HistoySize, u64) = @splat(.empty),
 
 const HistoySize = 8;
 
