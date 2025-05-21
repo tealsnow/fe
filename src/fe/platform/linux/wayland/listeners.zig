@@ -147,8 +147,7 @@ pub const WlOutputListenerData = struct {
     height: i32,
     physical_width_mm: i32,
     physical_height_mm: i32,
-
-    // @TODO: scale
+    scale: i32,
 
     pub const empty = std.mem.zeroes(WlOutputListenerData);
 };
@@ -202,6 +201,8 @@ pub fn wlOutputListener(
         },
         .scale => |scale| {
             log.debug("wl_output scale: {d}", .{scale.factor});
+
+            data.scale = scale.factor;
         },
         .name => |name| {
             log.debug("wl_output name: '{s}'", .{name.name});

@@ -11,6 +11,8 @@ const RectInstance = @import("WgpuRenderer.zig").RectInstance;
 const cu = @import("cu");
 const mt = cu.math;
 
+const tracy = @import("tracy");
+
 font_manager: *const FontManager,
 shaper: TextShaper,
 
@@ -46,6 +48,10 @@ pub fn process(
 ) ![]const BatchData {
     if (!cu.state.ui_built) return &[_]BatchData{};
 
+    const trace =
+        tracy.beginZone(@src(), .{ .name = "BatchProcessor.process" });
+    defer trace.end();
+
     try self.processAtom(arena, cu.state.ui_root);
 
     var batches = try arena.alloc(BatchData, self.text_lists.size + 1);
@@ -79,6 +85,10 @@ pub fn processAtom(
     {
         return;
     }
+
+    const trace =
+        tracy.beginZone(@src(), .{ .name = "BatchProcessor.processAtom" });
+    defer trace.end();
 
     const rect = atom.rect;
 

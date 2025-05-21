@@ -14,6 +14,8 @@ const pretty = @import("pretty");
 const cu = @import("cu");
 const mt = cu.math;
 
+const tracy = @import("tracy");
+
 pub const FontAtlas = @import("FontAtlas.zig");
 pub const FontFace = @import("FontFace.zig");
 pub const FontManager = @import("FontManager.zig");
@@ -698,15 +700,27 @@ fn deviceLostCallback(
 const rlog = std.log.scoped(.@"wgpu render");
 
 pub fn render(renderer: Renderer, arena: Allocator) !void {
+    const trace =
+        tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
+    defer trace.end();
+
     const batch_data = try renderer.batch_processor.process(arena);
     defer renderer.batch_processor.reset();
 
     var render_pass_data =
         try arena.alloc(RenderPassData, batch_data.len);
 
-    for (batch_data, 0..) |data, i| {
-        render_pass_data[i] =
-            try renderer.batchToRenderPass(data);
+    {
+        const batch_to_render_pass_trace = tracy.beginZone(
+            @src(),
+            .{ .name = "batch to render pass" },
+        );
+        defer batch_to_render_pass_trace.end();
+
+        for (batch_data, 0..) |data, i| {
+            render_pass_data[i] =
+                try renderer.batchToRenderPass(data);
+        }
     }
 
     renderer.renderPassData(render_pass_data);
@@ -720,6 +734,10 @@ pub fn renderPassData(
     renderer: Renderer,
     render_pass_data: []const RenderPassData,
 ) void {
+    const trace =
+        tracy.beginZone(@src(), .{ .name = "renderPassData" });
+    defer trace.end();
+
     //- get next surface texture
     const target_view =
         getTargetTextureView(renderer.surface) catch |err| {
@@ -926,7 +944,7 @@ pub const CuCallbacks = struct {
 
         const font_atlas = cb.renderer.font_manager.getAtlas(font_face);
 
-        // @TODO: It might be work caching this for later use in rendering
+        // @TODO: It might be worth caching this for later use in rendering
         const shaped = cb.renderer.batch_processor.shaper
             .shape(font_face, font_atlas, text) catch
             @panic("failed to shape text");

@@ -205,7 +205,4 @@ pub const GraphicsInfo = struct {
 };
 
 pub const FontHandle = *anyopaque;
-// @TODO:
-//  have a 'none' option as the default,
-//  require the user to push a font to the stack
 pub const FontId = enum(u32) { _ };

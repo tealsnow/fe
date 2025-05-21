@@ -17,12 +17,18 @@ const b = cu.builder;
 
 const xkb = @import("xkbcommon");
 
+const tracy = @import("tracy");
+
 // @TODO: Migrate to use ghostty/pkg/fontconfig
 const fc = @import("fontconfig.zig");
 
 const pretty = @import("pretty");
 
 pub fn entry(gpa: Allocator) !void {
+    tracy.printAppInfo("fe", .{});
+
+    const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
+
     //- window
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
@@ -118,7 +124,10 @@ pub fn entry(gpa: Allocator) !void {
     log.info("starting main loop", .{});
     window.commit();
 
+    init_trace.end();
+
     main_loop: while (true) {
+        tracy.frameMark();
         defer {
             _ = arena_alloc.reset(.retain_capacity);
         }
@@ -244,6 +253,9 @@ pub fn entry(gpa: Allocator) !void {
         };
 
         if (!do_render) continue :main_loop;
+
+        const frame_trace = tracy.startDiscontinuousFrame("render frame");
+        defer frame_trace.end();
 
         b.startFrame();
         defer b.endFrame();
