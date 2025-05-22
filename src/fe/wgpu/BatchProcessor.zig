@@ -23,6 +23,8 @@ text_lists: std.AutoHashMapUnmanaged(
     std.ArrayListUnmanaged(RectInstance),
 ) = .empty,
 
+batches: std.ArrayListUnmanaged(BatchData) = .empty,
+
 pub fn init(
     font_manager: *const FontManager,
 ) !BatchProcessor {
@@ -40,6 +42,7 @@ pub fn deinit(self: *BatchProcessor) void {
 pub fn reset(self: *BatchProcessor) void {
     self.rect_list = .empty;
     self.text_lists = .empty;
+    self.batches = .empty;
 }
 
 pub fn process(
@@ -52,28 +55,40 @@ pub fn process(
         tracy.beginZone(@src(), .{ .name = "BatchProcessor.process" });
     defer trace.end();
 
-    try self.processAtom(arena, cu.state.ui_root);
+    try self.processRoot(arena, cu.state.ui_root);
+    // reset text batches between each root as roots may overlap
+    self.text_lists = .empty;
+    try self.processRoot(arena, cu.state.ui_tooltip_root);
 
-    var batches = try arena.alloc(BatchData, self.text_lists.size + 1);
-
-    batches[0] = .{
-        .font_face = null,
-        .rects = try self.rect_list.toOwnedSlice(arena),
-    };
-
-    var i: usize = 1;
-    var iter = self.text_lists.iterator();
-    while (iter.next()) |entry| : (i += 1) {
-        batches[i] = .{
-            .font_face = entry.key_ptr.*,
-            .rects = entry.value_ptr.items,
-        };
-    }
-
-    return batches;
+    return self.batches.items;
 }
 
-pub fn processAtom(
+fn processRoot(
+    self: *BatchProcessor,
+    arena: Allocator,
+    root: *cu.Atom,
+) !void {
+    try self.processAtom(arena, root);
+
+    try self.batches.ensureUnusedCapacity(arena, self.text_lists.size + 1);
+
+    if (self.rect_list.items.len != 0)
+        self.batches.appendAssumeCapacity(.{
+            .font_face = null,
+            .rects = try self.rect_list.toOwnedSlice(arena),
+        });
+
+    var iter = self.text_lists.iterator();
+    while (iter.next()) |entry| {
+        if (entry.value_ptr.items.len == 0) continue;
+        self.batches.appendAssumeCapacity(.{
+            .font_face = entry.key_ptr.*,
+            .rects = entry.value_ptr.items,
+        });
+    }
+}
+
+fn processAtom(
     self: *BatchProcessor,
     arena: Allocator,
     atom: *cu.Atom,

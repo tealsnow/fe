@@ -98,100 +98,82 @@ fn vsMain(in: RectInstance) -> FragmentInput {
 
 @fragment
 fn fsMain(in: FragmentInput) -> @location(0) vec4f {
-    //- rounding / drop shadows
-
-    // we need to shrink the rectangle's half-size
-    // that is used for distance calculations with
-    // the edge softness - otherwise the underlying
-    // primitive will cut off the falloff too early.
-    let softness = in.edge_softness;
-    let softness_padding = vec2f(
-        max(0f, softness * 2f - 1f),
-        max(0f, softness * 2f - 1f),
-    );
-
-    // sample distance
+    // Calculate pixel size in object space for precise AA
+    let pixel_size = length(vec2f(
+        dpdx(in.dst_pos.x),
+        dpdy(in.dst_pos.y)
+    ));
+    
+    // We'll use a much simpler approach: single-pixel AA with no softness
+    // This produces crisp edges at all object sizes
+    
+    // Calculate SDF without softness padding
     let dist = roundedRectSDF(
         in.dst_pos,
         in.dst_center,
-        in.dst_half_size - softness_padding,
-        in.corner_radius,
+        in.dst_half_size,
+        in.corner_radius
     );
-
-    // map distance => a blend color
-    let dist_dx = dpdx(dist);
-    let dist_dy = dpdy(dist);
-    let dist_aa_width = 2f * length(vec2f(dist_dx, dist_dy));
     
-    // Use different anti-aliasing approaches based on corner radius
-    let has_corners = in.corner_radius > 0.0001;
-    let soft_factor = 1f - smoothstep(0f, 2f * softness, dist);
-    let aa_factor = 1f - smoothstep(-dist_aa_width, dist_aa_width, dist);
+    // Single-pixel antialiasing
+    // This is all we need for crisp UI rendering at all scales
+    let edge_width = pixel_size;
+    var rounding_factor = 1.0 - smoothstep(-0.5 * edge_width, 0.5 * edge_width, dist);
     
-    // Choose appropriate factor based on whether we have rounded corners
-    let rounding_factor = select(soft_factor, aa_factor, has_corners);
-
-    //- hollow rects / border thickness
-
-    var border_factor = 1f;
-    if (in.border_thickness != 0f) {
-        let pixel_scale = length(vec2f(
-            dpdx(in.dst_pos.x),
-            dpdy(in.dst_pos.y)
-        ));
-
-        let is_thin_border = in.border_thickness <= pixel_scale;
-        let adjusted_thickness = max(in.border_thickness, pixel_scale);
-
-        let interior_half_size =
-            in.dst_half_size - vec2f(adjusted_thickness);
-
-        let interior_radius_reduce_f = min(
-            interior_half_size.x / in.dst_half_size.x,
-            interior_half_size.y / in.dst_half_size.y
-        );
-
-        let radius_scale = select(1.0, 0.75, is_thin_border);
-        let interior_corner_radius =
-            in.corner_radius * interior_radius_reduce_f * radius_scale;
-
-        let inside_d = roundedRectSDF(
-            in.dst_pos,
-            in.dst_center,
-            interior_half_size,
-            interior_corner_radius,
-        );
-
-        let inside_dx = dpdx(inside_d);
-        let inside_dy = dpdy(inside_d);
-        let inside_aa_width = length(vec2f(inside_dx, inside_dy));
-
-        let aa_scale = select(1.0, 0.33, is_thin_border);
-        border_factor = smoothstep(
-            -inside_aa_width * aa_scale,
-            inside_aa_width * aa_scale,
-            inside_d
-        );
+    // Only apply softness if explicitly requested and above a threshold
+    if (in.edge_softness > 0.1) {
+        // Calculate softness effect
+        let soft_dist = smoothstep(0.0, in.edge_softness * 2.0, dist);
+        
+        // Gradually blend in softness based on object size 
+        // (larger objects can handle more softness)
+        let obj_size = min(in.dst_half_size.x, in.dst_half_size.y) * 2.0;
+        let size_ratio = obj_size / pixel_size;
+        let soft_blend = saturate((size_ratio - 8.0) / 24.0);
+        
+        // Blend between crisp AA and soft edges based on object size
+        rounding_factor = mix(rounding_factor, 1.0 - soft_dist, soft_blend * in.edge_softness);
     }
-
-    //- color / texture
-
+    
+    // Border handling
+    var border_factor = 1.0;
+    if (in.border_thickness > 0.0) {
+        let adjusted_thickness = max(in.border_thickness, pixel_size);
+        let interior_half_size = in.dst_half_size - vec2f(adjusted_thickness);
+        
+        // Skip border rendering if interior would be too small
+        if (all(interior_half_size > vec2f(pixel_size))) {
+            let interior_radius = max(0.0, in.corner_radius - adjusted_thickness);
+            
+            let inside_dist = roundedRectSDF(
+                in.dst_pos,
+                in.dst_center,
+                interior_half_size,
+                interior_radius
+            );
+            
+            // Single-pixel AA for border
+            border_factor = smoothstep(-0.5 * pixel_size, 0.5 * pixel_size, inside_dist);
+        }
+    }
+    
+    // Color and texture
     let font_sample = textureSample(atlas_texture, atlas_sampler, in.uv);
     let font_c = font_sample.r;
-
-    let smoothing = 1f / 32f;
-    let font_alpha = smoothstep(0.5 - smoothing, 0.5 + smoothing, font_c);
-
+    
+    // Sharper text edges (critical for small UI)
+    let text_smoothing = 1.0 / 32.0;
+    let font_alpha = smoothstep(0.5 - text_smoothing, 0.5 + text_smoothing, font_c);
+    
     let in_rgb = in.color.rgb;
     let in_a = in.color.a;
-
-    // gamma correction
-    // this is an approximation
+    
+    // Gamma correction
     let linear_in_rgb = pow(in_rgb, vec3f(2.2));
-
+    
     let out_rgb = linear_in_rgb;
     let out_a = in_a * font_alpha;
-
+    
     let out_color = vec4f(out_rgb, out_a) * rounding_factor * border_factor;
     return out_color;
 }

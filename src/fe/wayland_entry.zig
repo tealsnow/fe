@@ -87,7 +87,11 @@ pub fn entry(gpa: Allocator) !void {
 
     //- cu
 
-    var cu_callbacks = try WgpuRenderer.CuCallbacks.init(&renderer, gpa);
+    var cu_callbacks = try WgpuRenderer.CuCallbacks.init(
+        &renderer,
+        gpa,
+        @floatFromInt(conn.cursor_size),
+    );
     defer cu_callbacks.deinit();
 
     const ui_state = try cu.State.init(gpa, cu_callbacks.callbacks());
@@ -119,7 +123,14 @@ pub fn entry(gpa: Allocator) !void {
 
     //- main loop
 
-    var test_toggle = false;
+    var state = State{
+        .window = window,
+        .window_rounding = 10,
+
+        .mono_font = mono_font,
+
+        .test_toggle = false,
+    };
 
     log.info("starting main loop", .{});
     window.commit();
@@ -289,252 +300,9 @@ pub fn entry(gpa: Allocator) !void {
             const window_inset_wrapper = WindowInsetWrapper.begin(window);
             defer window_inset_wrapper.end();
 
-            //- top bar
-            {
-                b.stacks.flags.push(.draw_side_bottom);
-                b.stacks.layout_axis.push(.x);
-                b.stacks.pref_size.push(.size(.fill, .fit));
-                const topbar = b.open("topbar");
-                defer b.close(topbar);
+            buildTopbar(&state);
 
-                if (!tiling.isTiled()) {
-                    b.stacks.pref_size
-                        .push(.size(.px(window_rounding), .grow));
-                    _ = b.spacer();
-                }
-
-                //- menu items
-                const menu_items = [_][]const u8{
-                    "Fe",
-                    "File",
-                    "Edit",
-                    "Help",
-                    "qypgj",
-                    "WERTYUI",
-                    "WAV",
-                };
-
-                b.stacks.font.pushForMany(mono_font);
-                defer _ = b.stacks.font.pop();
-
-                for (menu_items) |item_str| {
-                    b.stacks.flags
-                        .push(.unionWith(.clickable, .draw_text));
-                    b.stacks.pref_size.push(.square(.text_pad(8)));
-                    const item = b.build(item_str);
-
-                    const inter = item.interaction();
-                    if (inter.hovering()) {
-                        item.flags.insert(.draw_border);
-                    }
-
-                    if (inter.clicked()) {
-                        std.debug.print("clicked {s}\n", .{item_str});
-                        // dropdown_open = true;
-                    }
-                }
-
-                //- spacer
-                {
-                    b.stacks.flags.push(.clickable);
-                    b.stacks.pref_size.push(.square(.grow));
-                    const topbar_space = b.build("topbar spacer");
-
-                    const inter = topbar_space.interaction();
-                    if (inter.doubleClicked())
-                        window.toggleMaximized();
-                    if (inter.f.contains(.right_pressed))
-                        window.showWindowMenu(.point(
-                            @intFromFloat(cu.state.mouse.x),
-                            @intFromFloat(cu.state.mouse.y),
-                        ));
-                    if (inter.dragging()) {
-                        window.startMove();
-
-                        // @HACK:
-                        //  since we loose window focus after the we start
-                        //  a move/drag we never get a mouse button release
-                        //  event. So we push a synthetic one.
-                        conn.event_queue.queue(
-                            .{ .kind = .{ .pointer_button = .{
-                                .button = .left,
-                                .state = .released,
-                                .serial = 0,
-                            } } },
-                        );
-                    }
-                }
-
-                //- window buttons
-                for (0..3) |i| {
-                    b.stacks.flags
-                        .push(.unionWith(.clickable, .draw_border));
-                    b.stacks.pref_size
-                        .push(.square(.px(topbar.rect.height())));
-                    const button = b.openf("top bar button {d}", .{i});
-                    defer b.close(button);
-
-                    const int = button.interaction();
-                    if (int.hovering())
-                        button.palette.set(.border, .hexRgb(0xFF0000));
-
-                    if (int.clicked()) {
-                        switch (i) {
-                            0 => window.minimize(),
-                            1 => window.toggleMaximized(),
-                            2 => conn.event_queue.queue(
-                                .{ .kind = .{ .toplevel_close = .{
-                                    .window = window,
-                                } } },
-                            ),
-                            else => unreachable,
-                        }
-                    }
-                }
-
-                if (!tiling.isTiled()) {
-                    b.stacks.pref_size.push(.size(.px(window_rounding), .grow));
-                    _ = b.spacer();
-                }
-            }
-
-            //- main pane
-            {
-                b.stacks.layout_axis.push(.x);
-                b.stacks.pref_size.push(.square(.grow));
-                const main_pane = b.open("main pain");
-                defer b.close(main_pane);
-
-                //- left pane
-                {
-                    b.stacks.flags.push(.draw_side_right);
-                    b.stacks.layout_axis.push(.y);
-                    b.stacks.pref_size.push(.size(.percent(0.4), .fill));
-                    const pane = b.open("left pane");
-                    defer b.close(pane);
-
-                    //- header
-                    {
-                        b.stacks.flags
-                            .push(.unionWith(.draw_side_bottom, .draw_text));
-                        b.stacks.text_align.push(.size(.end, .center));
-                        b.stacks.pref_size.push(.size(.grow, .text));
-                        const header = b.build("left header");
-                        header.display_string = "Left Header gylp";
-                    }
-
-                    //- content
-                    {
-                        b.stacks.flags
-                            .push(.unionWith(.clip_rect, .allow_overflow));
-                        b.stacks.layout_axis.push(.y);
-                        b.stacks.pref_size.push(.square(.grow));
-                        const content = b.open("left content");
-                        defer b.close(content);
-
-                        _ = b.label("Hello, World!");
-
-                        _ = b.lineSpacer();
-
-                        b.stacks.font.pushForMany(mono_font);
-                        defer _ = b.stacks.font.pop();
-
-                        _ = b.label("This is a set of text");
-                        _ = b.label("in monospace font");
-
-                        _ = b.lineSpacer();
-                    }
-                }
-
-                //- right pane
-                {
-                    b.stacks.layout_axis.push(.y);
-                    b.stacks.pref_size.push(.size(.grow, .fill));
-                    const pane = b.open("right pane");
-                    defer b.close(pane);
-
-                    //- header
-                    {
-                        b.stacks.flags
-                            .push(.unionWith(.draw_side_bottom, .draw_text));
-                        b.stacks.layout_axis.push(.x);
-                        b.stacks.text_align.push(.square(.center));
-                        b.stacks.pref_size.push(.size(.grow, .text));
-                        const header = b.open("right header");
-                        defer b.close(header);
-                        header.display_string = "Right Header";
-
-                        if (header.interaction().f.contains(.mouse_over)) {
-                            b.stacks.palette.pushForMany(.init(
-                                .{ .background = .hexRgb(0x001800) },
-                            ));
-                            defer _ = b.stacks.palette.pop();
-
-                            b.stacks.flags
-                                .push(.unionWith(.floating, .draw_background));
-                            b.stacks.layout_axis.push(.y);
-                            b.stacks.pref_size.push(.square(.fit));
-                            const float = b.open("floating");
-                            defer b.close(float);
-                            float.rel_position = cu.state.mouse
-                                .sub(header.rect.p0)
-                                .add(.splat(10));
-
-                            _ = b.label("tool tip!");
-                            _ = b.label("extra tips!");
-                        }
-                    }
-
-                    //- content
-                    {
-                        b.stacks.layout_axis.push(.y);
-                        b.stacks.pref_size.push(.square(.grow));
-                        const content = b.open("right content");
-                        defer b.close(content);
-
-                        b.stacks.pref_size.push(.square(.text_pad(8)));
-                        if (b.button("foo bar").clicked()) {
-                            log.debug("foo bar clicked", .{});
-                        }
-
-                        _ = b.lineSpacer();
-
-                        b.stacks.pref_size.push(.size(.px(40), .px(20)));
-                        _ = b.toggleSwitch(&test_toggle);
-                    }
-                }
-
-                //- right bar
-                {
-                    const icon_size = cu.Atom.PrefSize.px(24);
-
-                    b.stacks.flags.push(.draw_side_left);
-                    b.stacks.layout_axis.push(.y);
-                    b.stacks.pref_size.push(.size(icon_size, .grow));
-                    const bar = b.open("right bar");
-                    defer b.close(bar);
-
-                    //- inner
-                    {
-                        b.stacks.layout_axis.push(.y);
-                        b.stacks.pref_size.push(.size(icon_size, .fit));
-                        const inner = b.open("right bar inner");
-                        defer b.close(inner);
-
-                        for (0..5) |i| {
-                            {
-                                b.stacks.flags
-                                    .push(.draw_border);
-                                b.stacks.pref_size.push(.square(icon_size));
-                                _ = b.buildf("right bar icon {d}", .{i});
-                            }
-
-                            b.stacks.pref_size.push(.size(icon_size, .px(4)));
-                            _ = b.spacer();
-                        }
-                    }
-                }
-            }
+            buildUI(&state);
         }
 
         b.endBuild();
@@ -543,7 +311,311 @@ pub fn entry(gpa: Allocator) !void {
         renderer.surface.present();
     }
 
-    std.process.cleanExit(); // skip defers on release builds
+    std.process.cleanExit(); // skips defers on release builds
+}
+
+const State = struct {
+    window: *wl.Window,
+    window_rounding: f32,
+
+    mono_font: cu.FontId,
+
+    test_toggle: bool,
+};
+
+fn buildTopbar(
+    state: *State,
+) void {
+    const window = state.window;
+    const tiling = window.tiling;
+
+    b.stacks.flags.push(.draw_side_bottom);
+    b.stacks.layout_axis.push(.x);
+    b.stacks.pref_size.push(.size(.fill, .fit));
+    const topbar = b.open("topbar");
+    defer b.close(topbar);
+
+    if (!tiling.isTiled()) {
+        b.stacks.pref_size
+            .push(.size(.px(state.window_rounding), .grow));
+        _ = b.spacer();
+    }
+
+    //- menu items
+    const menu_items = [_][]const u8{
+        "Fe",
+        "File",
+        "Edit",
+        "Help",
+        "qypgj",
+        "WERTYUI",
+        "WAV",
+    };
+
+    for (menu_items) |item_str| {
+        b.stacks.flags
+            .push(.unionWith(.clickable, .draw_text));
+        b.stacks.pref_size.push(.square(.text_pad(8)));
+        const item = b.build(item_str);
+
+        const inter = item.interaction();
+        if (inter.hovering()) {
+            item.flags.insert(.draw_border);
+        }
+
+        if (inter.clicked()) {
+            std.debug.print("clicked {s}\n", .{item_str});
+            // dropdown_open = true;
+        }
+    }
+
+    //- spacer
+    {
+        b.stacks.flags.push(.clickable);
+        b.stacks.pref_size.push(.square(.grow));
+        const topbar_space = b.build("topbar spacer");
+
+        const inter = topbar_space.interaction();
+        if (inter.doubleClicked())
+            window.toggleMaximized();
+        if (inter.f.contains(.right_pressed))
+            window.showWindowMenu(.point(
+                @intFromFloat(cu.state.mouse.x),
+                @intFromFloat(cu.state.mouse.y),
+            ));
+        if (inter.dragging()) {
+            window.startMove();
+
+            // @HACK:
+            //  since we loose window focus after the we start
+            //  a move/drag we never get a mouse button release
+            //  event. So we push a synthetic one.
+            window.conn.event_queue.queue(
+                .{ .kind = .{ .pointer_button = .{
+                    .button = .left,
+                    .state = .released,
+                    .serial = 0,
+                } } },
+            );
+        }
+    }
+
+    //- window buttons
+    for (0..3) |i| {
+        b.stacks.flags
+            .push(.unionWith(.clickable, .draw_border));
+        b.stacks.pref_size
+            .push(.square(.px(topbar.rect.height())));
+        const button = b.openf("top bar button {d}", .{i});
+        defer b.close(button);
+
+        const int = button.interaction();
+        if (int.hovering())
+            button.palette.set(.border, .hexRgb(0xFF0000));
+
+        if (int.clicked()) {
+            switch (i) {
+                0 => window.minimize(),
+                1 => window.toggleMaximized(),
+                2 => window.conn.event_queue.queue(
+                    .{ .kind = .{ .toplevel_close = .{
+                        .window = window,
+                    } } },
+                ),
+                else => unreachable,
+            }
+        }
+    }
+
+    if (!tiling.isTiled()) {
+        b.stacks.pref_size.push(.size(.px(state.window_rounding), .grow));
+        _ = b.spacer();
+    }
+}
+
+pub fn buildUI(
+    state: *State,
+) void {
+    b.stacks.layout_axis.push(.x);
+    b.stacks.pref_size.push(.square(.grow));
+    const main_pane = b.open("main pain");
+    defer b.close(main_pane);
+
+    //- left pane
+    {
+        b.stacks.flags.push(.draw_side_right);
+        b.stacks.layout_axis.push(.y);
+        b.stacks.pref_size.push(.size(.percent(0.4), .fill));
+        const pane = b.open("left pane");
+        defer b.close(pane);
+
+        //- header
+        {
+            b.stacks.flags
+                .push(.unionWith(.draw_side_bottom, .draw_text));
+            b.stacks.text_align.push(.size(.end, .center));
+            b.stacks.pref_size.push(.size(.grow, .text));
+            const header = b.build("left header");
+            header.display_string = "Left Header gylp";
+        }
+
+        //- content
+        {
+            b.stacks.flags
+                .push(.unionWith(.clip_rect, .allow_overflow));
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.square(.grow));
+            const content = b.open("left content");
+            defer b.close(content);
+
+            b.stacks.pref_size.pushForMany(.square(.text));
+            defer _ = b.stacks.pref_size.pop();
+
+            _ = b.label("Hello, World!");
+
+            _ = b.lineSpacer();
+
+            b.stacks.font.pushForMany(state.mono_font);
+            defer _ = b.stacks.font.pop();
+
+            _ = b.label("This is a set of text");
+            _ = b.label("in monospace font");
+
+            _ = b.lineSpacer();
+
+            // {
+            //     b.stacks.palette
+            //         .pushForMany(.init(.{ .text = .hexRgb(0xff0000) }));
+            //     defer _ = b.stacks.palette.pop();
+            //
+            //     _ = b.labelf("fps: {d:.2}", .{state.fps});
+            //     _ = b.labelf("ave fps: {d:.2}", .{state.fps_buffer.average()});
+            //     _ = b.labelf("frame time: {d:.2}ms", .{state.delta_time_ms});
+            //     _ = b.labelf("uptime: {d:.2}s", .{state.uptime_s});
+            // }
+            // _ = b.lineSpacer();
+
+            _ = b.labelf("build count: {d}", .{cu.state.current_build_index});
+            _ = b.labelf("atom build count: {d}", .{cu.state.build_atom_count});
+
+            _ = b.lineSpacer();
+
+            _ = b.labelf("current atom count: {d}", .{cu.state.atom_map.count()});
+            _ = b.labelf("event count: {d}", .{cu.state.event_list.len});
+
+            _ = b.lineSpacer();
+
+            var an_active_atom = false;
+            for (cu.state.active_atom_key.values, 0..) |key, i| {
+                if (key != .nil) {
+                    const button: cu.input.MouseButton = @enumFromInt(i);
+                    const active = cu.state.atom_map.get(key).?;
+                    _ = b.labelf(
+                        "active atom: [{s}] {?}",
+                        .{ @tagName(button), active },
+                    );
+
+                    an_active_atom = true;
+                }
+            }
+            if (!an_active_atom)
+                _ = b.label("active atom: none");
+
+            const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
+            b.stacks.flags.push(.draw_text_weak);
+            _ = b.labelf("hot atom: {?}", .{hot});
+        }
+    }
+
+    //- right pane
+    {
+        b.stacks.layout_axis.push(.y);
+        b.stacks.pref_size.push(.size(.grow, .fill));
+        const pane = b.open("right pane");
+        defer b.close(pane);
+
+        //- header
+        {
+            b.stacks.flags
+                .push(.unionWith(.draw_side_bottom, .draw_text));
+            b.stacks.layout_axis.push(.x);
+            b.stacks.text_align.push(.square(.center));
+            b.stacks.pref_size.push(.size(.grow, .text));
+            const header = b.open("right header");
+            defer b.close(header);
+            header.display_string = "Right Header";
+
+            if (header.interaction().f.contains(.mouse_over)) {
+                // b.stacks.palette.push(.init(
+                //     .{ .background = .hexRgb(0x001800) },
+                // ));
+                b.stacks.flags
+                    .push(.unionWith(.draw_background, .draw_border));
+                b.stacks.layout_axis.push(.y);
+                b.stacks.pref_size.push(.square(.fit));
+                b.stacks.corner_radius.push(5);
+
+                b.tooltip.begin();
+                defer b.tooltip.end();
+
+                b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
+                defer _ = b.stacks.pref_size.pop();
+
+                _ = b.label("tool tip!");
+                _ = b.label("extra tips!");
+            }
+        }
+
+        //- content
+        {
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.square(.grow));
+            const content = b.open("right content");
+            defer b.close(content);
+
+            b.stacks.corner_radius.push(b.em(0.5));
+            b.stacks.pref_size.push(.square(.text_pad(8)));
+            if (b.button("foo bar").clicked()) {
+                log.debug("foo bar clicked", .{});
+            }
+
+            _ = b.lineSpacer();
+
+            b.stacks.corner_radius.push(b.em(0.8));
+            _ = b.toggleSwitch(&state.test_toggle);
+        }
+    }
+
+    //- right bar
+    {
+        const icon_size = cu.Atom.PrefSize.px(24);
+
+        b.stacks.flags.push(.draw_side_left);
+        b.stacks.layout_axis.push(.y);
+        b.stacks.pref_size.push(.size(icon_size, .grow));
+        const bar = b.open("right bar");
+        defer b.close(bar);
+
+        //- inner
+        {
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.size(icon_size, .fit));
+            const inner = b.open("right bar inner");
+            defer b.close(inner);
+
+            for (0..5) |i| {
+                {
+                    b.stacks.flags
+                        .push(.draw_border);
+                    b.stacks.pref_size.push(.square(icon_size));
+                    _ = b.buildf("right bar icon {d}", .{i});
+                }
+
+                b.stacks.pref_size.push(.size(icon_size, .px(4)));
+                _ = b.spacer();
+            }
+        }
+    }
 }
 
 /// Insets atoms created between `begin` and `end` based on the window inset

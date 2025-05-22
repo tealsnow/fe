@@ -54,9 +54,10 @@ pub fn startBuild(window_id: usize) void {
     {
         stacks.layout_axis.push(.x);
         stacks.pref_size.push(cu.state.window_size.intoPxPrefSize());
-        const root = buildFromStringF("###root window-id:{x}", .{window_id});
-        root.rect = .rect(.point(0, 0), cu.state.window_size.intoPoint());
-        cu.state.ui_root = root;
+        const ui_root =
+            buildFromStringF("###ui_root window-id:{x}", .{window_id});
+        ui_root.rect = .rect(.point(0, 0), cu.state.window_size.intoPoint());
+        cu.state.ui_root = ui_root;
 
         stacks.layout_axis.push(.x);
         stacks.pref_size.push(.square(.fit));
@@ -65,11 +66,12 @@ pub fn startBuild(window_id: usize) void {
         ctx_menu_root.rect = .zero;
         cu.state.ui_ctx_menu_root = ctx_menu_root;
 
-        // pushLayoutAxis(.once(.x));
-        // pushPrefSize(.once(.square(.fit)));
-        // const tooltip_root = buildFromStringF("###tooltip_root window-id:{x}", .{window_id});
-        // tooltip_root.rect = .zero;
-        // cu.state.ui_tooltip_root = tooltip_root;
+        stacks.layout_axis.push(.x);
+        stacks.pref_size.push(.square(.fit));
+        const tooltip_root =
+            buildFromStringF("###tooltip_root window-id:{x}", .{window_id});
+        tooltip_root.rect = .zero;
+        cu.state.ui_tooltip_root = tooltip_root;
     }
 
     //- setup atom stack
@@ -135,7 +137,7 @@ pub fn endBuild() void {
 
         cu.layout(root) catch @panic("oom");
         cu.layout(cu.state.ui_ctx_menu_root) catch @panic("oom");
-        // cu.layout(cu.state.ui_tooltip_root) catch @panic("oom");
+        cu.layout(cu.state.ui_tooltip_root) catch @panic("oom");
     }
 
     //- reset and cleanup state
@@ -334,6 +336,28 @@ pub fn endCtxMenu() void {
     //
 }
 
+//= tool tip
+
+pub const tooltip = struct {
+    pub fn begin() void {
+        pushParent(cu.state.ui_tooltip_root);
+
+        const base_flags = stacks.flags.topVolatile() orelse AtomFlags.none;
+        stacks.flags.push(.unionWith(base_flags, .floating));
+
+        const sub_root = open("tooltip sub root");
+
+        var pos = cu.state.mouse;
+        pos.y += cu.state.graphics_info.cursor_size_px;
+        sub_root.rel_position = pos;
+    }
+
+    pub fn end() void {
+        _ = cu.state.atom_parent_stack.pop().?; // sub root
+        close(cu.state.ui_tooltip_root);
+    }
+};
+
 //= hierarchy management
 
 pub fn pushParent(atom: *Atom) void {
@@ -365,8 +389,6 @@ pub fn close(atom: *Atom) void {
 
 pub fn label(string: []const u8) *Atom {
     const atom = buildFromKey(.nil);
-    // should this stay? or let the user decide with pushPrefSize
-    atom.pref_size = .square(.text);
     atom.display_string = string;
     atom.flags.insert(.draw_text);
     return atom;
@@ -432,13 +454,14 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
 }
 
 pub fn toggleSwitch(toggled: *bool) cu.Interaction {
+    stacks.pref_size.push(.size(.em(3), .em(1.5)));
     stacks.flags.push(.unionWith(.draw_border, .clickable));
     stacks.layout_axis.push(.y);
-    const toggle = open("toggle box");
+    const toggle = open("toggle container");
     defer close(toggle);
 
     const size = toggle.fixed_size;
-    const padding: f32 = size.height / 5;
+    const padding: f32 = size.height / 6;
     const middle_size: f32 = size.height - (2 * padding);
 
     stacks.pref_size.push(.size(.grow, .px(padding)));
@@ -452,7 +475,10 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
 
         track.active_t = math.expSmooth(
             track.active_t,
-            if (toggled.*) size.width - middle_size - padding else padding,
+            if (toggled.*)
+                size.width - middle_size - padding
+            else
+                padding,
         );
 
         stacks.pref_size.push(.size(.px(track.active_t), .grow));
@@ -463,7 +489,8 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
             .background = stacks.palette.topStable().?.get(.text),
         }));
         stacks.pref_size.push(.square(.px(middle_size)));
-        _ = build("toggle middle");
+        stacks.corner_radius.push(toggle.corner_radius / 1.5);
+        _ = build("middle");
     }
 
     const inter = toggle.interaction();
@@ -574,3 +601,19 @@ pub const Stacks = struct {
 };
 
 pub var stacks: Stacks = .empty;
+
+/// returns `value` multiplied by the top font size
+pub fn em(value: f32) f32 {
+    const top_font = stacks.font.topStable().?;
+    const font_handle = cu.state.getFont(top_font);
+    const font_size = cu.state.callbacks.fontSize(font_handle);
+    return value * font_size;
+}
+
+/// returns `value` multiplied by the root/default font size
+pub fn rem(value: f32) f32 {
+    const root_font = cu.state.default_font;
+    const font_handle = cu.state.getFont(root_font);
+    const font_size = cu.state.callbacks.fontSize(font_handle);
+    return value * font_size;
+}

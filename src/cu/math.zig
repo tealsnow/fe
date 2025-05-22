@@ -291,6 +291,10 @@ pub fn Rect(comptime T: type) type {
             return @ptrCast(self);
         }
 
+        pub inline fn origin(self: Self) Point(T) {
+            return self.p0;
+        }
+
         pub inline fn topLeft(self: Self) Point(T) {
             return self.p0;
         }

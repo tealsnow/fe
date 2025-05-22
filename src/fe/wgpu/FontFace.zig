@@ -23,14 +23,14 @@ pub fn fromPath(
     path: [:0]const u8,
     index: i32,
     pt_size: i32,
-    dpi: mt.Point(u16),
+    dpi: mt.Size(u16),
 ) !FontFace {
     const ft_face = try ft_lib.initFace(path, index);
     const hb_font =
         hb.hb_ft_font_create_referenced(@ptrCast(ft_face)) orelse
         return error.hb;
 
-    try ft_face.setCharSize(0, pt_size * 64, dpi.x, dpi.y);
+    try ft_face.setCharSize(0, pt_size * 64, dpi.width, dpi.height);
 
     const os2: *ft.c.TT_OS2 = ft_face.getSfntTable(.os2) orelse @panic("");
 
@@ -47,7 +47,7 @@ pub fn fromPath(
         @as(f32, @floatFromInt(os2.sTypoLineGap)) *
         y_ppem / units_per_em;
 
-    const fudge = 4;
+    const fudge = 2;
     const line_height = ascender - descender + fudge;
 
     return .{

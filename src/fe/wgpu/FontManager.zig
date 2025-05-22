@@ -41,7 +41,7 @@ pub fn initFontFace(
     path: [:0]const u8,
     index: i32,
     pt_size: i32,
-    dpi: mt.Point(u16),
+    dpi: mt.Size(u16),
 ) !*FontFace {
     const face = try gpa.create(FontFace);
     face.* = try FontFace.fromPath(self.ft_lib, path, index, pt_size, dpi);

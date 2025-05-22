@@ -914,9 +914,18 @@ const UniformData = extern struct {
 pub const CuCallbacks = struct {
     renderer: *const Renderer,
     gpa: Allocator,
+    cursor_size_px: f32,
 
-    pub fn init(renderer: *const Renderer, gpa: Allocator) !CuCallbacks {
-        return .{ .renderer = renderer, .gpa = gpa };
+    pub fn init(
+        renderer: *const Renderer,
+        gpa: Allocator,
+        cursor_size_px: f32,
+    ) !CuCallbacks {
+        return .{
+            .renderer = renderer,
+            .gpa = gpa,
+            .cursor_size_px = cursor_size_px,
+        };
     }
 
     pub fn deinit(cb: CuCallbacks) void {
@@ -955,12 +964,13 @@ pub const CuCallbacks = struct {
 
     fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
+
         const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
         return font_face.line_height;
     }
 
     fn getGraphicsInfo(context: *anyopaque) cu.State.GraphicsInfo {
-        _ = context;
+        const cb: *CuCallbacks = @ptrCast(@alignCast(context));
 
         const builtin = @import("builtin");
         return switch (builtin.os.tag) {
@@ -968,6 +978,7 @@ pub const CuCallbacks = struct {
                 // linux does not supply a cohesive api for a double click time
                 // there is something in dbus/gnome, but its not widely used
                 .double_click_time_us = 500 * std.time.us_per_ms,
+                .cursor_size_px = cb.cursor_size_px,
             },
             .windows => {
                 @compileError("TODO: use windows apis to get info");

@@ -4,6 +4,7 @@ const std = @import("std");
 
 const cu = @import("cu.zig");
 const math = cu.math;
+const builder = cu.builder;
 
 // per-build links
 children: ?struct {
@@ -231,6 +232,10 @@ pub const Flags = struct {
         flags.enum_set.insert(flag);
     }
 
+    pub fn insertMany(flags: *Flags, other: Flags) void {
+        flags.* = flags.unionWith(other);
+    }
+
     pub fn remove(flags: *Flags, flag: Flag) void {
         flags.enum_set.remove(flag);
     }
@@ -363,15 +368,14 @@ pub const PrefSize = extern struct {
     /// value(px): value * top font size,
     /// strictness: 1,
     pub fn em(value: f32) PrefSize {
-        const font_size = fontSize();
-        return .px(value * font_size);
+        return .px(builder.em(value));
     }
 
-    /// Returns the font size (px) of the top font
-    pub fn fontSize() f32 {
-        const top_font = cu.stacks.font.topStable().?;
-        const font_handle = cu.state.getFont(top_font);
-        return cu.state.callbacks.fontSize(font_handle);
+    /// kind: px,
+    /// value(px): value * root font size,
+    /// strictness: 1,
+    pub fn rem(value: f32) PrefSize {
+        return .px(builder.rem(value));
     }
 };
 

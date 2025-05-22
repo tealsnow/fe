@@ -46,6 +46,8 @@ xdg_wm_base: *xdg.WmBase,
 hdpi: f32,
 vdpi: f32,
 
+cursor_size: i32,
+
 last_pointer_button_serial: u32 = 0,
 last_pointer_focus_enter_serial: u32 = 0,
 
@@ -183,6 +185,10 @@ pub fn init(gpa: Allocator) !*Connection {
     log.debug("xdp: opening xdg-desktop-portal settings proxy", .{});
     const xdp_settings = try xdp.XdpSettings.init();
 
+    log.debug("xdp: getting cursor size", .{});
+    const cursor_size = try xdp_settings.getCursorSize();
+    log.info("xdp: got cursor size: {d}", .{cursor_size});
+
     const wp_cursor_shape_manager =
         wl_registry_listener_data.wp_cursor_shape_manager;
 
@@ -196,10 +202,6 @@ pub fn init(gpa: Allocator) !*Connection {
         const cursor_theme = try xdp_settings.getCursorTheme(gpa);
         defer gpa.free(cursor_theme);
         log.info("xdp: got cursor theme: '{s}'", .{cursor_theme});
-
-        log.debug("xdp: getting cursor size", .{});
-        const cursor_size = try xdp_settings.getCursorSize();
-        log.info("xdp: got cursor size: {d}", .{cursor_size});
 
         break :manager try CursorManager.initPointerManager(
             gpa,
@@ -255,6 +257,8 @@ pub fn init(gpa: Allocator) !*Connection {
 
         .hdpi = hdpi,
         .vdpi = vdpi,
+
+        .cursor_size = cursor_size,
     };
     return con;
 }

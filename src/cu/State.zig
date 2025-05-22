@@ -44,7 +44,7 @@ next_atom_orphan: bool = false,
 ui_built: bool = false,
 ui_root: *Atom = undefined,
 ui_ctx_menu_root: *Atom = undefined,
-// ui_tooltip_root: *Atom = undefined,
+ui_tooltip_root: *Atom = undefined,
 
 ctx_menu_open: bool = false,
 next_ctx_menu_open: bool = false,
@@ -202,6 +202,7 @@ pub const GraphicsInfo = struct {
     double_click_time_us: u64,
     // caret_blink_time_ns: u64,
     // default_refresh_rate: f32,
+    cursor_size_px: f32,
 };
 
 pub const FontHandle = *anyopaque;
