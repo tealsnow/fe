@@ -21,7 +21,7 @@
 - [ ] #cu use icu or freebidi for bidi handling
 - [ ] #cu #wgpu scrolling
     - [x] #cu overflow
-    - [ ] #wgpu clip
+    - [x] #wgpu clip
     - [ ] #cu builder support
     - [ ] #cu event handling
 - [ ] #cu truncate text with ellipses

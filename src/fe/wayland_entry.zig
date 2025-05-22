@@ -1,6 +1,3 @@
-// @TODO:
-//   @[ ]: window shadows - cu?
-
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
@@ -64,7 +61,7 @@ pub fn entry(gpa: Allocator) !void {
     defer renderer.deinit(gpa);
 
     log.info("display dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
-    const dpi = mt.Point(u16).point(
+    const dpi = mt.Size(u16).size(
         @intFromFloat(@round(conn.hdpi)),
         @intFromFloat(@round(conn.vdpi)),
     );
@@ -78,12 +75,13 @@ pub fn entry(gpa: Allocator) !void {
     log.debug("default font path (sans): {s}", .{def_font_path});
     log.debug("mono font path (mono): {s}", .{mono_font_path});
 
+    const font_size = 10;
     const def_font_face = try renderer
         .font_manager
-        .initFontFace(gpa, def_font_path, 0, 11, dpi);
+        .initFontFace(gpa, def_font_path, 0, font_size, dpi);
     const mono_font_face = try renderer
         .font_manager
-        .initFontFace(gpa, mono_font_path, 0, 11, dpi);
+        .initFontFace(gpa, mono_font_path, 0, font_size, dpi);
 
     //- cu
 

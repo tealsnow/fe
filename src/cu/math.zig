@@ -79,6 +79,10 @@ pub fn Point(comptime T: type) type {
             return .point(@floatFromInt(self.x), @floatFromInt(self.y));
         }
 
+        pub inline fn intFromFloat(self: Self, comptime NT: type) Point(NT) {
+            return .point(@intFromFloat(self.x), @intFromFloat(self.y));
+        }
+
         pub inline fn floor(self: Self) Self {
             return .point(@floor(self.x), @floor(self.y));
         }
@@ -285,6 +289,14 @@ pub fn Rect(comptime T: type) type {
 
         pub inline fn floatFromInt(self: Self, comptime NT: type) Rect(NT) {
             return .rect(self.p0.floatFromInt(NT), self.p1.floatFromInt(NT));
+        }
+
+        pub inline fn intFromFloat(self: Self, comptime NT: type) Rect(NT) {
+            return .rect(self.p0.intFromFloat(NT), self.p1.intFromFloat(NT));
+        }
+
+        pub inline fn round(self: Self) Self {
+            return .rect(self.p0.round(), self.p1.round());
         }
 
         pub inline fn arr(self: *Self) *[4]T {

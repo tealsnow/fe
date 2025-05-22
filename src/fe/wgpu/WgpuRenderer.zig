@@ -45,6 +45,7 @@ uniform_bind_group: *wgpu.BindGroup,
 atlas_texture_bind_group_layout: *wgpu.BindGroupLayout,
 null_atlas_texture: RenderPassAtlasTexture,
 
+surface_size: mt.Size(u32),
 font_manager: *FontManager,
 batch_processor: *BatchProcessor,
 
@@ -195,7 +196,7 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
     font_manager.* = try .init();
 
     const batch_processor = try gpa.create(BatchProcessor);
-    batch_processor.* = try .init(font_manager);
+    batch_processor.* = try .init(font_manager, params.initial_surface_size);
 
     return .{
         .surface = surface,
@@ -216,6 +217,7 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
         .atlas_texture_bind_group_layout = atlas_texture_bind_group_layout,
         .null_atlas_texture = null_atlas_texture,
 
+        .surface_size = params.initial_surface_size,
         .font_manager = font_manager,
         .batch_processor = batch_processor,
     };
@@ -340,6 +342,8 @@ fn getRequiredLimits(adapter: *wgpu.Adapter) wgpu.RequiredLimits {
 }
 
 pub fn reconfigure(renderer: *Renderer, size: mt.Size(u32)) void {
+    renderer.surface_size = size;
+
     renderer.uniform.surface_size_px = size.floatFromInt(f32);
     renderer.uniform.write(renderer.uniform_buffer, renderer.queue);
 
@@ -704,8 +708,10 @@ pub fn render(renderer: Renderer, arena: Allocator) !void {
         tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
     defer trace.end();
 
-    const batch_data = try renderer.batch_processor.process(arena);
-    defer renderer.batch_processor.reset();
+    const batch_data = try renderer.batch_processor.process(
+        arena,
+        renderer.surface_size,
+    );
 
     var render_pass_data =
         try arena.alloc(RenderPassData, batch_data.len);
@@ -870,6 +876,14 @@ fn doRenderPass(
     pass.setBindGroup(0, renderer.uniform_bind_group, 0, null);
 
     for (pass_data) |data| {
+        const scissor_bounds = mt.Bounds(u32).fromRect(data.scissor_rect);
+        pass.setScissorRect(
+            scissor_bounds.origin.x,
+            scissor_bounds.origin.y,
+            scissor_bounds.size.width,
+            scissor_bounds.size.height,
+        );
+
         const atlas_texture =
             data.atlas_texture orelse renderer.null_atlas_texture;
 
@@ -1139,6 +1153,7 @@ pub const RenderPassRectBuffer = struct {
 };
 
 pub const RenderPassData = struct {
+    scissor_rect: mt.Rect(u32),
     atlas_texture: ?RenderPassAtlasTexture,
     rect_buffer: RenderPassRectBuffer,
 
@@ -1176,6 +1191,7 @@ pub fn batchToRenderPass(
     );
 
     return .{
+        .scissor_rect = batch_data.scissor_rect,
         .atlas_texture = atlas_texture,
         .rect_buffer = rect_buffer,
     };
