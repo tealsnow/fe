@@ -119,7 +119,8 @@ pub fn entry(gpa: Allocator) !void {
 
     var arena_alloc = std.heap.ArenaAllocator.init(gpa);
     defer arena_alloc.deinit();
-    const arena = arena_alloc.allocator();
+    var tracing_arena_alloc = tracy.TracingAllocator.initNamed("arena", arena_alloc.allocator());
+    const arena = tracing_arena_alloc.allocator();
 
     //- main loop
 
@@ -141,6 +142,7 @@ pub fn entry(gpa: Allocator) !void {
         tracy.frameMark();
         defer {
             _ = arena_alloc.reset(.retain_capacity);
+            tracing_arena_alloc.discard();
         }
 
         try conn.dispatch();
