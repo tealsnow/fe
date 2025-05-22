@@ -364,8 +364,32 @@ fn buildTopbar(
         }
 
         if (inter.clicked()) {
-            std.debug.print("clicked {s}\n", .{item_str});
-            // dropdown_open = true;
+            // @FIXME: I would like clicking this again to close the menu
+            //   but currently it just closes it for a single frame
+            //
+            //   press -> cu/input.zig -> close ctx menu -> release -> click
+            //   -> this -> open ctx menu
+            b.ctx_menu.openMenu(
+                item.key,
+                item.key,
+                .point(0, topbar.rect.height()),
+            );
+        }
+
+        if (b.ctx_menu.begin(item.key)) {
+            defer b.ctx_menu.end();
+
+            b.stacks.flags.push(.unionWith(.draw_background, .draw_border));
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.square(.fit));
+            const menu = b.open("ctx menu");
+            defer b.close(menu);
+
+            b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
+            defer _ = b.stacks.pref_size.pop();
+
+            _ = b.button("foo bar");
+            _ = b.button("this is a button");
         }
     }
 
@@ -524,6 +548,10 @@ pub fn buildUI(
             const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
             b.stacks.flags.push(.draw_text_weak);
             _ = b.labelf("hot atom: {?}", .{hot});
+
+            _ = b.lineSpacer();
+
+            _ = b.labelf("ctx_menu_open: {}", .{cu.state.ctx_menu_open});
         }
     }
 
@@ -546,9 +574,6 @@ pub fn buildUI(
             header.display_string = "Right Header";
 
             if (header.interaction().f.contains(.mouse_over)) {
-                // b.stacks.palette.push(.init(
-                //     .{ .background = .hexRgb(0x001800) },
-                // ));
                 b.stacks.flags
                     .push(.unionWith(.draw_background, .draw_border));
                 b.stacks.layout_axis.push(.y);

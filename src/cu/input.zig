@@ -189,6 +189,13 @@ pub const InteractionFlags = struct {
         .keyboard_pressed,
     });
 
+    pub const any_pressed = initMany(&.{
+        .left_pressed,
+        .right_pressed,
+        .middle_pressed,
+        .keyboard_pressed,
+    });
+
     pub const released = initMany(&.{
         .left_released,
     });
@@ -262,12 +269,20 @@ pub const Interaction = struct {
         return self.f.containsAny(.pressed);
     }
 
+    pub fn anyPressed(self: Interaction) bool {
+        return self.f.containsAny(.any_pressed);
+    }
+
     pub fn released(self: Interaction) bool {
         return self.f.containsAny(.released);
     }
 
     pub fn clicked(self: Interaction) bool {
         return self.f.containsAny(.clicked);
+    }
+
+    pub fn anyClicked(self: Interaction) bool {
+        return self.f.containsAny(.any_clicked);
     }
 
     pub fn doubleClicked(self: Interaction) bool {
@@ -306,23 +321,26 @@ fn setButtonGeneric(
 pub fn interactionFromAtom(atom: *Atom) Interaction {
     var inter = Interaction{ .atom = atom };
 
-    var rect = atom.rect;
-
     // calculate possibly cliped rect
-    var maybe_parent: ?*Atom = atom.parent;
-    while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
-        if (parent.flags.contains(.clip_rect)) {
-            rect = rect.intersect(parent.rect);
+    const rect = blk: {
+        var rect = atom.rect;
+        var maybe_parent: ?*Atom = atom.parent;
+        while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+            if (parent.flags.contains(.clip_rect)) {
+                rect = rect.intersect(parent.rect);
+            }
         }
-    }
+        break :blk rect;
+    };
 
     // determine if we're under the context menu or not
-    maybe_parent = atom;
-    const ctx_menu_is_ancestor =
-        while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+    const ctx_menu_is_ancestor = blk: {
+        var maybe_parent: ?*Atom = atom;
+        break :blk while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
             if (parent == cu.state.ui_ctx_menu_root)
                 break true;
         } else false;
+    };
 
     // calculate blacklist rectagele
     const blacklist_rect = if (!ctx_menu_is_ancestor and cu.state.ctx_menu_open)
@@ -330,14 +348,9 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     else
         math.Rect(f32).zero;
 
-    // var maybe_event = cu.state.event_list.first;
-    // while (maybe_event) |node| : (maybe_event = node.next) {
-    // var i: usize = 0;
-    // while (cu.state.event_queue.peekPtr(i)) |event| : (i += 1) {
     var i: usize = 0;
     while (i < cu.state.event_list.len) : (i += 1) {
         const event = &cu.state.event_list.buffer[i];
-        // const event = node.data;
         if (event.consumed) continue;
 
         const button = switch (event.kind) {
@@ -471,12 +484,8 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         }
     }
 
-    if (!ctx_menu_is_ancestor and inter.f.containsAny(.initMany(&.{
-        .left_pressed,
-        .right_pressed,
-        .middle_pressed,
-    }))) {
-        cu.builder.ctxMenuClose();
+    if (!ctx_menu_is_ancestor and inter.anyPressed()) {
+        cu.builder.ctx_menu.closeMenu();
     }
 
     return inter;

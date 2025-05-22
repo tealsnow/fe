@@ -80,7 +80,7 @@ pub const Key = enum(u32) {
     pub const KeyContext = struct {
         pub fn hash(self: @This(), key: Key) u32 {
             _ = self;
-            return key.asInt();
+            return @intFromEnum(key); // already hashed
         }
 
         pub fn eql(self: @This(), a: Key, b: Key, b_index: usize) bool {
@@ -90,14 +90,10 @@ pub const Key = enum(u32) {
         }
     };
 
-    inline fn asInt(self: Key) u32 {
-        return @intFromEnum(self);
-    }
-
     pub inline fn eql(left: Key, right: Key) bool {
         if (left == .nil and right == .nil) return true;
         if (left == .nil or right == .nil) return false;
-        return left.asInt() == right.asInt();
+        return @intFromEnum(left) == @intFromEnum(right);
     }
 
     pub fn processString(
@@ -146,7 +142,7 @@ pub const Key = enum(u32) {
         if (key == .nil)
             try writer.writeAll("nil")
         else
-            try writer.print("{x}", .{key.asInt()});
+            try writer.print("{x}", .{@intFromEnum(key)});
     }
 };
 

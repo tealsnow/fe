@@ -68,6 +68,7 @@ pub fn process(
     self.reset();
 
     try self.processRoot(arena, cu.state.ui_root);
+    try self.processRoot(arena, cu.state.ui_ctx_menu_root);
     try self.processRoot(arena, cu.state.ui_tooltip_root);
 
     return self.batches.items;

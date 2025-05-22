@@ -46,8 +46,11 @@ ui_root: *Atom = undefined,
 ui_ctx_menu_root: *Atom = undefined,
 ui_tooltip_root: *Atom = undefined,
 
-ctx_menu_open: bool = false,
 next_ctx_menu_open: bool = false,
+ctx_menu_open: bool = false,
+ctx_menu_key: Atom.Key = .nil,
+next_ctx_menu_anchor_key: Atom.Key = .nil,
+ctx_menu_anchor_offset: math.Point(f32) = .zero,
 
 // currenly over (event consuming) atom
 // (about to be interacting with this item)

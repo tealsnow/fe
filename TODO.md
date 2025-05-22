@@ -16,7 +16,8 @@
 
 - [ ] #cu consider general alignment property or just make it a widget
 - [ ] #cu disabled state for atoms
-- [ ] #cu tooltips/dropdowns - general popups
+- [x] #cu tooltips
+- [x] #cu dropdowns/context menu 
 - [ ] #cu focus behaviour
 - [ ] #cu use icu or freebidi for bidi handling
 - [ ] #cu #wgpu scrolling

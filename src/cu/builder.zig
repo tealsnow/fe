@@ -54,6 +54,7 @@ pub fn startBuild(window_id: usize) void {
     {
         stacks.layout_axis.push(.x);
         stacks.pref_size.push(cu.state.window_size.intoPxPrefSize());
+        stacks.flags.push(.clickable);
         const ui_root =
             buildFromStringF("###ui_root window-id:{x}", .{window_id});
         ui_root.rect = .rect(.point(0, 0), cu.state.window_size.intoPoint());
@@ -129,6 +130,8 @@ pub fn endBuild() void {
         );
         break :root root;
     };
+
+    _ = root.interaction();
 
     //- layout
     {
@@ -299,42 +302,67 @@ pub fn buildf(comptime fmt: []const u8, args: anytype) *Atom {
 
 //= context menu
 
-pub fn ctxMenuOpen(
-    key: Atom.Key,
-    anchor_box_key: Atom.Key,
-    anchor_off: cu.Vec2(f32),
-) void {
-    _ = key;
-    _ = anchor_box_key;
-    _ = anchor_off;
+pub const ctx_menu = struct {
+    pub fn openMenu(
+        key: Atom.Key,
+        anchor_key: Atom.Key,
+        anchor_offset: math.Point(f32),
+    ) void {
+        cu.state.next_ctx_menu_open = true;
 
-    cu.state.next_ctx_menu_open = true;
-    // ctx_menu_changed = true
-    // ctx_menu_open_t = 0
-    // ctx_menu_key = key
-    // next_ctx_menu_anchor_key = anchor_box_key
-    // ctx_menu_anchor_off = anchor_off
-    // ctx_menu_touched_this_frame = true
-    // ctx_menu_anchor_atom_last_pos = .zero
-}
+        // ctx_menu_changed = true
+        // ctx_menu_open_t = 0
+        cu.state.ctx_menu_key = key;
+        cu.state.next_ctx_menu_anchor_key = anchor_key;
+        cu.state.ctx_menu_anchor_offset = anchor_offset;
+        // ctx_menu_touched_this_frame = true
+        // ctx_menu_anchor_atom_last_pos = .zero
+    }
 
-pub fn ctxMenuClose() void {
-    cu.state.next_ctx_menu_open = false;
-}
+    pub fn closeMenu() void {
+        cu.state.next_ctx_menu_open = false;
+    }
 
-pub fn beginCtxMenu(key: Atom.Key) bool {
-    _ = key;
-    // const is_open = key.eql(ctx_menu_key) and cu.state.ctx_menu_open;
-    // is_in_ctx_menu = is_open;
-    //
-}
+    pub fn begin(
+        key: Atom.Key,
+    ) bool {
+        const is_open =
+            cu.state.ctx_menu_open and
+            Atom.Key.eql(key, cu.state.ctx_menu_key);
+        // is_in_ctx_menu = is_open;
 
-pub fn endCtxMenu() void {
-    // if (is_in_ctx_menu) {
-    //     is_in_ctx_menu = false;
-    // }
-    //
-}
+        if (!is_open)
+            return false;
+
+        pushParent(cu.state.ui_ctx_menu_root);
+        stacks.flags.push(.floating);
+        stacks.pref_size.push(.square(.fit));
+        stacks.layout_axis.push(.y);
+        const sub_root = open("ctx menu sub root");
+
+        if (cu.state.next_ctx_menu_anchor_key != .nil) {
+            const anchor_atom =
+                cu.state.atom_map.get(cu.state.next_ctx_menu_anchor_key) orelse
+                @panic("invalid key");
+
+            sub_root.rel_position = anchor_atom.rect.topLeft()
+                .add(cu.state.ctx_menu_anchor_offset);
+
+            cu.state.next_ctx_menu_anchor_key = .nil;
+        }
+
+        cu.state.ui_ctx_menu_root.userdata = @ptrCast(&sub_root.key);
+
+        return true;
+    }
+
+    pub fn end() void {
+        const sub_root_key: *Atom.Key =
+            @alignCast(@ptrCast(cu.state.ui_ctx_menu_root.userdata.?));
+        closeCheckingKey(sub_root_key.*);
+        close(cu.state.ui_ctx_menu_root);
+    }
+};
 
 //= tool tip
 
