@@ -37,3 +37,21 @@
 
 - [ ] #wl move wayland support into own mod
 
+- [ ] #cu text input
+    - required inputs / actions
+	- delete character back -> backspace
+	- delete character forward -> delete
+	- move caret left -> left
+	- move caret right -> right
+	- select character left -> shift+left
+	- select character right -> shift+right
+	- select all -> ctrl+a
+	- move caret to start of line -> home
+	- move caret to end of line -> end
+	- show char palette -> ?
+	- cut selection -> ctrl+x
+	- copy selection -> ctrl+c
+	- paste selection -> ctrl+v
+    - mouse input
+	- click -> figure out which char was clicked -> move caret there
+	- drag -> create selection from start to end pos of drag
