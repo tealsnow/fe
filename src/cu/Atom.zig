@@ -54,6 +54,8 @@ view_bounds: math.Size(f32) = .zero,
 hot_t: f32,
 active_t: f32,
 
+userdata: ?*anyopaque = null,
+
 pub const LayoutAxis = math.Dim2D;
 
 pub inline fn interaction(atom: *Atom) cu.Interaction {

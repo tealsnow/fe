@@ -350,10 +350,14 @@ pub const tooltip = struct {
         var pos = cu.state.mouse;
         pos.y += cu.state.graphics_info.cursor_size_px;
         sub_root.rel_position = pos;
+
+        cu.state.ui_tooltip_root.userdata = @ptrCast(&sub_root.key);
     }
 
     pub fn end() void {
-        _ = cu.state.atom_parent_stack.pop().?; // sub root
+        const sub_root_key: *Atom.Key =
+            @alignCast(@ptrCast(cu.state.ui_tooltip_root.userdata.?));
+        closeCheckingKey(sub_root_key.*);
         close(cu.state.ui_tooltip_root);
     }
 };
@@ -378,10 +382,20 @@ pub fn openf(comptime fmt: []const u8, args: anytype) *Atom {
 
 pub fn close(atom: *Atom) void {
     const top = cu.state.atom_parent_stack.pop().?;
+    closeAssert(top, atom);
+}
+
+pub fn closeCheckingKey(key: Atom.Key) void {
+    const atom = cu.state.atom_map.get(key) orelse @panic("invalid key in close");
+    const top = cu.state.atom_parent_stack.pop().?;
+    closeAssert(top, atom);
+}
+
+fn closeAssert(top: *Atom, check: *Atom) void {
     debugAssert(
-        Atom.Key.eql(atom.key, top.key),
+        Atom.Key.eql(top.key, check.key),
         "mismatched open/close; likely forgot a defer: expected {} but got {}",
-        .{ atom, top },
+        .{ check, top },
     );
 }
 
