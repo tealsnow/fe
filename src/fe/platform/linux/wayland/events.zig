@@ -8,9 +8,7 @@ const Window = @import("Window.zig");
 
 const mt = @import("cu").math;
 
-// set to 8 max as a conservative measure, I have not seen more than 3 in my
-// testing, but different compositors could act different
-pub const EventQueue = EventQueueCircleBuffer(8, Event);
+pub const EventQueue = EventQueueCircleBuffer(32, Event);
 
 pub const Event = struct {
     kind: Kind,

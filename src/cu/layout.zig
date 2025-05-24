@@ -6,7 +6,7 @@ const cu = @import("cu.zig");
 const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
 const math = cu.math;
-const AxisKind = math.Dim2D;
+const Axis2D = math.Axis2D;
 
 const TermColor = @import("../TermColor.zig");
 
@@ -14,7 +14,7 @@ const debug_print_atom = false;
 
 pub fn layout(root: *Atom) !void {
     sizeText(root);
-    for (AxisKind.array) |axis| {
+    for (Axis2D.array) |axis| {
         standalone(root, axis);
         upwardsDependent(root, axis);
         downwardsDependnt(root, axis);
@@ -39,7 +39,7 @@ fn sizeText(root: *Atom) void {
     }
 }
 
-fn standalone(root: *Atom, axis_kind: AxisKind) void {
+fn standalone(root: *Atom, axis_kind: Axis2D) void {
     // any-order
 
     const axis = @intFromEnum(axis_kind);
@@ -65,7 +65,7 @@ fn standalone(root: *Atom, axis_kind: AxisKind) void {
     }
 }
 
-fn upwardsDependent(root: *Atom, axis_kind: AxisKind) void {
+fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     // pre-order
 
     const axis = @intFromEnum(axis_kind);
@@ -90,7 +90,7 @@ fn upwardsDependent(root: *Atom, axis_kind: AxisKind) void {
     }
 }
 
-fn downwardsDependnt(root: *Atom, axis_kind: AxisKind) void {
+fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
     // post-order
 
     if (root.children) |children| {
@@ -127,7 +127,7 @@ fn downwardsDependnt(root: *Atom, axis_kind: AxisKind) void {
     }
 }
 
-inline fn floatingForAxis(flags: Atom.Flags, axis_kind: AxisKind) bool {
+inline fn floatingForAxis(flags: Atom.Flags, axis_kind: Axis2D) bool {
     return switch (axis_kind) {
         .x => flags.contains(.floating_x),
         .y => flags.contains(.floating_y),
@@ -135,7 +135,7 @@ inline fn floatingForAxis(flags: Atom.Flags, axis_kind: AxisKind) bool {
     };
 }
 
-fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
+fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
     // https://github.com/EpicGamesExt/raddebugger/blob/a1e7ec5a0e9c8674f5b0271ce528f6b651d43564/src/ui/ui_core.c#L1705C1-L1705C44
 
     // pre-order
@@ -244,7 +244,7 @@ fn solveViolations(root: *Atom, axis_kind: AxisKind) void {
     }
 }
 
-fn position(root: *Atom, axis_kind: AxisKind) void {
+fn position(root: *Atom, axis_kind: Axis2D) void {
     // pre-order
 
     const axis = @intFromEnum(axis_kind);

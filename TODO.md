@@ -20,11 +20,11 @@
 - [x] #cu dropdowns/context menu 
 - [ ] #cu focus behaviour
 - [ ] #cu use icu or freebidi for bidi handling
-- [ ] #cu #wgpu scrolling
+- [x] #cu #wgpu scrolling
     - [x] #cu overflow
     - [x] #wgpu clip
-    - [ ] #cu builder support
-    - [ ] #cu event handling
+    - [x] #cu builder support
+    - [x] #cu event handling
 - [ ] #cu truncate text with ellipses
 
 - [ ] #wgpu texture/image rendering

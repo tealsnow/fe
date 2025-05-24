@@ -28,7 +28,8 @@ gpa: Allocator,
 
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
-atom_parent_stack: Stack(*Atom) = .empty,
+atom_parent_stack: Stack(*Atom) = .empty, // arena
+atom_stale_list: std.ArrayListUnmanaged(Atom.Key), // gpa
 
 default_palette: Atom.pallete.Pallete = undefined,
 default_font: FontId = undefined,
@@ -100,6 +101,8 @@ pub fn init(gpa: Allocator, callbacks: Callbacks) !*State {
         .gpa = gpa,
 
         .atom_pool = undefined,
+        .atom_stale_list = try std.ArrayListUnmanaged(Atom.Key)
+            .initCapacity(gpa, 1024),
 
         .graphics_info = undefined,
     };
@@ -117,6 +120,7 @@ pub fn deinit(state: *State) void {
 
     state.arena_allocator.deinit();
     state.atom_pool.deinit();
+    state.atom_stale_list.deinit(cu.state.gpa);
 
     state.fonthandles.deinit(cu.state.gpa);
 

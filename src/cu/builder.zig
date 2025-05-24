@@ -33,6 +33,10 @@ pub fn startBuild(window_id: usize) void {
     const trace_start = tracy.beginZone(@src(), .{ .name = "ui build setup" });
     defer trace_start.end();
 
+    // reset arena
+    // _ = cu.state.arena_allocator.reset(.free_all);
+    _ = cu.state.arena_allocator.reset(.retain_capacity);
+
     // cu.state.scope_locals.clearAndFree(cu.state.arena);
 
     //- reset stacks
@@ -77,7 +81,7 @@ pub fn startBuild(window_id: usize) void {
 
     //- setup atom stack
     {
-        cu.state.atom_parent_stack.clearAndFree(cu.state.arena);
+        cu.state.atom_parent_stack = .empty;
         cu.state.atom_parent_stack.push(cu.state.arena, cu.state.ui_root);
     }
 
@@ -95,19 +99,19 @@ pub fn endBuild() void {
             tracy.beginZone(@src(), .{ .name = "remove stale atoms" });
         defer trace.end();
 
-        var to_remove = std.ArrayList(Atom.Key)
-            // we would hope no more than a 1/4 of the total
-            // atoms are removed in a given frame
-            .initCapacity(cu.state.arena, cu.state.atom_map.count() / 4) catch
-            @panic("oom");
+        cu.state.atom_stale_list
+            .clearRetainingCapacity();
 
+        // @PERF: #toProfile it might be faster to do two loops one checking
+        //   for the number of stale atoms, allocate, then the next to collect
         for (cu.state.atom_map.values()) |atom| {
             if (atom.build_index_touched_last < cu.state.current_build_index) {
-                to_remove.append(atom.key) catch @panic("oom");
+                cu.state.atom_stale_list.append(cu.state.gpa, atom.key) catch
+                    @panic("oom");
             }
         }
 
-        for (to_remove.items) |key| {
+        for (cu.state.atom_stale_list.items) |key| {
             if (key == .nil) continue;
             const atom = cu.state.atom_map.fetchSwapRemove(key).?.value;
             cu.state.atom_pool.destroy(atom);
@@ -150,19 +154,16 @@ pub fn endBuild() void {
         cu.state.current_build_index += 1;
         cu.state.ui_built = true;
         cu.state.event_list.len = 0;
-
-        _ = cu.state.arena_allocator.reset(.retain_capacity);
     }
 }
 
 pub fn tryAtomFromKey(key: Atom.Key) ?*Atom {
-    var result: ?*Atom = null;
     if (!key.eql(.nil)) {
         if (cu.state.atom_map.get(key)) |atom| {
-            result = atom;
+            return atom;
         }
     }
-    return result;
+    return null;
 }
 
 pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
@@ -174,7 +175,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
         const atom = cu.state.arena.create(Atom) catch @panic("oom");
         break :blk .{ atom, true };
     } else if (tryAtomFromKey(key)) |atom| blk: {
-        atom.key = key;
+        // atom.key = key;
         break :blk .{ atom, false };
     } else blk: {
         const atom = cu.state.atom_pool.create() catch @panic("oom");
@@ -196,9 +197,6 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
             .key = key,
             .build_index_touched_first = cu.state.current_build_index,
             .build_index_touched_last = cu.state.current_build_index,
-
-            .hot_t = 0,
-            .active_t = 0,
         };
     } else {
         atom.build_index_touched_last = cu.state.current_build_index;
@@ -292,103 +290,13 @@ pub fn buildFromStringF(comptime fmt: []const u8, args: anytype) *Atom {
 
 //= build shorthand
 
-pub fn build(string: []const u8) *Atom {
+pub inline fn build(string: []const u8) *Atom {
     return buildFromString(string);
 }
 
-pub fn buildf(comptime fmt: []const u8, args: anytype) *Atom {
+pub inline fn buildf(comptime fmt: []const u8, args: anytype) *Atom {
     return buildFromStringF(fmt, args);
 }
-
-//= context menu
-
-pub const ctx_menu = struct {
-    pub fn openMenu(
-        key: Atom.Key,
-        anchor_key: Atom.Key,
-        anchor_offset: math.Point(f32),
-    ) void {
-        cu.state.next_ctx_menu_open = true;
-
-        // ctx_menu_changed = true
-        // ctx_menu_open_t = 0
-        cu.state.ctx_menu_key = key;
-        cu.state.next_ctx_menu_anchor_key = anchor_key;
-        cu.state.ctx_menu_anchor_offset = anchor_offset;
-        // ctx_menu_touched_this_frame = true
-        // ctx_menu_anchor_atom_last_pos = .zero
-    }
-
-    pub fn closeMenu() void {
-        cu.state.next_ctx_menu_open = false;
-    }
-
-    pub fn begin(
-        key: Atom.Key,
-    ) bool {
-        const is_open =
-            cu.state.ctx_menu_open and
-            Atom.Key.eql(key, cu.state.ctx_menu_key);
-        // is_in_ctx_menu = is_open;
-
-        if (!is_open)
-            return false;
-
-        pushParent(cu.state.ui_ctx_menu_root);
-        stacks.flags.push(.floating);
-        stacks.pref_size.push(.square(.fit));
-        stacks.layout_axis.push(.y);
-        const sub_root = open("ctx menu sub root");
-
-        if (cu.state.next_ctx_menu_anchor_key != .nil) {
-            const anchor_atom =
-                cu.state.atom_map.get(cu.state.next_ctx_menu_anchor_key) orelse
-                @panic("invalid key");
-
-            sub_root.rel_position = anchor_atom.rect.topLeft()
-                .add(cu.state.ctx_menu_anchor_offset);
-
-            cu.state.next_ctx_menu_anchor_key = .nil;
-        }
-
-        cu.state.ui_ctx_menu_root.userdata = @ptrCast(&sub_root.key);
-
-        return true;
-    }
-
-    pub fn end() void {
-        const sub_root_key: *Atom.Key =
-            @alignCast(@ptrCast(cu.state.ui_ctx_menu_root.userdata.?));
-        closeCheckingKey(sub_root_key.*);
-        close(cu.state.ui_ctx_menu_root);
-    }
-};
-
-//= tool tip
-
-pub const tooltip = struct {
-    pub fn begin() void {
-        pushParent(cu.state.ui_tooltip_root);
-
-        const base_flags = stacks.flags.topVolatile() orelse AtomFlags.none;
-        stacks.flags.push(.unionWith(base_flags, .floating));
-
-        const sub_root = open("tooltip sub root");
-
-        var pos = cu.state.mouse;
-        pos.y += cu.state.graphics_info.cursor_size_px;
-        sub_root.rel_position = pos;
-
-        cu.state.ui_tooltip_root.userdata = @ptrCast(&sub_root.key);
-    }
-
-    pub fn end() void {
-        const sub_root_key: *Atom.Key =
-            @alignCast(@ptrCast(cu.state.ui_tooltip_root.userdata.?));
-        closeCheckingKey(sub_root_key.*);
-        close(cu.state.ui_tooltip_root);
-    }
-};
 
 //= hierarchy management
 
@@ -410,20 +318,10 @@ pub fn openf(comptime fmt: []const u8, args: anytype) *Atom {
 
 pub fn close(atom: *Atom) void {
     const top = cu.state.atom_parent_stack.pop().?;
-    closeAssert(top, atom);
-}
-
-pub fn closeCheckingKey(key: Atom.Key) void {
-    const atom = cu.state.atom_map.get(key) orelse @panic("invalid key in close");
-    const top = cu.state.atom_parent_stack.pop().?;
-    closeAssert(top, atom);
-}
-
-fn closeAssert(top: *Atom, check: *Atom) void {
     debugAssert(
-        Atom.Key.eql(top.key, check.key),
+        Atom.Key.eql(top.key, atom.key),
         "mismatched open/close; likely forgot a defer: expected {} but got {}",
-        .{ check, top },
+        .{ atom, top },
     );
 }
 
@@ -543,6 +441,153 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
 
     return inter;
 }
+
+//= context menu
+
+pub const ctx_menu = struct {
+    pub fn openMenu(
+        key: Atom.Key,
+        anchor_key: Atom.Key,
+        anchor_offset: math.Point(f32),
+    ) void {
+        cu.state.next_ctx_menu_open = true;
+
+        // ctx_menu_changed = true
+        // ctx_menu_open_t = 0
+        cu.state.ctx_menu_key = key;
+        cu.state.next_ctx_menu_anchor_key = anchor_key;
+        cu.state.ctx_menu_anchor_offset = anchor_offset;
+        // ctx_menu_touched_this_frame = true
+        // ctx_menu_anchor_atom_last_pos = .zero
+    }
+
+    pub fn closeMenu() void {
+        cu.state.next_ctx_menu_open = false;
+    }
+
+    pub fn begin(
+        key: Atom.Key,
+    ) ?*Atom {
+        const is_open =
+            cu.state.ctx_menu_open and
+            Atom.Key.eql(key, cu.state.ctx_menu_key);
+        // is_in_ctx_menu = is_open;
+
+        if (!is_open)
+            return null;
+
+        pushParent(cu.state.ui_ctx_menu_root);
+        stacks.flags.push(.floating);
+        stacks.pref_size.push(.square(.fit));
+        stacks.layout_axis.push(.y);
+        const sub_root = open("ctx menu sub root");
+
+        if (cu.state.next_ctx_menu_anchor_key != .nil) {
+            const anchor_atom =
+                cu.state.atom_map.get(cu.state.next_ctx_menu_anchor_key) orelse
+                @panic("invalid key");
+
+            sub_root.rel_position = anchor_atom.rect.topLeft()
+                .add(cu.state.ctx_menu_anchor_offset);
+
+            cu.state.next_ctx_menu_anchor_key = .nil;
+        }
+
+        return sub_root;
+    }
+
+    pub fn end(atom: *Atom) void {
+        close(atom);
+        close(cu.state.ui_ctx_menu_root);
+    }
+};
+
+//= tool tip
+
+pub const tooltip = struct {
+    pub fn begin() *Atom {
+        pushParent(cu.state.ui_tooltip_root);
+
+        const sub_root = open("tooltip sub root");
+        sub_root.flags.insertMany(.floating);
+
+        var pos = cu.state.mouse;
+        pos.y += cu.state.graphics_info.cursor_size_px;
+        sub_root.rel_position = pos;
+
+        return sub_root;
+    }
+
+    pub fn end(atom: *Atom) void {
+        close(atom);
+        close(cu.state.ui_tooltip_root);
+    }
+};
+
+//= scroll area
+
+pub const scroll_area = struct {
+    pub const ScrollAreaData = struct {
+        view: *Atom,
+        container: *Atom,
+
+        index_range: math.Range1D(usize),
+    };
+
+    pub fn begin(
+        axis: Atom.LayoutAxis,
+        item_size_px: f32,
+        offset_px: *f32,
+    ) ScrollAreaData {
+        const view = open("scroll view");
+        view.layout_axis = axis;
+        view.flags.insert(.clip_rect);
+        view.flags.insert(.view_scroll);
+        view.flags.insertMany(.allowOverflowForAxis(axis));
+
+        const pixel_range = math.range1d(
+            offset_px.*,
+            offset_px.* + view.rect.lengthFromAxis(axis),
+        );
+
+        const index_range = math.range1d(
+            @as(usize, @intFromFloat(pixel_range.min / item_size_px)),
+            @as(usize, @intFromFloat(pixel_range.max / item_size_px)) + 1,
+        );
+
+        stacks.flags.push(.floatingForAxis(axis));
+        stacks.layout_axis.push(axis);
+        stacks.pref_size.push(.square(.fit));
+        const container = open("scroll container");
+
+        container.rel_position = .withAxis(axis, -offset_px.*, 0);
+
+        const space_before =
+            @as(f32, @floatFromInt(index_range.min)) * item_size_px;
+        // const space_after =
+        //     @as(f32, @floatFromInt(index_range.max)) * item_size_px;
+
+        stacks.pref_size.push(.withAxis(axis, .px(space_before), .grow));
+        _ = spacer();
+
+        offset_px.* +=
+            view.interaction().scroll.fromAxis(axis);
+        if (offset_px.* < 0)
+            offset_px.* = 0;
+
+        return .{
+            .view = view,
+            .container = container,
+
+            .index_range = index_range,
+        };
+    }
+
+    pub fn end(data: ScrollAreaData) void {
+        close(data.container);
+        close(data.view);
+    }
+};
 
 //= stacks
 

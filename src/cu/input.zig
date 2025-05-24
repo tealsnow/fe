@@ -14,9 +14,9 @@ pub const Event = struct {
 pub const EventKind = union(enum) {
     key: KeyEvent,
     mouse_button: MouseButtonEvent,
-    mouse_move: MouseMoveEvent,
-    scroll: ScrollEvent,
-    text: TextEvent,
+    mouse_move: math.Point(f32),
+    scroll: math.Point(f32),
+    text: []const u8,
 
     pub const KeyEvent = struct {
         scancode: i32,
@@ -27,21 +27,7 @@ pub const EventKind = union(enum) {
 
     pub const MouseButtonEvent = struct {
         button: MouseButton,
-        pos: math.Point(f32), // @TODO: remove
         state: PressState,
-    };
-
-    pub const MouseMoveEvent = struct {
-        pos: math.Point(f32),
-    };
-
-    pub const ScrollEvent = struct {
-        scroll: math.Size(f32),
-        pos: math.Point(f32),
-    };
-
-    pub const TextEvent = struct {
-        text: []const u8,
     };
 
     pub const PressState = enum(u8) {
@@ -261,7 +247,7 @@ pub const InteractionFlags = struct {
 
 pub const Interaction = struct {
     atom: *Atom,
-    scroll: math.Size(f32) = .zero,
+    scroll: math.Point(f32) = .zero,
     modifiers: Modifiers = .{},
     f: InteractionFlags = .none,
 
@@ -353,97 +339,98 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         const event = &cu.state.event_list.buffer[i];
         if (event.consumed) continue;
 
-        const button = switch (event.kind) {
-            .mouse_button => |button| button: {
-                cu.state.mouse = button.pos;
-                break :button button;
+        switch (event.kind) {
+            .mouse_button => |button| {
+                const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
+                    rect.contains(cu.state.mouse);
+
+                // mouse down in box -> set box as hot/active -> press event
+                if (atom.flags.contains(.mouse_clickable) and
+                    button.state == .pressed and
+                    in_bounds and
+                    button.button != .none)
+                {
+                    event.consumed = true;
+
+                    cu.state.hot_atom_key = atom.key;
+                    cu.state.active_atom_key.set(button.button, atom.key);
+
+                    cu.state.start_drag_pos = cu.state.mouse;
+
+                    setButtonGeneric(&inter.f, .pressed, button.button);
+
+                    const double_click_time_us =
+                        cu.state.graphics_info.double_click_time_us;
+
+                    const last_pressed_key = cu.state.press_history_key
+                        .get(button.button).indexBack(0) orelse
+                        Atom.Key.nil;
+                    const last_pressed_timestamp_us = cu.state.press_history_timestamp_us
+                        .get(button.button).indexBack(0) orelse
+                        std.math.maxInt(u64);
+
+                    if (Atom.Key.eql(atom.key, last_pressed_key) and
+                        event.timestamp_us -
+                            last_pressed_timestamp_us <= double_click_time_us)
+                    {
+                        setButtonGeneric(&inter.f, .double_clicked, button.button);
+                    }
+
+                    const last_last_pressed_key = cu.state.press_history_key
+                        .get(button.button).indexBack(1) orelse
+                        Atom.Key.nil;
+                    const last_last_pressed_timestamp_us =
+                        cu.state.press_history_timestamp_us
+                            .get(button.button)
+                            .indexBack(1) orelse std.math.maxInt(u64);
+
+                    if (Atom.Key.eql(atom.key, last_pressed_key) and
+                        Atom.Key.eql(atom.key, last_last_pressed_key) and
+                        event.timestamp_us - last_pressed_timestamp_us <=
+                            double_click_time_us and
+                        last_pressed_timestamp_us - last_last_pressed_timestamp_us <=
+                            double_click_time_us)
+                    {
+                        setButtonGeneric(&inter.f, .tripple_clicked, button.button);
+                    }
+
+                    cu.state.press_history_timestamp_us
+                        .getPtr(button.button)
+                        .push(event.timestamp_us);
+                    cu.state.press_history_key
+                        .getPtr(button.button)
+                        .push(atom.key);
+                }
+
+                // mouse in/out release in box -> unset as active -> release (and maybe click) event
+                if (atom.flags.contains(.mouse_clickable) and
+                    button.state == .released and
+                    button.button != .none and
+                    cu.state.active_atom_key.get(button.button).eql(atom.key))
+                {
+                    cu.state.active_atom_key.set(button.button, .nil);
+
+                    const click = in_bounds;
+                    if (click) cu.state.hot_atom_key = .nil;
+
+                    setButtonGeneric(&inter.f, .released, button.button);
+                    if (click)
+                        setButtonGeneric(&inter.f, .clicked, button.button);
+
+                    event.consumed = true;
+                }
             },
-            .mouse_move => |move| {
-                cu.state.mouse = move.pos;
-                continue;
+            .mouse_move => |pos| {
+                cu.state.mouse = pos;
             },
-            else => {
-                continue;
+            .scroll => |pt| {
+                if (atom.flags.contains(.view_scroll)) {
+                    inter.scroll.x += pt.x;
+                    inter.scroll.y += pt.y;
+                    event.consumed = true;
+                }
             },
-        };
-
-        const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
-            rect.contains(cu.state.mouse);
-
-        // mouse down in box -> set box as hot/active -> press event
-        if (atom.flags.contains(.mouse_clickable) and
-            button.state == .pressed and
-            in_bounds and
-            button.button != .none)
-        {
-            event.consumed = true;
-
-            cu.state.hot_atom_key = atom.key;
-            cu.state.active_atom_key.set(button.button, atom.key);
-
-            cu.state.start_drag_pos = cu.state.mouse;
-
-            setButtonGeneric(&inter.f, .pressed, button.button);
-
-            const double_click_time_us =
-                cu.state.graphics_info.double_click_time_us;
-
-            const last_pressed_key = cu.state.press_history_key
-                .get(button.button).indexBack(0) orelse
-                Atom.Key.nil;
-            const last_pressed_timestamp_us = cu.state.press_history_timestamp_us
-                .get(button.button).indexBack(0) orelse
-                std.math.maxInt(u64);
-
-            if (Atom.Key.eql(atom.key, last_pressed_key) and
-                event.timestamp_us -
-                    last_pressed_timestamp_us <= double_click_time_us)
-            {
-                setButtonGeneric(&inter.f, .double_clicked, button.button);
-            }
-
-            const last_last_pressed_key = cu.state.press_history_key
-                .get(button.button).indexBack(1) orelse
-                Atom.Key.nil;
-            const last_last_pressed_timestamp_us =
-                cu.state.press_history_timestamp_us
-                    .get(button.button)
-                    .indexBack(1) orelse std.math.maxInt(u64);
-
-            if (Atom.Key.eql(atom.key, last_pressed_key) and
-                Atom.Key.eql(atom.key, last_last_pressed_key) and
-                event.timestamp_us - last_pressed_timestamp_us <=
-                    double_click_time_us and
-                last_pressed_timestamp_us - last_last_pressed_timestamp_us <=
-                    double_click_time_us)
-            {
-                setButtonGeneric(&inter.f, .tripple_clicked, button.button);
-            }
-
-            cu.state.press_history_timestamp_us
-                .getPtr(button.button)
-                .push(event.timestamp_us);
-            cu.state.press_history_key
-                .getPtr(button.button)
-                .push(atom.key);
-        }
-
-        // mouse in/out release in box -> unset as active -> release (and maybe click) event
-        if (atom.flags.contains(.mouse_clickable) and
-            button.state == .released and
-            button.button != .none and
-            cu.state.active_atom_key.get(button.button).eql(atom.key))
-        {
-            cu.state.active_atom_key.set(button.button, .nil);
-
-            const click = in_bounds;
-            if (click) cu.state.hot_atom_key = .nil;
-
-            setButtonGeneric(&inter.f, .released, button.button);
-            if (click)
-                setButtonGeneric(&inter.f, .clicked, button.button);
-
-            event.consumed = true;
+            else => {},
         }
     }
 
@@ -484,6 +471,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         }
     }
 
+    // close context menu if pressed out side of
     if (!ctx_menu_is_ancestor and inter.anyPressed()) {
         cu.builder.ctx_menu.closeMenu();
     }

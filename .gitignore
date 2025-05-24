@@ -3,3 +3,4 @@ zig-out
 .direnv
 .zed
 .vscode
+out.log

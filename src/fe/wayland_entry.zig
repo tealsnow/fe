@@ -125,10 +125,9 @@ pub fn entry(gpa: Allocator) !void {
     var state = State{
         .window = window,
         .window_rounding = 10,
+        .arena = arena,
 
         .mono_font = mono_font,
-
-        .test_toggle = false,
     };
 
     log.info("starting main loop", .{});
@@ -139,6 +138,7 @@ pub fn entry(gpa: Allocator) !void {
     main_loop: while (true) {
         tracy.frameMark();
         defer {
+            // _ = arena_alloc.reset(.free_all);
             _ = arena_alloc.reset(.retain_capacity);
             tracing_arena_alloc.discard();
         }
@@ -222,18 +222,18 @@ pub fn entry(gpa: Allocator) !void {
             },
 
             .text => |text| {
-                cu.state.pushEvent(.{ .text = .{
+                cu.state.pushEvent(.{
                     .text = text.slice(),
-                } });
+                });
             },
 
             .pointer_focus => |focus| {
                 _ = focus;
             },
             .pointer_motion => |motion| {
-                cu.state.pushEvent(.{ .mouse_move = .{
-                    .pos = motion.point.floatCast(f32),
-                } });
+                cu.state.pushEvent(.{
+                    .mouse_move = motion.point.floatCast(f32),
+                });
             },
             .pointer_button => |button| {
                 cu.state.pushEvent(.{ .mouse_button = .{
@@ -244,7 +244,6 @@ pub fn entry(gpa: Allocator) !void {
                         .forward => .forward,
                         .back => .back,
                     },
-                    .pos = cu.state.mouse,
                     .state = if (button.state == .pressed)
                         .pressed
                     else
@@ -253,13 +252,12 @@ pub fn entry(gpa: Allocator) !void {
             },
             .pointer_scroll => |scroll| scroll: {
                 const value = scroll.value orelse break :scroll;
-                cu.state.pushEvent(.{ .scroll = .{
+                cu.state.pushEvent(.{
                     .scroll = if (scroll.axis == .vertical)
-                        .size(@floatCast(value), 0)
+                        .point(0, @floatCast(value))
                     else
-                        .size(0, @floatCast(value)),
-                    .pos = cu.state.mouse,
-                } });
+                        .point(@floatCast(value), 0),
+                });
             },
         };
 
@@ -317,10 +315,14 @@ pub fn entry(gpa: Allocator) !void {
 const State = struct {
     window: *wl.Window,
     window_rounding: f32,
+    arena: Allocator,
 
     mono_font: cu.FontId,
 
-    test_toggle: bool,
+    test_toggle: bool = false,
+    // scroll_view_item_count: usize = 32,
+
+    test_scroll_offset: f32 = 0,
 };
 
 fn buildTopbar(
@@ -376,8 +378,8 @@ fn buildTopbar(
             );
         }
 
-        if (b.ctx_menu.begin(item.key)) {
-            defer b.ctx_menu.end();
+        if (b.ctx_menu.begin(item.key)) |ctx_menu| {
+            defer b.ctx_menu.end(ctx_menu);
 
             b.stacks.flags.push(.unionWith(.draw_background, .draw_border));
             b.stacks.layout_axis.push(.y);
@@ -580,8 +582,8 @@ pub fn buildUI(
                 b.stacks.pref_size.push(.square(.fit));
                 b.stacks.corner_radius.push(5);
 
-                b.tooltip.begin();
-                defer b.tooltip.end();
+                const tooltip = b.tooltip.begin();
+                defer b.tooltip.end(tooltip);
 
                 b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
                 defer _ = b.stacks.pref_size.pop();
@@ -598,16 +600,67 @@ pub fn buildUI(
             const content = b.open("right content");
             defer b.close(content);
 
-            b.stacks.corner_radius.push(b.em(0.5));
-            b.stacks.pref_size.push(.square(.text_pad(8)));
-            if (b.button("foo bar").clicked()) {
-                log.debug("foo bar clicked", .{});
+            b.stacks.corner_radius.push(b.em(0.8));
+            _ = b.toggleSwitch(&state.test_toggle);
+
+            _ = b.lineSpacer();
+
+            {
+                b.stacks.layout_axis.push(.y);
+                b.stacks.pref_size.push(.size(.grow, .fit));
+                const counter_container = b.open("counter");
+                defer b.close(counter_container);
+
+                b.stacks.pref_size.push(.square(.text));
+                _ = b.labelf("scroll offset (px): {d}", .{state.test_scroll_offset});
+
+                {
+                    b.stacks.layout_axis.push(.x);
+                    b.stacks.pref_size.push(.square(.fit));
+                    const btns = b.open("buttons");
+                    defer b.close(btns);
+
+                    b.stacks.font.pushForMany(state.mono_font);
+                    defer _ = b.stacks.font.pop();
+
+                    b.stacks.pref_size.push(.square(.text_pad(8)));
+                    if (b.button("+").clicked()) {
+                        state.test_scroll_offset += 10;
+                    }
+
+                    b.stacks.pref_size.push(.square(.text_pad(8)));
+                    if (b.button("-").clicked()) {
+                        state.test_scroll_offset -= 10;
+                    }
+                }
             }
 
             _ = b.lineSpacer();
 
-            b.stacks.corner_radius.push(b.em(0.8));
-            _ = b.toggleSwitch(&state.test_toggle);
+            // scroll test
+            {
+                const item_size = b.em(1);
+
+                b.stacks.pref_size.push(.square(.grow));
+                b.stacks.flags.push(.draw_border);
+                const scroll_data = b.scroll_area.begin(
+                    .y,
+                    item_size,
+                    &state.test_scroll_offset,
+                );
+                defer b.scroll_area.end(scroll_data);
+
+                b.stacks.text_align.pushForMany(.size(.start, .center));
+                defer _ = b.stacks.text_align.pop();
+                b.stacks.pref_size.pushForMany(.size(.grow, .px(item_size)));
+                defer _ = b.stacks.pref_size.pop();
+
+                for (scroll_data.index_range.min.. //
+                    scroll_data.index_range.max) |i|
+                {
+                    _ = b.labelf("item {d}", .{i});
+                }
+            }
         }
     }
 

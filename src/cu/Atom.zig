@@ -51,12 +51,10 @@ build_index_touched_first: u64,
 build_index_touched_last: u64,
 // build_index_first_disabled: u64,
 view_bounds: math.Size(f32) = .zero,
-hot_t: f32,
-active_t: f32,
+hot_t: f32 = 0,
+active_t: f32 = 0,
 
-userdata: ?*anyopaque = null,
-
-pub const LayoutAxis = math.Dim2D;
+pub const LayoutAxis = math.Axis2D;
 
 pub inline fn interaction(atom: *Atom) cu.Interaction {
     return cu.input.interactionFromAtom(atom);
@@ -151,7 +149,7 @@ pub const Flag = enum(u32) {
     mouse_clickable,
     keyboard_clickable,
     // drop_site: bool = false,
-    // view_scroll: bool = false,
+    view_scroll,
     // focusable: bool = false,
     // disabled: bool = false,
 
@@ -176,6 +174,8 @@ pub const Flag = enum(u32) {
     clip_rect,
 };
 
+// @TODO: unify interface to only deal with `Flags` not returning or taking in
+//   single `Flag`
 pub const Flags = struct {
     enum_set: std.EnumSet(Flag),
 
@@ -185,7 +185,7 @@ pub const Flags = struct {
     pub const mouse_clickable = initOne(.mouse_clickable);
     pub const keyboard_clickable = initOne(.keyboard_clickable);
     // drop_site: bool = false,
-    // view_scroll: bool = false,
+    pub const view_scroll = initOne(.view_scroll);
     // focusable: bool = false,
     // disabled: bool = false,
     pub const clickable =
@@ -213,6 +213,22 @@ pub const Flags = struct {
     pub const draw_text = initOne(.draw_text);
     pub const draw_text_weak = initOne(.draw_text_weak);
     pub const clip_rect = initOne(.clip_rect);
+
+    pub fn allowOverflowForAxis(axis: LayoutAxis) Flags {
+        return switch (axis) {
+            .none => @panic("invalid axis"),
+            .x => .allow_overflow_x,
+            .y => .allow_overflow_y,
+        };
+    }
+
+    pub fn floatingForAxis(axis: LayoutAxis) Flags {
+        return switch (axis) {
+            .none => @panic("invalid axis"),
+            .x => .floating_x,
+            .y => .floating_y,
+        };
+    }
 
     pub fn initMany(flags: []const Flag) Flags {
         return .{ .enum_set = .initMany(flags) };
@@ -277,10 +293,10 @@ pub const PrefSize = extern struct {
     strictness: f32 = 0,
 
     pub const Kind = enum(u8) {
-        none,
+        none = 0,
         pixels, // value px
         percent_of_parent, // value %
-        text_content,
+        text_content, // value padding px
         children_sum,
     };
 

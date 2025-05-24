@@ -3,6 +3,28 @@ const TermColor = @import("TermColor.zig");
 
 const tracy = @import("tracy");
 
+const FileWriter = std.fs.File.Writer;
+const BufferedFileWriter = std.io.BufferedWriter(4096, FileWriter);
+
+const State = struct {
+    file: std.fs.File,
+};
+
+var state: State = undefined;
+
+pub fn init(log_file_name: []const u8) !void {
+    const cwd = std.fs.cwd();
+    const file = try cwd.openFile(log_file_name, .{ .mode = .write_only });
+
+    state = .{
+        .file = file,
+    };
+}
+
+pub fn deinit() void {
+    state.file.close();
+}
+
 pub fn logFn(
     comptime message_level: std.log.Level,
     comptime scope: @TypeOf(.enum_literal),
@@ -41,17 +63,17 @@ pub fn logFnRuntime(
     const faint = TermColor{ .style = .{ .faint = true } };
     const reset = TermColor.reset;
 
-    const stderr = std.io.getStdErr().writer();
-    var bw = std.io.bufferedWriter(stderr);
-    const writer = bw.writer();
-
-    std.debug.lockStdErr();
-    defer std.debug.unlockStdErr();
-
-    const term_fmt =
+    const tracy_fmt =
+        "[{[scope]s}] {[level]s} {[message]s}";
+    const tracy_args = .{
+        .scope = scope,
+        .level = level_str,
+        .message = message,
+    };
+    const stderr_fmt =
         "{[faint]}[{[now]s}{[reset]}{[scope]s}{[faint]}]{[reset]} " ++
         "{[level_color]} {[level]s} {[reset]} {[message]s}";
-    const term_args = .{
+    const stderr_args = .{
         .faint = faint,
         .reset = reset,
         .now = now_str,
@@ -60,19 +82,51 @@ pub fn logFnRuntime(
         .level_color = level_color,
         .message = message,
     };
-    const tracy_fmt =
-        "[{[scope]s}] {[level]s} {[message]s}";
-    const tracy_args = .{
+    const file_fmt =
+        "[{[now]s}{[scope]s}] {[level]s}  {[message]s}";
+    const file_args = .{
+        .now = now_str,
         .scope = scope,
         .level = level_str,
         .message = message,
     };
 
-    writer.print(term_fmt ++ "\n", term_args) catch return;
     tracy.print(tracy_fmt, tracy_args);
 
-    bw.flush() catch return;
+    stderr: {
+        const stderr = std.io.getStdErr().writer();
+        var stderr_bw = std.io.bufferedWriter(stderr);
+        const stderr_writer = stderr_bw.writer();
+
+        std.debug.lockStdErr();
+        defer std.debug.unlockStdErr();
+
+        stderr_writer.print(stderr_fmt ++ "\n", stderr_args) catch {
+            std.debug.print("log: failed to write to stderr buffered writer\n", .{});
+            break :stderr;
+        };
+        stderr_bw.flush() catch {
+            std.debug.print("log: failed to flush to stderr\n", .{});
+            break :stderr;
+        };
+    }
+
+    file: {
+        const file_underlying_writer = state.file.writer();
+        var file_bw = std.io.bufferedWriter(file_underlying_writer);
+        const file_writer = file_bw.writer();
+
+        file_writer.print(file_fmt ++ "\n", file_args) catch {
+            std.debug.print("log: failed to write to file buffered writer\n", .{});
+            break :file;
+        };
+        file_bw.flush() catch {
+            std.debug.print("log: failed to flush to file\n", .{});
+            break :file;
+        };
+    }
 }
+
 /// Represents a date and time with timezone offset
 pub const DateTime = struct {
     year: u16,

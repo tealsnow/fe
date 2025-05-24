@@ -22,6 +22,22 @@ pub fn Point(comptime T: type) type {
             return .point(v, v);
         }
 
+        pub inline fn withAxis(axis: Axis2D, target: T, other: T) Self {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => .point(target, other),
+                .y => .point(other, target),
+            };
+        }
+
+        pub inline fn fromAxis(self: Self, axis: Axis2D) T {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => self.x,
+                .y => self.y,
+            };
+        }
+
         pub inline fn fromSize(sz: Size(T)) Self {
             return .point(sz.width, sz.height);
         }
@@ -61,25 +77,25 @@ pub fn Point(comptime T: type) type {
             );
         }
 
-        pub inline fn intCast(self: Self, comptime NT: type) Point(NT) {
+        pub fn intCast(self: Self, comptime NT: type) Point(NT) {
             return .point(
                 @intCast(self.x),
                 @intCast(self.y),
             );
         }
 
-        pub inline fn floatCast(self: Self, comptime NT: type) Point(NT) {
+        pub fn floatCast(self: Self, comptime NT: type) Point(NT) {
             return .point(
                 @floatCast(self.x),
                 @floatCast(self.y),
             );
         }
 
-        pub inline fn floatFromInt(self: Self, comptime NT: type) Point(NT) {
+        pub fn floatFromInt(self: Self, comptime NT: type) Point(NT) {
             return .point(@floatFromInt(self.x), @floatFromInt(self.y));
         }
 
-        pub inline fn intFromFloat(self: Self, comptime NT: type) Point(NT) {
+        pub fn intFromFloat(self: Self, comptime NT: type) Point(NT) {
             return .point(@intFromFloat(self.x), @intFromFloat(self.y));
         }
 
@@ -110,16 +126,16 @@ pub inline fn point(x: anytype, y: @TypeOf(x)) Point(@TypeOf(x)) {
     return .point(x, y);
 }
 
-pub const Dim2D = enum(u2) {
+pub const Axis2D = enum(u2) {
     none = std.math.maxInt(u2),
 
     x = 0,
     y,
 
-    pub const width = Dim2D.x;
-    pub const height = Dim2D.y;
+    pub const width = Axis2D.x;
+    pub const height = Axis2D.y;
 
-    pub const array = [2]Dim2D{ .x, .y };
+    pub const array = [2]Axis2D{ .x, .y };
 };
 
 pub fn Size(comptime T: type) type {
@@ -138,6 +154,14 @@ pub fn Size(comptime T: type) type {
 
         pub inline fn splat(v: T) Self {
             return .size(v, v);
+        }
+
+        pub inline fn withAxis(axis: Axis2D, target: T, other: T) Self {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => .size(target, other),
+                .y => .size(other, target),
+            };
         }
 
         pub inline fn square(len: T) Self {
@@ -283,15 +307,15 @@ pub fn Rect(comptime T: type) type {
             );
         }
 
-        pub inline fn intCast(self: Self, comptime NT: type) Rect(NT) {
+        pub fn intCast(self: Self, comptime NT: type) Rect(NT) {
             return .rect(self.p0.intCast(NT), self.p1.intCast(NT));
         }
 
-        pub inline fn floatFromInt(self: Self, comptime NT: type) Rect(NT) {
+        pub fn floatFromInt(self: Self, comptime NT: type) Rect(NT) {
             return .rect(self.p0.floatFromInt(NT), self.p1.floatFromInt(NT));
         }
 
-        pub inline fn intFromFloat(self: Self, comptime NT: type) Rect(NT) {
+        pub fn intFromFloat(self: Self, comptime NT: type) Rect(NT) {
             return .rect(self.p0.intFromFloat(NT), self.p1.intFromFloat(NT));
         }
 
@@ -335,6 +359,14 @@ pub fn Rect(comptime T: type) type {
             return self.p1.y - self.p0.y;
         }
 
+        pub inline fn lengthFromAxis(self: Self, axis: Axis2D) T {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => self.width(),
+                .y => self.height(),
+            };
+        }
+
         pub inline fn contains(self: Self, pt: Point(T)) bool {
             return pt.x > self.p0.x and
                 pt.x < self.p1.x and
@@ -349,6 +381,22 @@ pub fn Rect(comptime T: type) type {
                 @min(a.p1.x, b.p1.x),
                 @min(a.p1.y, b.p1.y),
             );
+        }
+
+        pub inline fn verticalRange(self: Self) Range1D(T) {
+            return .range(self.p0.y, self.p1.y);
+        }
+
+        pub inline fn horizontalRange(self: Self) Range1D(T) {
+            return .range(self.p0.x, self.p1.x);
+        }
+
+        pub inline fn rangeForAxis(self: Self, axis: Axis2D) Range1D(T) {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => self.horizontalRange(),
+                .y => self.verticalRange(),
+            };
         }
 
         pub fn format(
@@ -370,13 +418,50 @@ pub inline fn rect(comptime T: type, p0: Point(T), p1: Point(T)) Rect(T) {
     return .rect(p0, p1);
 }
 
-pub inline fn rect2pts(
+pub inline fn rectpts(
     x0: anytype,
     y0: @TypeOf(x0),
     x1: @TypeOf(x0),
     y1: @TypeOf(x0),
 ) Rect(@TypeOf(x0)) {
     return .rectpts(x0, y0, x1, y1);
+}
+
+pub fn Range1D(comptime T: type) type {
+    return struct {
+        min: T,
+        max: T,
+
+        const Self = @This();
+        pub const zero = mem.zeroes(Self);
+        pub const inf = splat(.inf);
+        pub const nan = splat(.nan);
+
+        pub fn range(min: T, max: T) Self {
+            return .{ .min = min, .max = max };
+        }
+
+        pub fn splat(v: T) Self {
+            return .range(v, v);
+        }
+
+        pub fn format(
+            self: *const Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = options;
+            try writer.print(
+                "Range1D({s}){{ {" ++ fmt ++ "} to {" ++ fmt ++ "} }}",
+                .{ @typeName(T), self.min, self.max },
+            );
+        }
+    };
+}
+
+pub fn range1d(min: anytype, max: @TypeOf(min)) Range1D(@TypeOf(min)) {
+    return .range(min, max);
 }
 
 pub const RgbaF32 = extern struct {

@@ -28,6 +28,9 @@ var debug_allocator = std.heap.DebugAllocator(.{
 }).init;
 
 pub fn main() !void {
+    try logFn.init("out.log");
+    defer logFn.deinit();
+
     log.info("starting fe", .{});
 
     if (tracy.isConnected())
