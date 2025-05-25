@@ -334,6 +334,9 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     else
         math.Rect(f32).zero;
 
+    const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
+        rect.contains(cu.state.mouse);
+
     var i: usize = 0;
     while (i < cu.state.event_list.len) : (i += 1) {
         const event = &cu.state.event_list.buffer[i];
@@ -341,9 +344,6 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
 
         switch (event.kind) {
             .mouse_button => |button| {
-                const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
-                    rect.contains(cu.state.mouse);
-
                 // mouse down in box -> set box as hot/active -> press event
                 if (atom.flags.contains(.mouse_clickable) and
                     button.state == .pressed and
@@ -424,7 +424,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 cu.state.mouse = pos;
             },
             .scroll => |pt| {
-                if (atom.flags.contains(.view_scroll)) {
+                if (in_bounds and atom.flags.contains(.view_scroll)) {
                     inter.scroll.x += pt.x;
                     inter.scroll.y += pt.y;
                     event.consumed = true;
