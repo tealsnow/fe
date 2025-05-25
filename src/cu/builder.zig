@@ -450,6 +450,18 @@ pub const ctx_menu = struct {
         anchor_key: Atom.Key,
         anchor_offset: math.Point(f32),
     ) void {
+        if (cu.state.ctx_menu_open and cu.state.ctx_menu_key == key) {
+
+            // ctx_menu_changed = true
+            // ctx_menu_open_t = 0
+            cu.state.next_ctx_menu_anchor_key = anchor_key;
+            cu.state.ctx_menu_anchor_offset = anchor_offset;
+            // ctx_menu_touched_this_frame = true
+            // ctx_menu_anchor_atom_last_pos = .zero
+
+            return;
+        }
+
         cu.state.next_ctx_menu_open = true;
 
         // ctx_menu_changed = true

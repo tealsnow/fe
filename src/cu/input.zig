@@ -471,8 +471,8 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         }
     }
 
-    // close context menu if pressed out side of
-    if (!ctx_menu_is_ancestor and inter.anyPressed()) {
+    // close context menu if clicked out side of
+    if (!ctx_menu_is_ancestor and inter.anyClicked()) {
         cu.builder.ctx_menu.closeMenu();
     }
 

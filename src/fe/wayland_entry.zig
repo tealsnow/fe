@@ -366,11 +366,6 @@ fn buildTopbar(
         }
 
         if (inter.clicked()) {
-            // @FIXME: I would like clicking this again to close the menu
-            //   but currently it just closes it for a single frame
-            //
-            //   press -> cu/input.zig -> close ctx menu -> release -> click
-            //   -> this -> open ctx menu
             b.ctx_menu.openMenu(
                 item.key,
                 item.key,
