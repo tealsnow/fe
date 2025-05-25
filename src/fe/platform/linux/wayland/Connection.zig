@@ -7,6 +7,7 @@ const log = std.log.scoped(.@"wayland.connection");
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
 const wp = @import("wayland").client.wp;
+const zwp = @import("wayland").client.zwp;
 
 const xkb = @import("xkbcommon");
 
@@ -28,6 +29,8 @@ wl_compositor: *wl.Compositor,
 wl_shm: *wl.Shm,
 wl_seat: *wl.Seat,
 wl_output: *wl.Output,
+
+pointer_gestures: PointerGestures,
 
 event_queue: *events.EventQueue,
 
@@ -98,6 +101,12 @@ pub fn init(gpa: Allocator) !*Connection {
         log.err("failed to get wl_output", .{});
         return error.wl;
     };
+
+    const zwp_pointer_gestures =
+        wl_registry_listener_data.zwp_pointer_gestures orelse {
+            log.err("failed to get zwp_pointer_gestures", .{});
+            return error.wl;
+        };
 
     //- output
     var wl_output_listener_data = listeners.WlOutputListenerData.empty;
@@ -181,6 +190,15 @@ pub fn init(gpa: Allocator) !*Connection {
         wl_pointer_listener_data,
     );
 
+    //- pointer gestures
+
+    const pointer_gestures = try PointerGestures.init(
+        gpa,
+        zwp_pointer_gestures,
+        wl_pointer,
+        event_queue,
+    );
+
     //- xdp
     log.debug("xdp: opening xdg-desktop-portal settings proxy", .{});
     const xdp_settings = try xdp.XdpSettings.init();
@@ -229,8 +247,8 @@ pub fn init(gpa: Allocator) !*Connection {
 
     if (wl_display.roundtrip() != .SUCCESS) return error.wl;
 
-    const con = try gpa.create(Connection);
-    con.* = .{
+    const conn = try gpa.create(Connection);
+    conn.* = .{
         .wl_display = wl_display,
 
         .wl_registry_listener_data = wl_registry_listener_data,
@@ -240,6 +258,8 @@ pub fn init(gpa: Allocator) !*Connection {
         .wl_shm = wl_shm,
         .wl_seat = wl_seat,
         .wl_output = wl_output,
+
+        .pointer_gestures = pointer_gestures,
 
         .event_queue = event_queue,
 
@@ -260,7 +280,7 @@ pub fn init(gpa: Allocator) !*Connection {
 
         .cursor_size = cursor_size,
     };
-    return con;
+    return conn;
 }
 
 pub fn deinit(conn: *Connection, gpa: Allocator) void {
@@ -275,6 +295,8 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
     defer conn.wl_shm.destroy();
     defer conn.wl_seat.destroy();
     defer conn.wl_output.destroy();
+
+    defer conn.pointer_gestures.deinit(gpa);
 
     defer gpa.destroy(conn.event_queue);
 
@@ -342,3 +364,61 @@ pub fn getEnvVarOwned(allocator: Allocator, key: []const u8) GetEnvVarOwnedError
             error.InvalidWtf8 => return error.InvalidWtf8,
         };
 }
+
+pub const PointerGestures = struct {
+    zwp_pointer_gestures: *zwp.PointerGesturesV1,
+    swipe: *zwp.PointerGestureSwipeV1,
+    pinch: *zwp.PointerGesturePinchV1,
+    hold: *zwp.PointerGestureHoldV1,
+    listener_data: *listeners.WlPointerGesturesListenerData,
+
+    pub fn init(
+        gpa: Allocator,
+        zwp_pointer_gestures: *zwp.PointerGesturesV1,
+        wl_pointer: *wl.Pointer,
+        event_queue: *events.EventQueue,
+    ) !PointerGestures {
+        const swipe =
+            try zwp_pointer_gestures.getSwipeGesture(wl_pointer);
+        const pinch =
+            try zwp_pointer_gestures.getPinchGesture(wl_pointer);
+        const hold =
+            try zwp_pointer_gestures.getHoldGesture(wl_pointer);
+
+        const listener_data = try gpa.create(listeners.WlPointerGesturesListenerData);
+        errdefer gpa.destroy(listener_data);
+        listener_data.* = .{ .event_queue = event_queue };
+
+        swipe.setListener(
+            *listeners.WlPointerGesturesListenerData,
+            listeners.wlPointerGesturesSwipeListener,
+            listener_data,
+        );
+        pinch.setListener(
+            *listeners.WlPointerGesturesListenerData,
+            listeners.wlPointerGesturesPinchListener,
+            listener_data,
+        );
+        hold.setListener(
+            *listeners.WlPointerGesturesListenerData,
+            listeners.wlPointerGesturesHoldListener,
+            listener_data,
+        );
+
+        return .{
+            .zwp_pointer_gestures = zwp_pointer_gestures,
+            .swipe = swipe,
+            .pinch = pinch,
+            .hold = hold,
+            .listener_data = listener_data,
+        };
+    }
+
+    pub fn deinit(self: PointerGestures, gpa: Allocator) void {
+        defer self.swipe.destroy();
+        defer self.pinch.destroy();
+        defer self.hold.destroy();
+        defer gpa.destroy(self.listener_data);
+        defer self.zwp_pointer_gestures.destroy();
+    }
+};

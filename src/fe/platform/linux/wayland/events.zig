@@ -35,6 +35,10 @@ pub const Event = struct {
         pointer_motion: PointerMotion,
         pointer_button: PointerButton,
         pointer_scroll: PointerScroll,
+
+        pointer_gesture_swipe: PointerGestureSwipe,
+        pointer_gesture_pinch: PointerGesturePinch,
+        pointer_gesture_hold: PointerGestureHold,
     };
 
     pub const PressState = enum {
@@ -184,6 +188,68 @@ pub const Event = struct {
         finger,
         continuous,
         wheel_tilt,
+    };
+
+    pub const PointerGestureSwipe = union(enum) {
+        begin: Begin,
+        update: Update,
+        end: End,
+
+        pub const Begin = struct {
+            serial: u32,
+            surface: ?*wl.Surface,
+            fingers: u32,
+        };
+
+        pub const Update = struct {
+            dx: f64,
+            dy: f64,
+        };
+
+        pub const End = struct {
+            serial: u32,
+            cancelled: bool,
+        };
+    };
+
+    pub const PointerGesturePinch = union(enum) {
+        begin: Begin,
+        update: Update,
+        end: End,
+
+        pub const Begin = struct {
+            serial: u32,
+            surface: ?*wl.Surface,
+            fingers: u32,
+        };
+
+        pub const Update = struct {
+            dx: f64,
+            dy: f64,
+            scale: f64,
+            rotation: f64, // cw
+        };
+
+        pub const End = struct {
+            serial: u32,
+            cancelled: bool,
+        };
+    };
+
+    pub const PointerGestureHold = union(enum) {
+        begin: Begin,
+        end: End,
+
+        pub const Begin = struct {
+            serial: u32,
+            surface: ?*wl.Surface,
+            fingers: u32,
+        };
+
+        pub const End = struct {
+            serial: u32,
+            cancelled: bool,
+        };
     };
 };
 

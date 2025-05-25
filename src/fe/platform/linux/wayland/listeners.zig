@@ -6,6 +6,7 @@ const log = std.log.scoped(.@"wayland.listeners");
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
 const wp = @import("wayland").client.wp;
+const zwp = @import("wayland").client.zwp;
 
 const xkb = @import("xkbcommon");
 
@@ -25,6 +26,7 @@ pub const WlRegistryListenerData = struct {
     wl_seat: ?*wl.Seat,
     xdg_wm_base: ?*xdg.WmBase,
     wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
+    zwp_pointer_gestures: ?*zwp.PointerGesturesV1,
 
     pub const empty = WlRegistryListenerData{
         .wl_compositor = null,
@@ -33,6 +35,7 @@ pub const WlRegistryListenerData = struct {
         .wl_seat = null,
         .xdg_wm_base = null,
         .wp_cursor_shape_manager = null,
+        .zwp_pointer_gestures = null,
     };
 };
 
@@ -54,6 +57,8 @@ pub fn wlRegistryListener(
         .{ global.interface, global.version, global.name },
     );
 
+    var bound = false;
+
     // wl_compositor
     if (mem.orderZ(
         u8,
@@ -66,7 +71,7 @@ pub fn wlRegistryListener(
             5,
         ) catch @panic("could not bind wayland compositor");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
     // wl_shm
     else if (mem.orderZ(
@@ -80,7 +85,7 @@ pub fn wlRegistryListener(
             2,
         ) catch @panic("could not bind wayland shared memory");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
     // wl_output
     else if (mem.orderZ(
@@ -94,7 +99,7 @@ pub fn wlRegistryListener(
             4,
         ) catch @panic("could not bind wayland output");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
     // wl_seat
     else if (mem.orderZ(
@@ -108,7 +113,7 @@ pub fn wlRegistryListener(
             8,
         ) catch @panic("could not bind wayland seat");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
     // xdg_wm_base
     else if (mem.orderZ(
@@ -122,9 +127,9 @@ pub fn wlRegistryListener(
             6,
         ) catch @panic("could not bind xdg wm_base");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
-    // wp_cursor_shape_manager
+    // wp_cursor_shape_manager_v1
     else if (mem.orderZ(
         u8,
         global.interface,
@@ -136,8 +141,25 @@ pub fn wlRegistryListener(
             1,
         ) catch @panic("could not bind wp cursor_shape_manager");
 
-        log.debug("bound interface: '{s}'", .{global.interface});
+        bound = true;
     }
+    // zwp_pointer_gestures_v1
+    else if (mem.orderZ(
+        u8,
+        global.interface,
+        zwp.PointerGesturesV1.interface.name,
+    ) == .eq) {
+        data.zwp_pointer_gestures = registry.bind(
+            global.name,
+            zwp.PointerGesturesV1,
+            3,
+        ) catch @panic("cound not bind zwp pointer_gestures");
+
+        bound = true;
+    }
+
+    if (bound)
+        log.debug("bound interface: '{s}'", .{global.interface});
 }
 
 //= wl output
@@ -892,6 +914,120 @@ pub fn wlPointerListener(
                 data.scroll_value120 = null;
                 data.scroll_stop = false;
             }
+        },
+    }
+}
+
+pub const WlPointerGesturesListenerData = struct {
+    event_queue: *EventQueue,
+};
+
+pub fn wlPointerGesturesSwipeListener(
+    wl_pointer_gesture_swipe: *zwp.PointerGestureSwipeV1,
+    event: zwp.PointerGestureSwipeV1.Event,
+    data: *WlPointerGesturesListenerData,
+) void {
+    _ = wl_pointer_gesture_swipe;
+
+    switch (event) {
+        .begin => |begin| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_swipe = .{ .begin = .{
+                    .serial = begin.serial,
+                    .surface = begin.surface,
+                    .fingers = begin.fingers,
+                } } },
+                .time = begin.time,
+            });
+        },
+        .update => |update| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_swipe = .{ .update = .{
+                    .dx = update.dx.toDouble(),
+                    .dy = update.dy.toDouble(),
+                } } },
+                .time = update.time,
+            });
+        },
+        .end => |end| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_swipe = .{ .end = .{
+                    .serial = end.serial,
+                    .cancelled = if (end.cancelled == 0) false else true,
+                } } },
+                .time = end.time,
+            });
+        },
+    }
+}
+
+pub fn wlPointerGesturesPinchListener(
+    wl_pointer_gesture_pinch: *zwp.PointerGesturePinchV1,
+    event: zwp.PointerGesturePinchV1.Event,
+    data: *WlPointerGesturesListenerData,
+) void {
+    _ = wl_pointer_gesture_pinch;
+
+    switch (event) {
+        .begin => |begin| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_pinch = .{ .begin = .{
+                    .serial = begin.serial,
+                    .surface = begin.surface,
+                    .fingers = begin.fingers,
+                } } },
+                .time = begin.time,
+            });
+        },
+        .update => |update| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_pinch = .{ .update = .{
+                    .dx = update.dx.toDouble(),
+                    .dy = update.dy.toDouble(),
+                    .scale = update.scale.toDouble(),
+                    .rotation = update.rotation.toDouble(),
+                } } },
+                .time = update.time,
+            });
+        },
+        .end => |end| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_pinch = .{ .end = .{
+                    .serial = end.serial,
+                    .cancelled = if (end.cancelled == 0) false else true,
+                } } },
+                .time = end.time,
+            });
+        },
+    }
+}
+
+pub fn wlPointerGesturesHoldListener(
+    wl_pointer_gesture_hold: *zwp.PointerGestureHoldV1,
+    event: zwp.PointerGestureHoldV1.Event,
+    data: *WlPointerGesturesListenerData,
+) void {
+    _ = wl_pointer_gesture_hold;
+
+    switch (event) {
+        .begin => |begin| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_hold = .{ .begin = .{
+                    .serial = begin.serial,
+                    .surface = begin.surface,
+                    .fingers = begin.fingers,
+                } } },
+                .time = begin.time,
+            });
+        },
+        .end => |end| {
+            data.event_queue.queue(.{
+                .kind = .{ .pointer_gesture_hold = .{ .end = .{
+                    .serial = end.serial,
+                    .cancelled = if (end.cancelled == 0) false else true,
+                } } },
+                .time = end.time,
+            });
         },
     }
 }

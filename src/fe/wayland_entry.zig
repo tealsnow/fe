@@ -259,6 +259,61 @@ pub fn entry(gpa: Allocator) !void {
                         .point(@floatCast(value), 0),
                 });
             },
+
+            .pointer_gesture_swipe => |swipe| switch (swipe) {
+                .begin => |begin| {
+                    log.debug(
+                        "pointer gesture swipe: begin: serial: {d}, fingers: {d}",
+                        .{ begin.serial, begin.fingers },
+                    );
+                },
+                .update => |update| {
+                    log.debug(
+                        "pointer gesture swipe: update: dx: {d}, dy: {d}",
+                        .{ update.dx, update.dy },
+                    );
+                },
+                .end => |end| {
+                    log.debug(
+                        "pointer gesture swipe: end: serial: {d}, cancelled: {}",
+                        .{ end.serial, end.cancelled },
+                    );
+                },
+            },
+            .pointer_gesture_pinch => |pinch| switch (pinch) {
+                .begin => |begin| {
+                    log.debug(
+                        "pointer gesture pinch: begin: serial: {d}, fingers: {d}",
+                        .{ begin.serial, begin.fingers },
+                    );
+                },
+                .update => |update| {
+                    log.debug(
+                        "pointer gesture pinch: update: dx: {d}, dy: {d}, scale: {d}, rotation: {d}",
+                        .{ update.dx, update.dy, update.scale, update.rotation },
+                    );
+                },
+                .end => |end| {
+                    log.debug(
+                        "pointer gesture pinch: end: serial: {d}, cancelled: {}",
+                        .{ end.serial, end.cancelled },
+                    );
+                },
+            },
+            .pointer_gesture_hold => |hold| switch (hold) {
+                .begin => |begin| {
+                    log.debug(
+                        "pointer gesture hold: begin: serial: {d}, fingers: {d}",
+                        .{ begin.serial, begin.fingers },
+                    );
+                },
+                .end => |end| {
+                    log.debug(
+                        "pointer gesture hold: end: serial: {d}, cancelled: {}",
+                        .{ end.serial, end.cancelled },
+                    );
+                },
+            },
         };
 
         if (!do_render) continue :main_loop;
