@@ -12,7 +12,10 @@ const Event = @import("events.zig").Event;
 const Connection = @import("Connection.zig");
 const listeners = @import("listeners.zig");
 
+pub const WindowId = enum(u32) { _ };
+
 conn: *Connection,
+id: WindowId,
 
 wl_surface: *wl.Surface,
 wl_frame_callback_listener_data: listeners.WlFrameCallbackListenerData,
@@ -40,24 +43,30 @@ pub fn init(
     const wl_frame_callback = try wl_surface.frame();
 
     const window = try gpa.create(Window);
+
+    const id: WindowId = @enumFromInt(conn.window_list.items.len);
+    try conn.window_list.append(gpa, window);
+    try conn.surface_to_window_map.put(gpa, wl_surface, window);
+
     window.* = .{
         .conn = conn,
+        .id = id,
 
         .wl_surface = wl_surface,
         .wl_frame_callback_listener_data = .{
             .event_queue = conn.event_queue,
-            .wl_surface = wl_surface,
+            .window = window,
         },
 
         .xdg_surface_listener_data = .{
             .event_queue = conn.event_queue,
-            .window = window,
+            .window_id = id,
         },
         .xdg_surface = xdg_surface,
 
         .xdg_toplevel_listener_data = .{
             .event_queue = conn.event_queue,
-            .window = window,
+            .window_id = id,
         },
         .xdg_toplevel = xdg_toplevel,
 
@@ -233,6 +242,17 @@ pub fn handleToplevelConfigureEvent(
 
         break :blk new_size;
     } else null;
+}
+
+pub fn setupFrameCallback(window: *const Window) void {
+    const cb = window.wl_surface.frame() catch
+        @panic("failed to contine frame callbacks");
+
+    cb.setListener(
+        *const listeners.WlFrameCallbackListenerData,
+        listeners.wlFrameCallbackListener,
+        &window.wl_frame_callback_listener_data,
+    );
 }
 
 pub fn computeOuterSize(

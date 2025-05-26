@@ -64,7 +64,7 @@ pub const InitParams = struct {
     inspect: InspectOptions,
 };
 
-pub fn init(gpa: Allocator, params: InitParams) !Renderer {
+pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
     const adapter, const surface = try createAdapaterAndSurface(
         params.surface_descriptor,
         params.inspect.instance,
@@ -198,7 +198,8 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
     const batch_processor = try gpa.create(BatchProcessor);
     batch_processor.* = try .init(font_manager, params.initial_surface_size);
 
-    return .{
+    const renderer = try gpa.create(Renderer);
+    renderer.* = .{
         .surface = surface,
         .surface_format = surface_format,
         .device = device,
@@ -221,9 +222,12 @@ pub fn init(gpa: Allocator, params: InitParams) !Renderer {
         .font_manager = font_manager,
         .batch_processor = batch_processor,
     };
+    return renderer;
 }
 
-pub fn deinit(renderer: Renderer, gpa: Allocator) void {
+pub fn deinit(renderer: *Renderer, gpa: Allocator) void {
+    defer gpa.destroy(renderer);
+
     defer renderer.surface.release();
     defer renderer.surface.unconfigure();
     defer renderer.queue.release();
@@ -934,16 +938,18 @@ pub const CuCallbacks = struct {
         renderer: *const Renderer,
         gpa: Allocator,
         cursor_size_px: f32,
-    ) !CuCallbacks {
-        return .{
+    ) !*CuCallbacks {
+        const cb = try gpa.create(CuCallbacks);
+        cb.* = .{
             .renderer = renderer,
             .gpa = gpa,
             .cursor_size_px = cursor_size_px,
         };
+        return cb;
     }
 
-    pub fn deinit(cb: CuCallbacks) void {
-        _ = cb;
+    pub fn deinit(cb: *CuCallbacks) void {
+        cb.gpa.destroy(cb);
     }
 
     pub fn callbacks(cb: *CuCallbacks) cu.State.Callbacks {

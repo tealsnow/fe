@@ -14,8 +14,8 @@ pub const std_options = std.Options{
     .logFn = logFn.logFn,
     .log_level = @enumFromInt(@intFromEnum(build_options.log_level)),
     .log_scope_levels = &.{
-        // .{ .scope = .@"wayland.listeners", .level = .info },
-        // .{ .scope = .@"wayland.connection", .level = .info },
+        .{ .scope = .@"wayland.listeners", .level = .info },
+        .{ .scope = .@"wayland.connection", .level = .info },
         .{ .scope = .WgpuRenderer, .level = .info },
     },
 };

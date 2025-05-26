@@ -5,6 +5,7 @@ const xdg = @import("wayland").client.xdg;
 const xkb = @import("xkbcommon");
 
 const Window = @import("Window.zig");
+const WindowId = Window.WindowId;
 
 const mt = @import("cu").math;
 
@@ -24,7 +25,7 @@ pub const Event = struct {
         // popup_done: PopupDone,
         // popup_repositioned: PopupRepositioned,
 
-        frame: void,
+        frame: Frame,
 
         keyboard_focus: KeyboardFocus,
         key: Key,
@@ -57,12 +58,12 @@ pub const Event = struct {
     };
 
     pub const SurfaceConfigure = struct {
-        window: *Window,
         serial: u32,
+        window_id: WindowId,
     };
 
     pub const ToplevelConfigure = struct {
-        window: *Window,
+        window_id: WindowId,
         size: ?mt.Size(u32),
         state: ToplevelConfigureState,
     };
@@ -89,7 +90,7 @@ pub const Event = struct {
     };
 
     pub const ToplevelClose = struct {
-        window: *Window,
+        window_id: WindowId,
     };
 
     // pub const PopupConfigure = struct {
@@ -103,23 +104,27 @@ pub const Event = struct {
     //     token: u32,
     // };
 
+    pub const Frame = struct {
+        window_id: WindowId,
+    };
+
     pub const KeyboardFocus = struct {
-        state: FocusState,
         serial: u32,
-        wl_surface: ?*wl.Surface,
+        window_id: WindowId,
+        state: FocusState,
     };
 
     pub const Key = struct {
+        serial: u32,
         state: PressState,
         scancode: u32,
         keysym: xkb.Keysym,
         codepoint: u21, // may be 0
-        serial: u32,
     };
 
     pub const Modifier = struct {
-        state: ModifierState,
         serial: u32,
+        state: ModifierState,
     };
 
     pub const Text = struct {
@@ -145,9 +150,9 @@ pub const Event = struct {
     };
 
     pub const PointerFocus = struct {
-        state: FocusState,
         serial: u32,
-        wl_surface: ?*wl.Surface,
+        window_id: WindowId,
+        state: FocusState,
     };
 
     pub const PointerMotion = struct {

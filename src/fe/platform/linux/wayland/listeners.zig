@@ -12,10 +12,13 @@ const xkb = @import("xkbcommon");
 
 const Size = @import("cu").math.Size;
 
+const Connection = @import("Connection.zig");
+
 const EventQueue = @import("events.zig").EventQueue;
 const Event = @import("events.zig").Event;
 
 const Window = @import("Window.zig");
+const WindowId = Window.WindowId;
 
 //= wl registry
 
@@ -257,7 +260,7 @@ pub fn xdgWmBaseListener(
 
 pub const XdgSurfaceListenerData = struct {
     event_queue: *EventQueue,
-    window: *Window,
+    window_id: WindowId,
 };
 
 pub fn xdgSurfaceListener(
@@ -271,19 +274,17 @@ pub fn xdgSurfaceListener(
         .configure => |configure| configure,
     };
 
-    data.event_queue.queue(.{ .kind = .{
-        .surface_configure = .{
-            .window = data.window,
-            .serial = configure.serial,
-        },
-    } });
+    data.event_queue.queue(.{ .kind = .{ .surface_configure = .{
+        .serial = configure.serial,
+        .window_id = data.window_id,
+    } } });
 }
 
 //= xdg toplevel
 
 pub const XdgToplevelListenerData = struct {
     event_queue: *EventQueue,
-    window: *Window,
+    window_id: WindowId,
 };
 
 pub fn xdgToplevelListener(
@@ -327,20 +328,16 @@ pub fn xdgToplevelListener(
                     state.suspended = true;
             }
 
-            data.event_queue.queue(.{ .kind = .{
-                .toplevel_configure = .{
-                    .window = data.window,
-                    .size = size,
-                    .state = state,
-                },
-            } });
+            data.event_queue.queue(.{ .kind = .{ .toplevel_configure = .{
+                .window_id = data.window_id,
+                .size = size,
+                .state = state,
+            } } });
         },
         .close => {
-            data.event_queue.queue(.{ .kind = .{
-                .toplevel_close = .{
-                    .window = data.window,
-                },
-            } });
+            data.event_queue.queue(.{ .kind = .{ .toplevel_close = .{
+                .window_id = data.window_id,
+            } } });
         },
         .configure_bounds => |configure_bounds| {
             // informs the client of the bounds we exist in
@@ -401,29 +398,21 @@ pub fn xdgToplevelListener(
 
 pub const WlFrameCallbackListenerData = struct {
     event_queue: *EventQueue,
-
-    wl_surface: *wl.Surface,
+    window: *Window,
 };
 
 pub fn wlFrameCallbackListener(
     callback: *wl.Callback,
     event: wl.Callback.Event,
-    data: *WlFrameCallbackListenerData,
+    data: *const WlFrameCallbackListenerData,
 ) void {
     assert(event == .done);
 
-    data.event_queue.queue(.{ .kind = .{ .frame = void{} } });
+    data.event_queue.queue(.{ .kind = .{ .frame = .{
+        .window_id = data.window.id,
+    } } });
 
-    // setup a new callback
-    // each callback is only valid once
     callback.destroy();
-    const new_callback = data.wl_surface.frame() catch
-        @panic("failed to contine frame callbacks");
-    new_callback.setListener(
-        *WlFrameCallbackListenerData,
-        wlFrameCallbackListener,
-        data,
-    );
 }
 
 //= wl seat
@@ -471,12 +460,18 @@ pub fn wlSeatListener(
 
 pub const WlKeyboardListenerData = struct {
     event_queue: *EventQueue,
+    surface_to_window_map: *const std.AutoArrayHashMapUnmanaged(
+        *wl.Surface,
+        *Window,
+    ),
 
     xkb_context: *xkb.Context,
     xkb_keymap: ?*xkb.Keymap = null,
     xkb_state: ?*xkb.State = null,
 
     modifier_indices: XkbModifierIndices = undefined,
+
+    focused_window: ?*Window = null,
 };
 
 pub const XkbModifierIndices = struct {
@@ -534,13 +529,19 @@ pub fn wlKeyboardListener(
             };
         },
         .enter => |enter| {
-            data.event_queue.queue(.{ .kind = .{
-                .keyboard_focus = .{
-                    .state = .enter,
-                    .serial = enter.serial,
-                    .wl_surface = enter.surface,
-                },
-            } });
+            const surface = enter.surface orelse
+                @panic("no surface for enter event");
+            const window =
+                data.surface_to_window_map.get(surface) orelse
+                @panic("surface has no window");
+
+            data.focused_window = window;
+
+            data.event_queue.queue(.{ .kind = .{ .keyboard_focus = .{
+                .serial = enter.serial,
+                .window_id = window.id,
+                .state = .enter,
+            } } });
 
             const keys = enter.keys.slice(u32);
             for (keys) |key| {
@@ -549,25 +550,29 @@ pub fn wlKeyboardListener(
                 const keysym = xkb_state.keyGetOneSym(scancode);
                 const codepoint: u21 = @intCast(xkb_state.keyGetUtf32(scancode));
 
-                data.event_queue.queue(.{ .kind = .{
-                    .key = .{
-                        .state = .pressed,
-                        .scancode = scancode,
-                        .keysym = keysym,
-                        .codepoint = codepoint,
-                        .serial = enter.serial,
-                    },
-                } });
+                data.event_queue.queue(.{ .kind = .{ .key = .{
+                    .serial = enter.serial,
+                    .state = .pressed,
+                    .scancode = scancode,
+                    .keysym = keysym,
+                    .codepoint = codepoint,
+                } } });
             }
         },
         .leave => |leave| {
-            data.event_queue.queue(.{ .kind = .{
-                .keyboard_focus = .{
-                    .state = .leave,
-                    .serial = leave.serial,
-                    .wl_surface = leave.surface,
-                },
-            } });
+            const focused_window = data.focused_window orelse
+                @panic("leave event when no surface focused");
+            data.focused_window = null;
+
+            const surface = leave.surface orelse
+                @panic("no surface for leave event");
+            assert(focused_window.wl_surface == surface);
+
+            data.event_queue.queue(.{ .kind = .{ .keyboard_focus = .{
+                .serial = leave.serial,
+                .window_id = focused_window.id,
+                .state = .leave,
+            } } });
         },
         .key => |key| {
             const xkb_state = data.xkb_state.?;
@@ -582,15 +587,13 @@ pub fn wlKeyboardListener(
             };
 
             data.event_queue.queue(.{
-                .kind = .{
-                    .key = .{
-                        .state = state,
-                        .scancode = scancode,
-                        .keysym = keysym,
-                        .codepoint = codepoint,
-                        .serial = key.serial,
-                    },
-                },
+                .kind = .{ .key = .{
+                    .serial = key.serial,
+                    .state = state,
+                    .scancode = scancode,
+                    .keysym = keysym,
+                    .codepoint = codepoint,
+                } },
                 .time = key.time,
             });
 
@@ -612,12 +615,10 @@ pub fn wlKeyboardListener(
 
                 if (utf8) |text| {
                     data.event_queue.queue(.{
-                        .kind = .{
-                            .text = .{
-                                .codepoint = codepoint,
-                                .utf8 = text,
-                            },
-                        },
+                        .kind = .{ .text = .{
+                            .codepoint = codepoint,
+                            .utf8 = text,
+                        } },
                         .time = key.time,
                     });
                 }
@@ -666,8 +667,8 @@ pub fn wlKeyboardListener(
 
             data.event_queue.queue(.{ .kind = .{
                 .modifier = .{
-                    .state = mod_state,
                     .serial = modifiers.serial,
+                    .state = mod_state,
                 },
             } });
         },
@@ -691,6 +692,10 @@ pub fn wlKeyboardListener(
 
 pub const WlPointerListenerData = struct {
     event_queue: *EventQueue,
+    surface_to_window_map: *const std.AutoArrayHashMapUnmanaged(
+        *wl.Surface,
+        *Window,
+    ),
 
     time: ?u32 = null,
     focus: ?Event.PointerFocus = null,
@@ -702,6 +707,8 @@ pub const WlPointerListenerData = struct {
     scroll_value: ?f64 = null,
     scroll_value120: ?f64 = null,
     scroll_stop: bool = false,
+
+    focused_window: ?*Window = null,
 };
 
 // https://github.com/torvalds/linux/blob/e618ee89561b6b0fdc69f79e6fd0c33375d3e6b4/include/uapi/linux/input-event-codes.h#L355
@@ -730,17 +737,32 @@ pub fn wlPointerListener(
                 },
             };
 
+            const surface = enter.surface orelse
+                @panic("no surface for enter event");
+            const window = data.surface_to_window_map.get(surface) orelse
+                @panic("surface has no window");
+
+            data.focused_window = window;
+
             data.focus = .{
-                .state = .enter,
                 .serial = enter.serial,
-                .wl_surface = enter.surface,
+                .window_id = window.id,
+                .state = .enter,
             };
         },
         .leave => |leave| {
+            const focused_window = data.focused_window orelse
+                @panic("leave event when no surface focused");
+            data.focused_window = null;
+
+            const surface = leave.surface orelse
+                @panic("no surface for leave event");
+            assert(focused_window.wl_surface == surface);
+
             data.focus = .{
-                .state = .leave,
                 .serial = leave.serial,
-                .wl_surface = leave.surface,
+                .window_id = focused_window.id,
+                .state = .leave,
             };
         },
         .motion => |motion| {

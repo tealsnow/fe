@@ -30,108 +30,41 @@ pub fn entry(gpa: Allocator) !void {
     const conn = try wl.Connection.init(gpa);
     defer conn.deinit(gpa);
 
-    const window = try wl.Window.init(
-        gpa,
-        conn,
-        .{ .width = 1024, .height = 576 },
-    );
-    defer window.deinit(gpa);
-    window.setTitle("fe");
-    window.setAppId("me.ketanr.fe");
-    window.inset = 15;
-    window.setMinSize(.size(200, 100));
+    var window_list = WindowList.empty;
+    defer window_list.deinit(gpa);
 
-    //- wpgu
+    const main_window = try Window.init(gpa, conn, .size(1024, 576), "fe");
+    defer main_window.deinit(gpa);
+    try window_list.pushWindow(gpa, main_window);
 
-    var renderer = try WgpuRenderer.init(gpa, .{
-        .surface_descriptor = //
-        WgpuRenderer.wgpu.surfaceDescriptorFromWaylandSurface(.{
-            .label = "wayland surface",
-            .display = conn.wl_display,
-            .surface = window.wl_surface,
-        }),
-        .initial_surface_size = window.size,
-        .inspect = .{
-            // .instance = gpa,
-            // .adapter = gpa,
-            // .device = gpa,
-            // .surface = true,
-        },
-    });
-    defer renderer.deinit(gpa);
-
-    log.info("display dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
-    const dpi = mt.Size(u16).size(
-        @intFromFloat(@round(conn.hdpi)),
-        @intFromFloat(@round(conn.vdpi)),
-    );
-
-    //- font loading
-    const def_font_path = try getFontFromFamilyName(gpa, "sans");
-    defer gpa.free(def_font_path);
-    const mono_font_path = try getFontFromFamilyName(gpa, "mono");
-    defer gpa.free(mono_font_path);
-
-    log.debug("default font path (sans): {s}", .{def_font_path});
-    log.debug("mono font path (mono): {s}", .{mono_font_path});
-
-    const font_size = 10;
-    const def_font_face = try renderer
-        .font_manager
-        .initFontFace(gpa, def_font_path, 0, font_size, dpi);
-    const mono_font_face = try renderer
-        .font_manager
-        .initFontFace(gpa, mono_font_path, 0, font_size, dpi);
-
-    //- cu
-
-    var cu_callbacks = try WgpuRenderer.CuCallbacks.init(
-        &renderer,
-        gpa,
-        @floatFromInt(conn.cursor_size),
-    );
-    defer cu_callbacks.deinit();
-
-    const ui_state = try cu.State.init(gpa, cu_callbacks.callbacks());
-    defer ui_state.deinit();
-
-    cu.state = ui_state;
-
-    const default_font =
-        ui_state.registerFont(@alignCast(@ptrCast(def_font_face)));
-
-    const mono_font =
-        ui_state.registerFont(@alignCast(@ptrCast(mono_font_face)));
-
-    ui_state.default_palette = .init(.{
-        .background = .hexRgb(0x1d2021), // gruvbox bg0
-        .text = .hexRgb(0xebdbb2), // gruvbox fg1
-        .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
-        .border = .hexRgb(0x3c3836), // gruvbox bg1
-        .hot = .hexRgb(0x665c54), // grovbox bg3
-        .active = .hexRgb(0xfbf1c7), // grovbox fg0
-    });
-    ui_state.default_font = default_font;
+    const test_window = try Window.init(gpa, conn, .size(800, 600), "fe test");
+    defer test_window.deinit(gpa);
+    try window_list.pushWindow(gpa, test_window);
 
     //- arena
 
     var arena_alloc = std.heap.ArenaAllocator.init(gpa);
     defer arena_alloc.deinit();
-    var tracing_arena_alloc = tracy.TracingAllocator.initNamed("arena", arena_alloc.allocator());
+    var tracing_arena_alloc =
+        tracy.TracingAllocator.initNamed("arena", arena_alloc.allocator());
     const arena = tracing_arena_alloc.allocator();
 
     //- main loop
 
+    var focus_window_keyboard: ?*Window = null;
+    var focus_window_pointer: ?*Window = null;
+
     var state = State{
-        .window = window,
+        .window = main_window,
         .window_rounding = 10,
         .arena = arena,
-
-        .mono_font = mono_font,
     };
 
     log.info("starting main loop", .{});
-    window.commit();
+
+    for (window_list.slice()) |win| {
+        win.wl_window.commit();
+    }
 
     init_trace.end();
 
@@ -143,32 +76,33 @@ pub fn entry(gpa: Allocator) !void {
             tracing_arena_alloc.discard();
         }
 
-        try conn.dispatch();
+        cu.state = undefined;
 
-        var do_render = false;
+        try conn.dispatch();
 
         while (conn.event_queue.dequeue()) |event| switch (event.kind) {
             .surface_configure => |configure| {
-                window.handleSurfaceConfigureEvent(configure);
-                do_render = true;
+                const win = window_list.getWindow(configure.window_id);
+                win.wl_window.handleSurfaceConfigureEvent(configure);
+
+                win.present_frame = true;
             },
-
             .toplevel_configure => |conf| conf: {
-                do_render = true;
-
+                const win = window_list.getWindow(conf.window_id);
                 const size =
-                    window.handleToplevelConfigureEvent(conf) orelse
+                    win.wl_window.handleToplevelConfigureEvent(conf) orelse
                     // null means no resize
                     break :conf;
 
-                renderer.reconfigure(size);
+                win.renderer.reconfigure(size);
 
-                cu.state.window_size = .size(
+                win.cu_state.window_size = .size(
                     @floatFromInt(size.width),
                     @floatFromInt(size.height),
                 );
-            },
 
+                win.present_frame = true;
+            },
             .toplevel_close => |close| {
                 _ = close;
 
@@ -176,20 +110,24 @@ pub fn entry(gpa: Allocator) !void {
                 // std.process.exit(0);
                 break :main_loop;
             },
+            .frame => |frame| {
+                const win = window_list.getWindow(frame.window_id);
+                // re-setup a callback, every callback is only valid once
+                win.wl_window.setupFrameCallback();
 
-            .frame => {
-                // the compositor has told us this is a good time to render
-                // useful for animations or just rendering every time
-
-                do_render = true;
+                win.present_frame = true;
             },
 
             .keyboard_focus => |focus| {
-                _ = focus;
+                switch (focus.state) {
+                    .enter => focus_window_keyboard =
+                        window_list.getWindow(focus.window_id),
+                    .leave => focus_window_keyboard = null,
+                }
             },
-
             .key => |key| key: {
-                cu.state.pushEvent(.{ .key = .{
+                const win = focus_window_keyboard.?;
+                win.cu_state.pushEvent(.{ .key = .{
                     .scancode = @intCast(key.scancode),
                     .keycode = .unknown,
                     .mod = .{},
@@ -207,9 +145,9 @@ pub fn entry(gpa: Allocator) !void {
                     else => {},
                 }
             },
-
             .modifier => |mods| {
-                cu.state.pushEvent(.{ .key = .{
+                const win = focus_window_keyboard.?;
+                win.cu_state.pushEvent(.{ .key = .{
                     .scancode = 0,
                     .keycode = .unknown,
                     .mod = .{
@@ -220,23 +158,35 @@ pub fn entry(gpa: Allocator) !void {
                     .state = .none,
                 } });
             },
-
             .text => |text| {
-                cu.state.pushEvent(.{
+                const win = focus_window_keyboard.?;
+                win.cu_state.pushEvent(.{
                     .text = text.slice(),
                 });
             },
 
             .pointer_focus => |focus| {
-                _ = focus;
+                switch (focus.state) {
+                    .enter => focus_window_pointer =
+                        window_list.getWindow(focus.window_id),
+                    .leave => {
+                        focus_window_pointer.?.cu_state.mouse = .splat(-1);
+                        focus_window_pointer.?.cu_state.pushEvent(.{
+                            .mouse_move = .inf,
+                        });
+                        focus_window_pointer = null;
+                    },
+                }
             },
             .pointer_motion => |motion| {
-                cu.state.pushEvent(.{
+                const win = focus_window_pointer.?;
+                win.cu_state.pushEvent(.{
                     .mouse_move = motion.point.floatCast(f32),
                 });
             },
             .pointer_button => |button| {
-                cu.state.pushEvent(.{ .mouse_button = .{
+                const win = focus_window_pointer.?;
+                win.cu_state.pushEvent(.{ .mouse_button = .{
                     .button = switch (button.button) {
                         .left => .left,
                         .middle => .middle,
@@ -251,8 +201,9 @@ pub fn entry(gpa: Allocator) !void {
                 } });
             },
             .pointer_scroll => |scroll| scroll: {
+                const win = focus_window_pointer.?;
                 const value = scroll.value orelse break :scroll;
-                cu.state.pushEvent(.{
+                win.cu_state.pushEvent(.{
                     .scroll = if (scroll.axis == .vertical)
                         .point(0, @floatCast(value))
                     else
@@ -316,74 +267,136 @@ pub fn entry(gpa: Allocator) !void {
             },
         };
 
-        if (!do_render) continue :main_loop;
+        if (main_window.present_frame) {
+            const frame_trace =
+                tracy.startDiscontinuousFrame("main window render");
+            defer frame_trace.end();
 
-        const frame_trace = tracy.startDiscontinuousFrame("render frame");
-        defer frame_trace.end();
+            main_window.present_frame = false;
 
-        b.startFrame();
-        defer b.endFrame();
+            buildWindowUI(main_window, &state);
 
-        b.startBuild(@intFromPtr(window));
-        cu.state.ui_root.layout_axis = .y;
-        cu.state.ui_root.flags.insert(.draw_background);
-        cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
-
-        //- window inset
-        {
-            const window_rounding = 10;
-
-            const tiling = window.tiling;
-            b.stacks.flags.push(flags: {
-                var flags = cu.AtomFlags.draw_background;
-
-                if (!tiling.isTiled()) {
-                    flags.insert(.draw_border);
-                    b.stacks.corner_radius.push(window_rounding);
-                } else {
-                    flags.setPresent(.draw_side_top, !tiling.tiled_top);
-                    flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
-                    flags.setPresent(.draw_side_left, !tiling.tiled_left);
-                    flags.setPresent(.draw_side_right, !tiling.tiled_right);
-                }
-
-                break :flags flags;
-            });
-            b.stacks.layout_axis.push(.y);
-            const window_inset_wrapper = WindowInsetWrapper.begin(window);
-            defer window_inset_wrapper.end();
-
-            buildTopbar(&state);
-
-            buildUI(&state);
+            try main_window.renderer.render(state.arena);
+            main_window.renderer.surface.present();
         }
 
-        b.endBuild();
+        if (test_window.present_frame) {
+            const frame_trace =
+                tracy.startDiscontinuousFrame("test window render");
+            defer frame_trace.end();
 
-        try renderer.render(arena);
-        renderer.surface.present();
+            test_window.present_frame = false;
+
+            buildTestWindowUI(test_window);
+
+            try test_window.renderer.render(state.arena);
+            test_window.renderer.surface.present();
+        }
     }
 
     std.process.cleanExit(); // skips defers on release builds
 }
 
+pub fn buildTestWindowUI(window: *Window) void {
+    cu.state = window.cu_state;
+
+    b.startFrame();
+    defer b.endFrame();
+
+    b.startBuild(@intFromPtr(window.wl_window));
+    defer b.endBuild();
+    cu.state.ui_root.layout_axis = .y;
+    cu.state.ui_root.flags.insert(.draw_background);
+    cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
+
+    //- window inset
+    {
+        const window_rounding = 10;
+
+        const tiling = window.wl_window.tiling;
+        b.stacks.flags.push(flags: {
+            var flags = cu.AtomFlags.draw_background;
+
+            if (!tiling.isTiled()) {
+                flags.insert(.draw_border);
+                b.stacks.corner_radius.push(window_rounding);
+            } else {
+                flags.setPresent(.draw_side_top, !tiling.tiled_top);
+                flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
+                flags.setPresent(.draw_side_left, !tiling.tiled_left);
+                flags.setPresent(.draw_side_right, !tiling.tiled_right);
+            }
+
+            break :flags flags;
+        });
+        b.stacks.layout_axis.push(.y);
+        const window_inset_wrapper =
+            WindowInsetWrapper.begin(window.wl_window);
+        defer window_inset_wrapper.end();
+
+        buildTopbar(window.wl_window, window_rounding);
+
+        //
+    }
+}
+
+pub fn buildWindowUI(window: *Window, state: *State) void {
+    cu.state = window.cu_state;
+
+    b.startFrame();
+    defer b.endFrame();
+
+    b.startBuild(@intFromPtr(window.wl_window));
+    defer b.endBuild();
+    cu.state.ui_root.layout_axis = .y;
+    cu.state.ui_root.flags.insert(.draw_background);
+    cu.state.ui_root.palette.set(.background, .hexRgba(0xffffff00));
+
+    //- window inset
+    {
+        const window_rounding = state.window_rounding;
+
+        const tiling = window.wl_window.tiling;
+        b.stacks.flags.push(flags: {
+            var flags = cu.AtomFlags.draw_background;
+
+            if (!tiling.isTiled()) {
+                flags.insert(.draw_border);
+                b.stacks.corner_radius.push(window_rounding);
+            } else {
+                flags.setPresent(.draw_side_top, !tiling.tiled_top);
+                flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
+                flags.setPresent(.draw_side_left, !tiling.tiled_left);
+                flags.setPresent(.draw_side_right, !tiling.tiled_right);
+            }
+
+            break :flags flags;
+        });
+        b.stacks.layout_axis.push(.y);
+        const window_inset_wrapper =
+            WindowInsetWrapper.begin(window.wl_window);
+        defer window_inset_wrapper.end();
+
+        buildTopbar(window.wl_window, state.window_rounding);
+
+        buildUI(state);
+    }
+}
+
 const State = struct {
-    window: *wl.Window,
+    window: *Window,
     window_rounding: f32,
     arena: Allocator,
 
-    mono_font: cu.FontId,
-
     test_toggle: bool = false,
-    // scroll_view_item_count: usize = 32,
 
     test_scroll_offset: f32 = 0,
 };
 
 fn buildTopbar(
-    state: *State,
+    window: *wl.Window,
+    rounding: f32,
 ) void {
-    const window = state.window;
     const tiling = window.tiling;
 
     b.stacks.flags.push(.draw_side_bottom);
@@ -394,7 +407,7 @@ fn buildTopbar(
 
     if (!tiling.isTiled()) {
         b.stacks.pref_size
-            .push(.size(.px(state.window_rounding), .grow));
+            .push(.size(.px(rounding), .grow));
         _ = b.spacer();
     }
 
@@ -485,17 +498,17 @@ fn buildTopbar(
         const button = b.openf("top bar button {d}", .{i});
         defer b.close(button);
 
-        const int = button.interaction();
-        if (int.hovering())
+        const inter = button.interaction();
+        if (inter.hovering())
             button.palette.set(.border, .hexRgb(0xFF0000));
 
-        if (int.clicked()) {
+        if (inter.clicked()) {
             switch (i) {
                 0 => window.minimize(),
                 1 => window.toggleMaximized(),
                 2 => window.conn.event_queue.queue(
                     .{ .kind = .{ .toplevel_close = .{
-                        .window = window,
+                        .window_id = window.id,
                     } } },
                 ),
                 else => unreachable,
@@ -504,7 +517,7 @@ fn buildTopbar(
     }
 
     if (!tiling.isTiled()) {
-        b.stacks.pref_size.push(.size(.px(state.window_rounding), .grow));
+        b.stacks.pref_size.push(.size(.px(rounding), .grow));
         _ = b.spacer();
     }
 }
@@ -551,7 +564,7 @@ pub fn buildUI(
 
             _ = b.lineSpacer();
 
-            b.stacks.font.pushForMany(state.mono_font);
+            b.stacks.font.pushForMany(state.window.mono_font);
             defer _ = b.stacks.font.pop();
 
             _ = b.label("This is a set of text");
@@ -670,7 +683,7 @@ pub fn buildUI(
                     const btns = b.open("buttons");
                     defer b.close(btns);
 
-                    b.stacks.font.pushForMany(state.mono_font);
+                    b.stacks.font.pushForMany(state.window.mono_font);
                     defer _ = b.stacks.font.pop();
 
                     b.stacks.pref_size.push(.square(.text_pad(8)));
@@ -915,3 +928,140 @@ fn getFontFromFamilyName(
     const path = try match.getString(.file, 0);
     return try gpa.dupeZ(u8, path);
 }
+
+pub const Window = struct {
+    wl_window: *wl.Window,
+    title: [:0]const u8,
+    renderer: *WgpuRenderer,
+    cu_callbacks: *WgpuRenderer.CuCallbacks,
+    cu_state: *cu.State,
+    default_font: cu.FontId,
+    mono_font: cu.FontId,
+
+    present_frame: bool = false,
+
+    pub fn init(
+        gpa: Allocator,
+        conn: *wl.Connection,
+        initial_size: mt.Size(u32),
+        title: [:0]const u8,
+    ) !*Window {
+        const wl_window = try wl.Window.init(gpa, conn, initial_size);
+        wl_window.setTitle(title);
+        wl_window.setAppId("me.ketanr.fe");
+        wl_window.inset = 15;
+        wl_window.setMinSize(.size(200, 100));
+
+        //- renderer
+
+        var renderer = try WgpuRenderer.init(gpa, .{
+            .surface_descriptor = //
+            WgpuRenderer.wgpu.surfaceDescriptorFromWaylandSurface(.{
+                .label = "wayland surface",
+                .display = conn.wl_display,
+                .surface = wl_window.wl_surface,
+            }),
+            .initial_surface_size = wl_window.size,
+            .inspect = .{
+                // .instance = gpa,
+                // .adapter = gpa,
+                // .device = gpa,
+                // .surface = true,
+            },
+        });
+
+        //- font loading
+
+        // log.info("display dpi: {d}x{d}", .{ conn.hdpi, conn.vdpi });
+        const dpi = mt.Size(u16).size(
+            @intFromFloat(@round(conn.hdpi)),
+            @intFromFloat(@round(conn.vdpi)),
+        );
+
+        const def_font_path = try getFontFromFamilyName(gpa, "sans");
+        defer gpa.free(def_font_path);
+        const mono_font_path = try getFontFromFamilyName(gpa, "mono");
+        defer gpa.free(mono_font_path);
+
+        // log.debug("default font path (sans): {s}", .{def_font_path});
+        // log.debug("mono font path (mono): {s}", .{mono_font_path});
+
+        const font_size = 10;
+        const def_font_face = try renderer
+            .font_manager
+            .initFontFace(gpa, def_font_path, 0, font_size, dpi);
+        const mono_font_face = try renderer
+            .font_manager
+            .initFontFace(gpa, mono_font_path, 0, font_size, dpi);
+
+        //- cu
+
+        const cu_callbacks = try WgpuRenderer.CuCallbacks.init(
+            renderer,
+            gpa,
+            @floatFromInt(conn.cursor_size),
+        );
+
+        const cu_state = try cu.State.init(gpa, cu_callbacks.callbacks());
+
+        const default_font =
+            cu_state.registerFont(@alignCast(@ptrCast(def_font_face)));
+
+        const mono_font =
+            cu_state.registerFont(@alignCast(@ptrCast(mono_font_face)));
+
+        cu_state.default_palette = .init(.{
+            .background = .hexRgb(0x1d2021), // gruvbox bg0
+            .text = .hexRgb(0xebdbb2), // gruvbox fg1
+            .text_weak = .hexRgb(0xbdae93), // gruvbox fg3
+            .border = .hexRgb(0x3c3836), // gruvbox bg1
+            .hot = .hexRgb(0x665c54), // grovbox bg3
+            .active = .hexRgb(0xfbf1c7), // grovbox fg0
+        });
+        cu_state.default_font = default_font;
+
+        //- return
+
+        const window = try gpa.create(Window);
+        window.* = .{
+            .wl_window = wl_window,
+            .title = title,
+            .renderer = renderer,
+            .cu_callbacks = cu_callbacks,
+            .cu_state = cu_state,
+            .default_font = default_font,
+            .mono_font = mono_font,
+        };
+        return window;
+    }
+
+    pub fn deinit(window: *Window, gpa: Allocator) void {
+        window.cu_state.deinit();
+        window.cu_callbacks.deinit();
+        window.renderer.deinit(gpa);
+        window.wl_window.deinit(gpa);
+        gpa.destroy(window);
+    }
+};
+
+const WindowList = struct {
+    map: std.AutoArrayHashMapUnmanaged(wl.Window.WindowId, *Window),
+
+    pub const empty = WindowList{ .map = .empty };
+
+    pub fn deinit(self: *WindowList, gpa: Allocator) void {
+        self.map.deinit(gpa);
+    }
+
+    pub fn pushWindow(self: *WindowList, gpa: Allocator, window: *Window) !void {
+        try self.map.put(gpa, window.wl_window.id, window);
+    }
+
+    pub fn getWindow(self: WindowList, window_id: wl.Window.WindowId) *Window {
+        return self.map.get(window_id) orelse @panic("invalid key");
+    }
+
+    pub fn slice(self: WindowList) []*Window {
+        return self.map.values();
+    }
+};

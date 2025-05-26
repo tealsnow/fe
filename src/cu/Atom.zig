@@ -29,8 +29,6 @@ layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if
 // group_key
 // custom_draw_func
 // custom_draw_data
-
-// @FIXME: these could be scope locals, its worth looking into performance implications first though
 text_align: math.Size(TextAlignment) = .square(.center),
 palette: pallete.Pallete = undefined,
 font: cu.State.FontId = undefined,
@@ -39,7 +37,7 @@ font: cu.State.FontId = undefined,
 border_width: f32 = 1, // draw_border, draw_side_top/bottom/left/right
 corner_radius: f32 = 0, // draw_border, draw_background
 
-// per-build artifacts
+// build artifacts - persistant
 fixed_size: math.Size(f32) = .zero,
 rel_position: math.Point(f32) = .zero,
 rect: math.Rect(f32) = .zero,

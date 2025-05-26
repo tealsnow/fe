@@ -116,6 +116,8 @@ pub fn init(gpa: Allocator, callbacks: Callbacks) !*State {
 }
 
 pub fn deinit(state: *State) void {
+    cu.state = state;
+
     state.atom_map.deinit(state.gpa);
 
     state.arena_allocator.deinit();

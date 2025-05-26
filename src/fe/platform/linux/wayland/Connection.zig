@@ -18,6 +18,9 @@ const xdp = @import("xdg_desktop_portal.zig");
 const CursorManager = @import("cursor_manager.zig").CursorManager;
 const CursorKind = @import("cursor_manager.zig").CursorKind;
 
+const Window = @import("Window.zig");
+const WindowId = Window.WindowId;
+
 //- fields
 
 wl_display: *wl.Display,
@@ -45,6 +48,9 @@ wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
 cursor_manager: CursorManager,
 
 xdg_wm_base: *xdg.WmBase,
+
+window_list: std.ArrayListUnmanaged(*Window) = .empty,
+surface_to_window_map: *std.AutoArrayHashMapUnmanaged(*wl.Surface, *Window),
 
 hdpi: f32,
 vdpi: f32,
@@ -160,11 +166,16 @@ pub fn init(gpa: Allocator) !*Connection {
         return error.wl;
     };
 
+    const surface_to_window_map =
+        try gpa.create(std.AutoArrayHashMapUnmanaged(*wl.Surface, *Window));
+    surface_to_window_map.* = .empty;
+
     const wl_keyboard_listener_data =
         try gpa.create(listeners.WlKeyboardListenerData);
     errdefer gpa.destroy(wl_keyboard_listener_data);
     wl_keyboard_listener_data.* = .{
         .event_queue = event_queue,
+        .surface_to_window_map = surface_to_window_map,
         .xkb_context = xkb_context,
     };
     wl_keyboard.setListener(
@@ -183,6 +194,7 @@ pub fn init(gpa: Allocator) !*Connection {
     errdefer gpa.destroy(wl_pointer_listener_data);
     wl_pointer_listener_data.* = .{
         .event_queue = event_queue,
+        .surface_to_window_map = surface_to_window_map,
     };
     wl_pointer.setListener(
         *listeners.WlPointerListenerData,
@@ -275,6 +287,8 @@ pub fn init(gpa: Allocator) !*Connection {
 
         .xdg_wm_base = xdg_wm_base,
 
+        .surface_to_window_map = surface_to_window_map,
+
         .hdpi = hdpi,
         .vdpi = vdpi,
 
@@ -302,10 +316,10 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
 
     defer conn.xkb_context.unref();
 
+    defer conn.wl_keyboard.destroy();
+    defer gpa.destroy(conn.wl_keyboard_listener_data);
     defer if (conn.wl_keyboard_listener_data.xkb_state) |state| state.unref();
     defer if (conn.wl_keyboard_listener_data.xkb_keymap) |map| map.unref();
-    defer gpa.destroy(conn.wl_keyboard_listener_data);
-    defer conn.wl_keyboard.destroy();
 
     defer gpa.destroy(conn.wl_pointer_listener_data);
     defer conn.wl_pointer.destroy();
@@ -314,6 +328,10 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
     defer conn.cursor_manager.deinit();
 
     defer conn.xdg_wm_base.destroy();
+
+    defer conn.window_list.deinit(gpa);
+    defer gpa.destroy(conn.surface_to_window_map);
+    defer conn.surface_to_window_map.deinit(gpa);
 }
 
 pub fn dispatch(conn: *Connection) !void {
@@ -344,6 +362,10 @@ pub fn dispatch(conn: *Connection) !void {
 pub fn setCursor(conn: Connection, kind: CursorKind) !void {
     return conn.cursor_manager
         .setCursor(conn.last_pointer_focus_enter_serial, kind);
+}
+
+pub fn getWindow(conn: Connection, id: WindowId) *Window {
+    return conn.window_list.items[@intFromEnum(id)];
 }
 
 pub const GetEnvVarOwnedError = error{

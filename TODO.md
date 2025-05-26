@@ -36,7 +36,7 @@
 - [ ] #sdl #wgpu Use wgpu renderer with sdl
     - or maybe we should keep the sdl backend
 
-- [ ] #wl move wayland support into own mod
+- [ ] #wl move wayland support into own module
 
 - [ ] #cu text input
     - required inputs / actions
