@@ -30,8 +30,7 @@
 - [ ] #wgpu texture/image rendering
     - [ ] consider wuffs for image loading (ghostty/pkg)
 - [ ] #wgpu drop shadows
-- [ ] #wgpu avoid reuploading texture every frame
-    - profile first
+- [x] #wgpu avoid reuploading texture every frame
 
 - [ ] #sdl #wgpu Use wgpu renderer with sdl
     - or maybe we should keep the sdl backend

@@ -49,6 +49,11 @@ surface_size: mt.Size(u32),
 font_manager: *FontManager,
 batch_processor: *BatchProcessor,
 
+atlas_texture_cache: std.AutoHashMapUnmanaged(
+    *FontAtlas,
+    RenderPassAtlasTexture,
+) = .empty,
+
 //= methods
 
 pub const InspectOptions = struct {
@@ -250,6 +255,14 @@ pub fn deinit(renderer: *Renderer, gpa: Allocator) void {
 
     defer gpa.destroy(renderer.batch_processor);
     defer renderer.batch_processor.deinit();
+
+    defer renderer.atlas_texture_cache.deinit(gpa);
+    defer {
+        var iter = renderer.atlas_texture_cache.valueIterator();
+        while (iter.next()) |texture| {
+            texture.deinit();
+        }
+    }
 }
 
 fn createAdapaterAndSurface(
@@ -279,10 +292,10 @@ fn createAdapaterAndSurface(
         instance.release();
     }
 
-    var report: wgpu.GlobalReport = undefined;
-    instance.generateReport(&report);
-
     if (instance_report_alloc) |alloc| debug: {
+        var report: wgpu.GlobalReport = undefined;
+        instance.generateReport(&report);
+
         log.info("using backend: {s}", .{@tagName(report.backend_type)});
 
         if (!std.log.logEnabled(.debug, log_scope)) break :debug;
@@ -707,18 +720,23 @@ fn deviceLostCallback(
 // renderer log - only use for err/warn unless testing
 const rlog = std.log.scoped(.@"wgpu render");
 
-pub fn render(renderer: Renderer, arena: Allocator) !void {
+pub const RenderParams = struct {
+    gpa: Allocator,
+    arena: Allocator,
+};
+
+pub fn render(renderer: *Renderer, params: RenderParams) !void {
     const trace =
         tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
     defer trace.end();
 
     const batch_data = try renderer.batch_processor.process(
-        arena,
+        params.arena,
         renderer.surface_size,
     );
 
     var render_pass_data =
-        try arena.alloc(RenderPassData, batch_data.len);
+        try params.arena.alloc(RenderPassData, batch_data.len);
 
     {
         const batch_to_render_pass_trace = tracy.beginZone(
@@ -729,7 +747,7 @@ pub fn render(renderer: Renderer, arena: Allocator) !void {
 
         for (batch_data, 0..) |data, i| {
             render_pass_data[i] =
-                try renderer.batchToRenderPass(data);
+                try renderer.batchToRenderPass(params.gpa, data);
         }
     }
 
@@ -1020,6 +1038,7 @@ pub const RenderPassAtlasTexture = struct {
     view: *wgpu.TextureView,
     sampler: *wgpu.Sampler,
     bind_group: *wgpu.BindGroup,
+    size: mt.Size(u32),
 
     pub fn init(
         device: *wgpu.Device,
@@ -1107,6 +1126,7 @@ pub const RenderPassAtlasTexture = struct {
             .view = texture_view,
             .sampler = texture_sampler,
             .bind_group = bind_group,
+            .size = size,
         };
     }
 
@@ -1165,21 +1185,33 @@ pub const RenderPassData = struct {
 
     pub fn deinit(data: RenderPassData) void {
         data.rect_buffer.deinit();
-        if (data.atlas_texture) |atlas_texture| atlas_texture.deinit();
     }
 };
 
 //= batch data
 
 pub fn batchToRenderPass(
-    renderer: *const Renderer,
+    renderer: *Renderer,
+    gpa: Allocator,
     batch_data: BatchData,
 ) !RenderPassData {
     const atlas_texture = if (batch_data.font_face) |font_face| atlas: {
         const font_atlas =
             renderer.font_manager.getAtlas(font_face);
 
-        const atlas_texture = try RenderPassAtlasTexture.init(
+        if (renderer.atlas_texture_cache.get(font_atlas)) |atlas_texture| {
+            if (std.meta.eql(font_atlas.size, atlas_texture.size)) {
+                // best case senario
+                // already have an atlas that does not need updating
+                break :atlas atlas_texture;
+            } else {
+                // atlas outdated
+                atlas_texture.deinit();
+            }
+        }
+
+        // worst case - need to make/update the atlas
+        const new_texture = try RenderPassAtlasTexture.init(
             renderer.device,
             renderer.queue,
             renderer.atlas_texture_bind_group_layout,
@@ -1187,7 +1219,9 @@ pub fn batchToRenderPass(
             font_atlas.size,
         );
 
-        break :atlas atlas_texture;
+        try renderer.atlas_texture_cache.put(gpa, font_atlas, new_texture);
+
+        break :atlas new_texture;
     } else null;
 
     const rect_buffer = try RenderPassRectBuffer.init(

@@ -276,7 +276,10 @@ pub fn entry(gpa: Allocator) !void {
 
             buildWindowUI(main_window, &state);
 
-            try main_window.renderer.render(state.arena);
+            try main_window.renderer.render(.{
+                .gpa = gpa,
+                .arena = arena,
+            });
             main_window.renderer.surface.present();
         }
 
@@ -289,7 +292,10 @@ pub fn entry(gpa: Allocator) !void {
 
             buildTestWindowUI(test_window);
 
-            try test_window.renderer.render(state.arena);
+            try test_window.renderer.render(.{
+                .gpa = gpa,
+                .arena = arena,
+            });
             test_window.renderer.surface.present();
         }
     }
