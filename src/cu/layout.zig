@@ -8,11 +8,17 @@ const Atom = cu.Atom;
 const math = cu.math;
 const Axis2D = math.Axis2D;
 
+const tracy = @import("tracy");
+
 const TermColor = @import("../TermColor.zig");
 
 const debug_print_atom = false;
 
 pub fn layout(root: *Atom) !void {
+    const trace = tracy.beginZone(@src(), .{ .name = "layout" });
+    defer trace.end();
+    tracy.print("{}", .{root});
+
     sizeText(root);
     for (Axis2D.array) |axis| {
         standalone(root, axis);
@@ -26,13 +32,17 @@ pub fn layout(root: *Atom) !void {
 fn sizeText(root: *Atom) void {
     // any-order
 
+    const trace = tracy.beginZone(@src(), .{ .name = "size text" });
+    defer trace.end();
+    tracy.print("{}", .{root});
+
     if (root.display_string.len != 0) {
         const font_handle = cu.state.getFont(root.font);
         root.text_size = cu.state.callbacks.measureText(root.display_string, font_handle);
     }
 
-    if (root.children) |children| {
-        var maybe_child: ?*Atom = children.first;
+    {
+        var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             sizeText(child);
         }
@@ -41,6 +51,10 @@ fn sizeText(root: *Atom) void {
 
 fn standalone(root: *Atom, axis_kind: Axis2D) void {
     // any-order
+
+    const trace = tracy.beginZone(@src(), .{ .name = "standalone" });
+    defer trace.end();
+    tracy.print("{}", .{root});
 
     const axis = @intFromEnum(axis_kind);
     const size = root.pref_size.arr()[axis];
@@ -57,8 +71,8 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
         else => {},
     }
 
-    if (root.children) |children| {
-        var maybe_child: ?*Atom = children.first;
+    {
+        var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             standalone(child, axis_kind);
         }
@@ -67,6 +81,10 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
 
 fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     // pre-order
+
+    const trace = tracy.beginZone(@src(), .{ .name = "upwards dependent" });
+    defer trace.end();
+    tracy.print("{}", .{root});
 
     const axis = @intFromEnum(axis_kind);
     const size = root.pref_size.arr()[axis];
@@ -82,8 +100,8 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
         else => {},
     }
 
-    if (root.children) |children| {
-        var maybe_child: ?*Atom = children.first;
+    {
+        var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             upwardsDependent(child, axis_kind);
         }
@@ -93,8 +111,12 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
 fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
     // post-order
 
-    if (root.children) |children| {
-        var maybe_child: ?*Atom = children.first;
+    const trace = tracy.beginZone(@src(), .{ .name = "downwards dependent" });
+    defer trace.end();
+    tracy.print("{}", .{root});
+
+    {
+        var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             downwardsDependnt(child, axis_kind);
         }
@@ -105,23 +127,19 @@ fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
 
     switch (size.kind) {
         .children_sum => {
-            if (root.children) |children| {
-                var accum: f32 = 0;
-                var maybe_child: ?*Atom = children.first;
-                while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-                    if (!floatingForAxis(child.flags, axis_kind)) {
-                        if (axis_kind == root.layout_axis) {
-                            accum += child.fixed_size.arr()[axis];
-                        } else {
-                            accum = @max(accum, child.fixed_size.arr()[axis]);
-                        }
+            var accum: f32 = 0;
+            var maybe_child = root.children.first;
+            while (maybe_child) |child| : (maybe_child = child.siblings.next) {
+                if (!floatingForAxis(child.flags, axis_kind)) {
+                    if (axis_kind == root.layout_axis) {
+                        accum += child.fixed_size.arr()[axis];
+                    } else {
+                        accum = @max(accum, child.fixed_size.arr()[axis]);
                     }
                 }
-
-                root.fixed_size.arr()[axis] = accum;
-            } else {
-                root.fixed_size.arr()[axis] = 0;
             }
+
+            root.fixed_size.arr()[axis] = accum;
         },
         else => {},
     }
@@ -140,8 +158,12 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 
     // pre-order
 
-    if (root.children == null) return;
-    const children = root.children.?;
+    const trace = tracy.beginZone(@src(), .{ .name = "solve violations" });
+    defer trace.end();
+    tracy.print("{}", .{root});
+
+    if (root.children.count == 0) return;
+    const first_child = root.children.first;
     debugAssert(root.layout_axis != .none, "Cannot have no layout axis with children: {}", .{root});
 
     const axis = @intFromEnum(axis_kind);
@@ -155,7 +177,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
     // non-layout axis
     if (root.layout_axis != axis_kind and !allow_overflow) {
         const allowed_size = root.fixed_size.arr()[axis];
-        var maybe_child: ?*Atom = children.first;
+        var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             if (!floatingForAxis(child.flags, axis_kind)) {
                 const child_size = child.fixed_size.arr()[axis];
@@ -176,7 +198,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         // scope bc andrew refuses adding a proper c-style for loop
         // prevent 'maybe_child' from poisening the scope
         {
-            var maybe_child: ?*Atom = children.first;
+            var maybe_child = first_child;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                 if (!floatingForAxis(child.flags, axis_kind)) {
                     total_size += child.fixed_size.arr()[axis];
@@ -190,10 +212,10 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         if (violation > 0) {
             // figure out how much we can take in total
             // var child_fixup_sum: f32 = 0;
-            const child_fixups = cu.state.arena.alloc(f32, children.count) catch @panic("oom");
+            const child_fixups = cu.state.arena.alloc(f32, root.children.count) catch @panic("oom");
             {
                 var child_idx: usize = 0;
-                var maybe_child: ?*Atom = children.first;
+                var maybe_child = first_child;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                     if (!floatingForAxis(child.flags, axis_kind)) {
                         var fixup_size_this_child = child.fixed_size.arr()[axis] * (1 - child.pref_size.arr()[axis].strictness);
@@ -208,7 +230,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             // fixup child sizes
             {
                 var child_idx: usize = 0;
-                var maybe_child: ?*Atom = children.first;
+                var maybe_child = first_child;
                 while (maybe_child) |child| : (maybe_child = child.siblings.next) {
                     if (!floatingForAxis(child.flags, axis_kind)) {
                         var fixup_pct = (violation / total_weighted_size);
@@ -223,7 +245,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 
     // fix upwards depentent sizes
     if (allow_overflow) {
-        var maybe_child: ?*Atom = children.first;
+        var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             const pref_size = child.pref_size.arr()[axis];
             switch (pref_size.kind) {
@@ -237,7 +259,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 
     // recurse
     {
-        var maybe_child: ?*Atom = children.first;
+        var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             solveViolations(child, axis_kind);
         }
@@ -246,6 +268,10 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 
 fn position(root: *Atom, axis_kind: Axis2D) void {
     // pre-order
+
+    const trace = tracy.beginZone(@src(), .{ .name = "position" });
+    defer trace.end();
+    tracy.print("{}", .{root});
 
     const axis = @intFromEnum(axis_kind);
 
@@ -283,13 +309,13 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
         root.text_rect.p1.y = @floor(root.text_rect.p1.y);
     }
 
-    if (root.children == null) return;
-    const children = root.children.?;
+    if (root.children.count == 0) return;
+    const first_child = root.children.first;
 
     var bounds: f32 = 0;
     {
         var layout_position: f32 = 0;
-        var maybe_child: ?*Atom = children.first;
+        var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             // // grab original position
             // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
@@ -325,7 +351,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
 
     // recurse
     {
-        var maybe_child: ?*Atom = children.first;
+        var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             position(child, axis_kind);
         }

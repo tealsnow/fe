@@ -27,6 +27,8 @@ const shader_code = @embedFile("rect.wgsl");
 
 //= fields
 
+gpa: Allocator,
+
 surface: *wgpu.Surface,
 surface_format: wgpu.TextureFormat,
 device: *wgpu.Device,
@@ -205,6 +207,8 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
 
     const renderer = try gpa.create(Renderer);
     renderer.* = .{
+        .gpa = gpa,
+
         .surface = surface,
         .surface_format = surface_format,
         .device = device,
@@ -230,7 +234,9 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
     return renderer;
 }
 
-pub fn deinit(renderer: *Renderer, gpa: Allocator) void {
+pub fn deinit(renderer: *Renderer) void {
+    const gpa = renderer.gpa;
+
     defer gpa.destroy(renderer);
 
     defer renderer.surface.release();
@@ -720,23 +726,18 @@ fn deviceLostCallback(
 // renderer log - only use for err/warn unless testing
 const rlog = std.log.scoped(.@"wgpu render");
 
-pub const RenderParams = struct {
-    gpa: Allocator,
-    arena: Allocator,
-};
-
-pub fn render(renderer: *Renderer, params: RenderParams) !void {
+pub fn render(renderer: *Renderer, arena: Allocator) !void {
     const trace =
         tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
     defer trace.end();
 
     const batch_data = try renderer.batch_processor.process(
-        params.arena,
+        arena,
         renderer.surface_size,
     );
 
     var render_pass_data =
-        try params.arena.alloc(RenderPassData, batch_data.len);
+        try arena.alloc(RenderPassData, batch_data.len);
 
     {
         const batch_to_render_pass_trace = tracy.beginZone(
@@ -747,7 +748,7 @@ pub fn render(renderer: *Renderer, params: RenderParams) !void {
 
         for (batch_data, 0..) |data, i| {
             render_pass_data[i] =
-                try renderer.batchToRenderPass(params.gpa, data);
+                try renderer.batchToRenderPass(data);
         }
     }
 
@@ -949,25 +950,22 @@ const UniformData = extern struct {
 
 pub const CuCallbacks = struct {
     renderer: *const Renderer,
-    gpa: Allocator,
     cursor_size_px: f32,
 
     pub fn init(
         renderer: *const Renderer,
-        gpa: Allocator,
         cursor_size_px: f32,
     ) !*CuCallbacks {
-        const cb = try gpa.create(CuCallbacks);
+        const cb = try renderer.gpa.create(CuCallbacks);
         cb.* = .{
             .renderer = renderer,
-            .gpa = gpa,
             .cursor_size_px = cursor_size_px,
         };
         return cb;
     }
 
     pub fn deinit(cb: *CuCallbacks) void {
-        cb.gpa.destroy(cb);
+        cb.renderer.gpa.destroy(cb);
     }
 
     pub fn callbacks(cb: *CuCallbacks) cu.State.Callbacks {
@@ -996,7 +994,7 @@ pub const CuCallbacks = struct {
             .shape(font_face, font_atlas, text) catch
             @panic("failed to shape text");
 
-        const size = shaped.calculateSize(cb.gpa) catch @panic("oom");
+        const size = shaped.calculateSize(cb.renderer.gpa) catch @panic("oom");
         return .size(size.width, size.height);
     }
 
@@ -1038,7 +1036,6 @@ pub const RenderPassAtlasTexture = struct {
     view: *wgpu.TextureView,
     sampler: *wgpu.Sampler,
     bind_group: *wgpu.BindGroup,
-    size: mt.Size(u32),
 
     pub fn init(
         device: *wgpu.Device,
@@ -1126,7 +1123,6 @@ pub const RenderPassAtlasTexture = struct {
             .view = texture_view,
             .sampler = texture_sampler,
             .bind_group = bind_group,
-            .size = size,
         };
     }
 
@@ -1192,7 +1188,6 @@ pub const RenderPassData = struct {
 
 pub fn batchToRenderPass(
     renderer: *Renderer,
-    gpa: Allocator,
     batch_data: BatchData,
 ) !RenderPassData {
     const atlas_texture = if (batch_data.font_face) |font_face| atlas: {
@@ -1200,17 +1195,17 @@ pub fn batchToRenderPass(
             renderer.font_manager.getAtlas(font_face);
 
         if (renderer.atlas_texture_cache.get(font_atlas)) |atlas_texture| {
-            if (std.meta.eql(font_atlas.size, atlas_texture.size)) {
+            if (!font_atlas.modified) {
                 // best case senario
                 // already have an atlas that does not need updating
                 break :atlas atlas_texture;
             } else {
-                // atlas outdated
+                // texture outdated
                 atlas_texture.deinit();
             }
         }
 
-        // worst case - need to make/update the atlas
+        // worst case - need to make/update the texture
         const new_texture = try RenderPassAtlasTexture.init(
             renderer.device,
             renderer.queue,
@@ -1218,8 +1213,9 @@ pub fn batchToRenderPass(
             font_atlas.bytes.ptr,
             font_atlas.size,
         );
+        font_atlas.modified = false;
 
-        try renderer.atlas_texture_cache.put(gpa, font_atlas, new_texture);
+        try renderer.atlas_texture_cache.put(renderer.gpa, font_atlas, new_texture);
 
         break :atlas new_texture;
     } else null;

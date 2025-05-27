@@ -7,11 +7,11 @@ const math = cu.math;
 const builder = cu.builder;
 
 // per-build links
-children: ?struct {
-    first: *Atom,
-    last: *Atom,
-    count: u32,
-} = null,
+children: struct {
+    first: ?*Atom = null,
+    last: ?*Atom = null,
+    count: u32 = 0,
+} = .{},
 siblings: struct {
     next: ?*Atom = null,
     prev: ?*Atom = null,

@@ -139,7 +139,7 @@ pub fn endBuild() void {
 
     //- layout
     {
-        const trace = tracy.beginZone(@src(), .{ .name = "layout" });
+        const trace = tracy.beginZone(@src(), .{ .name = "build layout" });
         defer trace.end();
 
         cu.layout(root) catch @panic("oom");
@@ -203,9 +203,8 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     }
 
     // zero out per build info
-    atom.children = null;
-    atom.siblings.next = null;
-    atom.siblings.prev = null;
+    atom.children = .{};
+    atom.siblings = .{};
     atom.parent = null;
 
     atom.string = "";
@@ -246,25 +245,30 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
     return atom;
 }
 
-pub fn addToTopParent(atom: *Atom) void {
-    const parent = cu.state.atom_parent_stack.top() orelse return;
+pub fn addChildToParent(parent: *Atom, child: *Atom) void {
+    child.parent = parent;
 
-    atom.parent = parent;
+    if (parent.children.count != 0) {
+        const last = parent.children.last.?;
+        last.siblings.next = child;
+        last.siblings.prev = null;
+        child.siblings.prev = last;
+        child.siblings.next = null;
+        parent.children.last = child;
 
-    if (parent.children) |*children| {
-        const last = children.last;
-        last.siblings.next = atom;
-        atom.siblings.prev = last;
-        children.last = atom;
-
-        children.count += 1;
+        parent.children.count += 1;
     } else {
         parent.children = .{
-            .first = atom,
-            .last = atom,
+            .first = child,
+            .last = child,
             .count = 1,
         };
     }
+}
+
+pub fn addToTopParent(atom: *Atom) void {
+    const parent = cu.state.atom_parent_stack.top() orelse return;
+    addChildToParent(parent, atom);
 }
 
 pub fn buildFromString(string: []const u8) *Atom {
@@ -488,11 +492,12 @@ pub const ctx_menu = struct {
         if (!is_open)
             return null;
 
-        pushParent(cu.state.ui_ctx_menu_root);
         stacks.flags.push(.floating);
         stacks.pref_size.push(.square(.fit));
         stacks.layout_axis.push(.y);
+        cu.state.next_atom_orphan = true;
         const sub_root = open("ctx menu sub root");
+        addChildToParent(cu.state.ui_ctx_menu_root, sub_root);
 
         if (cu.state.next_ctx_menu_anchor_key != .nil) {
             const anchor_atom =
@@ -510,7 +515,6 @@ pub const ctx_menu = struct {
 
     pub fn end(atom: *Atom) void {
         close(atom);
-        close(cu.state.ui_ctx_menu_root);
     }
 };
 

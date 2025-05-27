@@ -27,6 +27,15 @@ var debug_allocator = std.heap.DebugAllocator(.{
     // .backing_allocator_zeroes = false,
 }).init;
 
+pub const panic = std.debug.FullPanic(panicimpl);
+
+pub fn panicimpl(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    _ = first_trace_addr;
+    log.err("panic: {s}", .{msg});
+    logFn.deinit();
+    std.process.exit(1);
+}
+
 pub fn main() !void {
     try logFn.init("out.log");
     defer logFn.deinit();
@@ -55,7 +64,7 @@ pub fn main() !void {
 
     const entry = switch (build_options.entry_point) {
         .sdl => @import("sdl_entry.zig").entry,
-        .wayland => @import("wayland_entry.zig").entry,
+        .wayland => @import("wayland_entry.zig").entryPoint,
     };
 
     try entry(gpa);

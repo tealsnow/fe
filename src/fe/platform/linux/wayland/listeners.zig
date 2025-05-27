@@ -564,9 +564,10 @@ pub fn wlKeyboardListener(
                 @panic("leave event when no surface focused");
             data.focused_window = null;
 
-            const surface = leave.surface orelse
-                @panic("no surface for leave event");
-            assert(focused_window.wl_surface == surface);
+            // window might have been closed, thus no surface present
+            if (leave.surface) |surface| {
+                assert(focused_window.wl_surface == surface);
+            }
 
             data.event_queue.queue(.{ .kind = .{ .keyboard_focus = .{
                 .serial = leave.serial,
@@ -755,9 +756,10 @@ pub fn wlPointerListener(
                 @panic("leave event when no surface focused");
             data.focused_window = null;
 
-            const surface = leave.surface orelse
-                @panic("no surface for leave event");
-            assert(focused_window.wl_surface == surface);
+            // window might have been closed, thus no surface given
+            if (leave.surface) |surface| {
+                assert(focused_window.wl_surface == surface);
+            }
 
             data.focus = .{
                 .serial = leave.serial,

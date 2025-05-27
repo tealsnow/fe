@@ -25,6 +25,8 @@ face: *const FontFace,
 
 glyph_map: std.AutoHashMapUnmanaged(GlyphIndex, GlyphInfo) = .empty,
 
+modified: bool = false,
+
 //= types
 
 /// Index into font for a specific glyph
@@ -69,6 +71,8 @@ pub fn getInfoOrCacheForGlyphIndex(
     glyph_index: GlyphIndex,
 ) !GlyphInfo {
     if (atlas.glyph_map.get(glyph_index)) |info| return info;
+
+    atlas.modified = true;
 
     const ft_face = atlas.face.ft_face;
 

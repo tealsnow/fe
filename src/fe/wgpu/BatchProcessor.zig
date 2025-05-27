@@ -249,8 +249,8 @@ fn processAtom(
         );
     }
 
-    if (atom.children) |children| {
-        var maybe_child: ?*cu.Atom = children.first;
+    {
+        var maybe_child = atom.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
             try self.processAtom(arena, child);
         }
