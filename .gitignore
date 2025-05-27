@@ -4,3 +4,4 @@ zig-out
 .zed
 .vscode
 out.log
+.envrc.local
