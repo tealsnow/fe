@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const TermColor = @import("TermColor.zig");
 
@@ -14,11 +15,9 @@ var state: State = undefined;
 
 pub fn init(log_file_name: []const u8) !void {
     const cwd = std.fs.cwd();
-    const file = try cwd.openFile(log_file_name, .{ .mode = .write_only });
+    const file = try cwd.createFile(log_file_name, .{});
 
-    state = .{
-        .file = file,
-    };
+    state = .{ .file = file };
 }
 
 pub fn deinit() void {
@@ -125,6 +124,57 @@ pub fn logFnRuntime(
             break :file;
         };
     }
+}
+
+pub fn writeStackTrace(start_addr: ?usize) void {
+    if (builtin.strip_debug_info) {
+        logFn(.err, ._, "Unable to dump stack trace: debug info stripped", .{});
+        return;
+    }
+
+    const debug_info = std.debug.getSelfDebugInfo() catch |err| {
+        logFn(
+            .err,
+            ._,
+            "Unable to dump stack trace: Unable to open debug info: {s}\n",
+            .{@errorName(err)},
+        );
+        return;
+    };
+
+    const stderr = std.io.getStdErr();
+    const stderr_writer = stderr.writer();
+
+    std.debug.writeCurrentStackTrace(
+        stderr_writer,
+        debug_info,
+        std.io.tty.detectConfig(stderr),
+        start_addr,
+    ) catch |err| {
+        logFn(
+            .err,
+            ._,
+            "Unable to dump stack trace: {s}\n",
+            .{@errorName(err)},
+        );
+        return;
+    };
+
+    const file_writer = state.file.writer();
+    std.debug.writeCurrentStackTrace(
+        file_writer,
+        debug_info,
+        .no_color,
+        start_addr,
+    ) catch |err| {
+        logFn(
+            .err,
+            ._,
+            "Unable to dump stack trace to file: {s}\n",
+            .{@errorName(err)},
+        );
+        return;
+    };
 }
 
 /// Represents a date and time with timezone offset

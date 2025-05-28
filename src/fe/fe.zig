@@ -29,15 +29,16 @@ var debug_allocator = std.heap.DebugAllocator(.{
 
 pub const panic = std.debug.FullPanic(panicimpl);
 
-pub fn panicimpl(msg: []const u8, first_trace_addr: ?usize) noreturn {
-    _ = first_trace_addr;
+pub fn panicimpl(msg: []const u8, start_addr: ?usize) noreturn {
     log.err("panic: {s}", .{msg});
+    logFn.writeStackTrace(start_addr);
     logFn.deinit();
     @breakpoint();
     std.process.exit(1);
 }
 
 pub fn main() !void {
+    std.debug.attachSegfaultHandler();
     try logFn.init("out.log");
     defer logFn.deinit();
 
