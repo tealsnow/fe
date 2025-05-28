@@ -875,7 +875,7 @@ fn buildTopbar(
             item.flags.insert(.draw_border);
         }
 
-        if (inter.clicked()) {
+        if (inter.clicked() or (cu.state.ctx_menu_open and inter.hovering())) {
             b.ctx_menu.openMenu(
                 item.key,
                 item.key,
