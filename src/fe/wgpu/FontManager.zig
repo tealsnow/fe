@@ -13,9 +13,11 @@ const FontAtlas = @import("FontAtlas.zig");
 ft_lib: *ft.Library,
 atlas_map: std.AutoHashMapUnmanaged(*const FontFace, *FontAtlas) = .empty,
 
-pub fn init() !FontManager {
+pub fn init(gpa: Allocator) !*FontManager {
     const ft_lib = try ft.Library.init();
-    return .{ .ft_lib = ft_lib };
+    const self = try gpa.create(FontManager);
+    self.* = .{ .ft_lib = ft_lib };
+    return self;
 }
 
 pub fn deinit(self: *FontManager, gpa: Allocator) void {
@@ -33,6 +35,8 @@ pub fn deinit(self: *FontManager, gpa: Allocator) void {
     self.atlas_map.deinit(gpa);
 
     self.ft_lib.deinit();
+
+    gpa.destroy(self);
 }
 
 pub fn initFontFace(

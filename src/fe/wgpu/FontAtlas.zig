@@ -63,6 +63,7 @@ pub fn init(face: *const FontFace) !FontAtlas {
 pub fn deinit(atlas: *FontAtlas, gpa: Allocator) void {
     gpa.free(atlas.bytes);
     atlas.glyph_map.deinit(gpa);
+    atlas.* = undefined;
 }
 
 pub fn getInfoOrCacheForGlyphIndex(

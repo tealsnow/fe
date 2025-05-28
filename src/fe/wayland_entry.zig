@@ -46,19 +46,22 @@ pub fn entryPoint(gpa: Allocator) !void {
     const mono_font_path = try getFontFromFamilyName(gpa, "mono");
     defer gpa.free(mono_font_path);
 
-    var main_window_state = MainWindow{
+    var app_state = AppState{
         .action_queue = &action_queue,
         .window_rounding = 10,
         .arena = arena,
     };
 
+    var test_window_state = TestWindow{ .app = &app_state };
+    var panel_window_state = PanelWindow{ .app = &app_state };
+
     _ = try Window.init(
         &window_list,
         .{
-            .title = "Fe",
+            .title = "Test",
             .app_id = "me.ketanr.fe",
             .initial_size = .size(1024, 576),
-            .interface = main_window_state.windowInterface(),
+            .interface = test_window_state.windowInterface(),
 
             .font_size = 10,
             .fonts = &.{
@@ -68,18 +71,13 @@ pub fn entryPoint(gpa: Allocator) !void {
         },
     );
 
-    var test_window_state = TestWindow{
-        .action_queue = &action_queue,
-        .window_rounding = 10,
-    };
-
     _ = try Window.init(
         &window_list,
         .{
-            .title = "Test",
+            .title = "Fe",
             .app_id = "me.ketanr.fe",
             .initial_size = .size(800, 600),
-            .interface = test_window_state.windowInterface(),
+            .interface = panel_window_state.windowInterface(),
 
             .font_size = 10,
             .fonts = &.{
@@ -203,10 +201,9 @@ pub fn entryPoint(gpa: Allocator) !void {
                     .enter => focus_window_pointer =
                         window_list.getWindow(focus.window_id),
                     .leave => {
-                        focus_window_pointer.?.cu_state.mouse = .splat(-1);
-                        focus_window_pointer.?.cu_state.pushEvent(.{
-                            .mouse_move = .inf,
-                        });
+                        if (focus_window_pointer) |win|
+                            win.cu_state.pushEvent(.{ .mouse_move = .inf });
+
                         focus_window_pointer = null;
                     },
                 }
@@ -300,6 +297,19 @@ pub fn entryPoint(gpa: Allocator) !void {
             },
         };
 
+        while (action_queue.dequeue()) |action| switch (action) {
+            .quit => break :main_loop,
+            .close_window => |id| {
+                const window = window_list.getWindow(id);
+                if (focus_window_pointer == window)
+                    focus_window_pointer = null;
+                if (focus_window_keyboard == window)
+                    focus_window_keyboard = null;
+
+                window_list.closeWindow(id);
+            },
+        };
+
         for (window_list.slice()) |window| {
             if (!window.present_frame) continue;
 
@@ -315,11 +325,6 @@ pub fn entryPoint(gpa: Allocator) !void {
             try window.renderer.render(arena);
             window.renderer.surface.present();
         }
-
-        while (action_queue.dequeue()) |action| switch (action) {
-            .quit => break :main_loop,
-            .close_window => |id| window_list.closeWindow(id),
-        };
 
         if (window_list.slice().len == 0)
             break :main_loop;
@@ -337,12 +342,116 @@ pub const Action = union(enum) {
 
 pub const ActionQueue = EventQueueCircleBuffer(32, Action);
 
+//= App state
+
+pub const AppState = struct {
+    action_queue: *ActionQueue,
+    window_rounding: f32,
+    arena: Allocator,
+};
+
+//= panel window
+
+pub const PanelWindow = struct {
+    app: *AppState,
+
+    window: *Window = undefined,
+
+    pub fn windowInterface(self: *PanelWindow) Window.Interface {
+        return .{
+            .context = @ptrCast(self),
+            .vtable = &.{
+                .build = vtable.build,
+            },
+        };
+    }
+
+    pub const vtable = struct {
+        fn build(ctx: *anyopaque, window: *Window) void {
+            const state: *PanelWindow = @ptrCast(@alignCast(ctx));
+            state.window = window;
+            state.build();
+        }
+    };
+
+    const titlebar_buttons = struct {
+        const MenuBar = MenuBarButtons(*PanelWindow);
+
+        pub fn menuBar(state: *PanelWindow) MenuBar {
+            return .{
+                .context = state,
+                .buttons = &buttons,
+            };
+        }
+
+        pub const buttons = [_]MenuBar.Button{
+            panel.button,
+        };
+
+        pub const panel = struct {
+            pub const button = MenuBar.Button{
+                .name = "Panel",
+                .items = &.{
+                    .{ .name = "close", .action = close },
+                    .{ .name = "quit", .action = quit },
+                },
+            };
+
+            pub fn close(state: *PanelWindow) void {
+                state.app.action_queue.queue(.{
+                    .close_window = state.window.wl_window.id,
+                });
+            }
+
+            pub fn quit(state: *PanelWindow) void {
+                state.app.action_queue.queue(.quit);
+            }
+        };
+    };
+
+    fn build(state: *PanelWindow) void {
+        const tiling = state.window.wl_window.tiling;
+        b.stacks.flags.push(flags: {
+            var flags = cu.AtomFlags.draw_background;
+
+            if (!tiling.isTiled()) {
+                flags.insert(.draw_border);
+                b.stacks.corner_radius.push(state.app.window_rounding);
+            } else {
+                flags.setPresent(.draw_side_top, !tiling.tiled_top);
+                flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
+                flags.setPresent(.draw_side_left, !tiling.tiled_left);
+                flags.setPresent(.draw_side_right, !tiling.tiled_right);
+            }
+
+            break :flags flags;
+        });
+        b.stacks.layout_axis.push(.y);
+        const window_inset_wrapper =
+            WindowInsetWrapper.begin(state.window.wl_window);
+        defer window_inset_wrapper.end();
+
+        const menu_bar_buttons = titlebar_buttons.menuBar(state);
+
+        buildTopbar(
+            state.window.wl_window,
+            state.app.window_rounding,
+            *PanelWindow,
+            menu_bar_buttons,
+        );
+
+        // b.stacks.pref_size.push(.square(.text_pad(8)));
+        // _ = b.labelf("pointer: {d}", .{cu.state.mouse});
+    }
+};
+
 //= test window
 
 pub const TestWindow = struct {
-    action_queue: *ActionQueue,
-    window_rounding: f32,
-    // arena: Allocator,
+    app: *AppState,
+
+    test_toggle: bool = false,
+    test_scroll_offset: f32 = 0,
 
     window: *Window = undefined,
 
@@ -363,110 +472,8 @@ pub const TestWindow = struct {
         }
     };
 
-    const titlebar_buttons = struct {
-        const MenuBar = MenuBarButtons(*TestWindow);
-
-        pub fn menuBar(state: *TestWindow) MenuBar {
-            return .{
-                .context = state,
-                .buttons = &buttons,
-            };
-        }
-
-        pub const buttons = [_]MenuBar.Button{
-            test_.button,
-        };
-
-        pub const test_ = struct {
-            pub const button = MenuBar.Button{
-                .name = "Test",
-                .items = &.{
-                    .{ .name = "close", .action = close },
-                    .{ .name = "quit", .action = quit },
-                },
-            };
-
-            pub fn close(state: *TestWindow) void {
-                state.action_queue.queue(.{
-                    .close_window = state.window.wl_window.id,
-                });
-            }
-
-            pub fn quit(state: *TestWindow) void {
-                state.action_queue.queue(.quit);
-            }
-        };
-    };
-
     fn build(state: *TestWindow) void {
-        const window_rounding = 10;
-
-        const tiling = state.window.wl_window.tiling;
-        b.stacks.flags.push(flags: {
-            var flags = cu.AtomFlags.draw_background;
-
-            if (!tiling.isTiled()) {
-                flags.insert(.draw_border);
-                b.stacks.corner_radius.push(window_rounding);
-            } else {
-                flags.setPresent(.draw_side_top, !tiling.tiled_top);
-                flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
-                flags.setPresent(.draw_side_left, !tiling.tiled_left);
-                flags.setPresent(.draw_side_right, !tiling.tiled_right);
-            }
-
-            break :flags flags;
-        });
-        b.stacks.layout_axis.push(.y);
-        const window_inset_wrapper =
-            WindowInsetWrapper.begin(state.window.wl_window);
-        defer window_inset_wrapper.end();
-
-        const menu_bar_buttons = titlebar_buttons.menuBar(state);
-
-        buildTopbar(
-            state.window.wl_window,
-            state.window_rounding,
-            *TestWindow,
-            menu_bar_buttons,
-        );
-
-        //
-    }
-};
-
-//= main window
-
-pub const MainWindow = struct {
-    action_queue: *ActionQueue,
-
-    window_rounding: f32,
-    arena: Allocator,
-
-    test_toggle: bool = false,
-    test_scroll_offset: f32 = 0,
-
-    window: *Window = undefined,
-
-    pub fn windowInterface(self: *MainWindow) Window.Interface {
-        return .{
-            .context = @ptrCast(self),
-            .vtable = &.{
-                .build = vtable.build,
-            },
-        };
-    }
-
-    pub const vtable = struct {
-        fn build(ctx: *anyopaque, window: *Window) void {
-            const state: *MainWindow = @ptrCast(@alignCast(ctx));
-            state.window = window;
-            state.build();
-        }
-    };
-
-    fn build(state: *MainWindow) void {
-        const window_rounding = state.window_rounding;
+        const window_rounding = state.app.window_rounding;
 
         const tiling = state.window.wl_window.tiling;
         b.stacks.flags.push(flags: {
@@ -493,8 +500,8 @@ pub const MainWindow = struct {
 
         buildTopbar(
             state.window.wl_window,
-            state.window_rounding,
-            *MainWindow,
+            state.app.window_rounding,
+            *TestWindow,
             menu_bar,
         );
 
@@ -503,9 +510,9 @@ pub const MainWindow = struct {
     }
 
     const titlebar_buttons = struct {
-        const MenuBar = MenuBarButtons(*MainWindow);
+        const MenuBar = MenuBarButtons(*TestWindow);
 
-        pub fn menuBar(state: *MainWindow) MenuBar {
+        pub fn menuBar(state: *TestWindow) MenuBar {
             return .{
                 .context = state,
                 .buttons = &buttons,
@@ -513,28 +520,28 @@ pub const MainWindow = struct {
         }
 
         pub const buttons = [_]MenuBar.Button{
-            fe.button,
+            test_.button,
             edit.button,
             help.button,
         };
 
-        pub const fe = struct {
+        pub const test_ = struct {
             pub const button = MenuBar.Button{
-                .name = "Fe",
+                .name = "Test",
                 .items = &.{
                     .{ .name = "close", .action = close },
                     .{ .name = "quit", .action = quit },
                 },
             };
 
-            pub fn close(state: *MainWindow) void {
-                state.action_queue.queue(.{
+            pub fn close(state: *TestWindow) void {
+                state.app.action_queue.queue(.{
                     .close_window = state.window.wl_window.id,
                 });
             }
 
-            pub fn quit(state: *MainWindow) void {
-                state.action_queue.queue(.quit);
+            pub fn quit(state: *TestWindow) void {
+                state.app.action_queue.queue(.quit);
             }
         };
 
@@ -559,12 +566,12 @@ pub const MainWindow = struct {
             };
         };
 
-        pub fn noop(state: *MainWindow) void {
+        pub fn noop(state: *TestWindow) void {
             _ = state;
         }
     };
 
-    fn buildMainUI(state: *MainWindow, mono_font: cu.FontId) void {
+    fn buildMainUI(state: *TestWindow, mono_font: cu.FontId) void {
         b.stacks.layout_axis.push(.x);
         b.stacks.pref_size.push(.square(.grow));
         const main_pane = b.open("main pain");
@@ -694,7 +701,7 @@ pub const MainWindow = struct {
         _ = b.labelf("ctx_menu_open: {}", .{cu.state.ctx_menu_open});
     }
 
-    fn buildRightPane(state: *MainWindow, mono_font: cu.FontId) void {
+    fn buildRightPane(state: *TestWindow, mono_font: cu.FontId) void {
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.size(.grow, .fill));
         const pane = b.open("right pane");
@@ -1265,6 +1272,7 @@ pub const Window = struct {
         window.wl_window.deinit(gpa);
         gpa.free(window.font_list);
         gpa.destroy(window);
+        window.* = undefined;
     }
 
     pub fn build(window: *Window) void {
@@ -1303,6 +1311,7 @@ const WindowList = struct {
         }
         self.map.deinit(self.gpa);
         self.conn.deinit(self.gpa);
+        self.* = undefined;
     }
 
     pub fn pushWindow(

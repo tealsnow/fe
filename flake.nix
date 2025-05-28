@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-25.05";
     systems.url = "github:nix-systems/default";
 
     flake-utils = {
@@ -38,40 +38,36 @@
             tracy
             renderdoc
 
-            # libs
+            # wasm
+            wasmtime-c-api
+
+            # rendering
+            wgpu-native
+            libGL
+
+            # sdl
             sdl3
             sdl3-ttf
             xorg.libX11.dev
-
-            fontconfig
-
-            wasmtime-c-api
-
-            # glfw
-            glfw-wayland
-            wayland
-            libxkbcommon
             xorg.libXcursor.dev
             xorg.libXrandr.dev
             xorg.libXinerama.dev
             xorg.libXi.dev
 
+            # text
+            fontconfig
+            freetype
+            harfbuzz
+
             # wayland
             wayland
             wayland-protocols
             wayland-scanner
-
+            libxkbcommon
             glib
-
-            wgpu-native
-
-            freetype
-            harfbuzz
           ];
 
-          env = {
-            # "SDL_VIDEODRIVER" = "wayland";
-          };
+          env = {};
 
           shellHook = '''';
         };

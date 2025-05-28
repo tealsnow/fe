@@ -33,6 +33,7 @@ pub fn panicimpl(msg: []const u8, first_trace_addr: ?usize) noreturn {
     _ = first_trace_addr;
     log.err("panic: {s}", .{msg});
     logFn.deinit();
+    @breakpoint();
     std.process.exit(1);
 }
 

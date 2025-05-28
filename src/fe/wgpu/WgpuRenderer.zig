@@ -199,8 +199,7 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
 
     //- return
 
-    const font_manager = try gpa.create(FontManager);
-    font_manager.* = try .init();
+    const font_manager = try FontManager.init(gpa);
 
     const batch_processor = try gpa.create(BatchProcessor);
     batch_processor.* = try .init(font_manager, params.initial_surface_size);
@@ -237,6 +236,7 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
 pub fn deinit(renderer: *Renderer) void {
     const gpa = renderer.gpa;
 
+    defer renderer.* = undefined;
     defer gpa.destroy(renderer);
 
     defer renderer.surface.release();
@@ -256,7 +256,6 @@ pub fn deinit(renderer: *Renderer) void {
     defer renderer.atlas_texture_bind_group_layout.release();
     defer renderer.null_atlas_texture.deinit();
 
-    defer gpa.destroy(renderer.font_manager);
     defer renderer.font_manager.deinit(gpa);
 
     defer gpa.destroy(renderer.batch_processor);

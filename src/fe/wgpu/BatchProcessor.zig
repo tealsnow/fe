@@ -42,6 +42,7 @@ pub fn init(
 
 pub fn deinit(self: *BatchProcessor) void {
     self.shaper.deinit();
+    self.* = undefined;
 }
 
 fn reset(
