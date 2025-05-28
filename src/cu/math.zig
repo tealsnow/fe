@@ -14,15 +14,15 @@ pub fn Point(comptime T: type) type {
         pub const inf = splat(math.inf(T));
         pub const nan = splat(math.nan(T));
 
-        pub inline fn point(x: T, y: T) Self {
+        pub fn point(x: T, y: T) Self {
             return .{ .x = x, .y = y };
         }
 
-        pub inline fn splat(v: T) Self {
+        pub fn splat(v: T) Self {
             return .point(v, v);
         }
 
-        pub inline fn withAxis(axis: Axis2D, target: T, other: T) Self {
+        pub fn withAxis(axis: Axis2D, target: T, other: T) Self {
             return switch (axis) {
                 .none => @panic("invalid axis"),
                 .x => .point(target, other),
@@ -30,7 +30,7 @@ pub fn Point(comptime T: type) type {
             };
         }
 
-        pub inline fn fromAxis(self: Self, axis: Axis2D) T {
+        pub fn fromAxis(self: Self, axis: Axis2D) T {
             return switch (axis) {
                 .none => @panic("invalid axis"),
                 .x => self.x,
@@ -38,27 +38,27 @@ pub fn Point(comptime T: type) type {
             };
         }
 
-        pub inline fn fromSize(sz: Size(T)) Self {
+        pub fn fromSize(sz: Size(T)) Self {
             return .point(sz.width, sz.height);
         }
 
-        pub inline fn intoSize(self: Self) Size(T) {
+        pub fn intoSize(self: Self) Size(T) {
             return .size(self.x, self.y);
         }
 
-        pub inline fn arr(self: *Self) *[2]T {
+        pub fn arr(self: *Self) *[2]T {
             return @ptrCast(self);
         }
 
-        pub inline fn add(self: Self, other: Self) Self {
+        pub fn add(self: Self, other: Self) Self {
             return .point(self.x + other.x, self.y + other.y);
         }
 
-        pub inline fn sub(self: Self, other: Self) Self {
+        pub fn sub(self: Self, other: Self) Self {
             return .point(self.x - other.x, self.y - other.y);
         }
 
-        pub inline fn pointExpSmoothBare(
+        pub fn pointExpSmoothBare(
             value: Self,
             target: Self,
             speed: anytype,
@@ -70,7 +70,7 @@ pub fn Point(comptime T: type) type {
             );
         }
 
-        pub inline fn pointExpSmooth(value: Self, target: Self) Self {
+        pub fn pointExpSmooth(value: Self, target: Self) Self {
             return .point(
                 expSmooth(value.x, target.x),
                 expSmooth(value.y, target.y),
@@ -99,11 +99,11 @@ pub fn Point(comptime T: type) type {
             return .point(@intFromFloat(self.x), @intFromFloat(self.y));
         }
 
-        pub inline fn floor(self: Self) Self {
+        pub fn floor(self: Self) Self {
             return .point(@floor(self.x), @floor(self.y));
         }
 
-        pub inline fn round(self: Self) Self {
+        pub fn round(self: Self) Self {
             return .point(@round(self.x), @round(self.y));
         }
 
@@ -122,7 +122,7 @@ pub fn Point(comptime T: type) type {
     };
 }
 
-pub inline fn point(x: anytype, y: @TypeOf(x)) Point(@TypeOf(x)) {
+pub fn point(x: anytype, y: @TypeOf(x)) Point(@TypeOf(x)) {
     return .point(x, y);
 }
 
@@ -148,15 +148,15 @@ pub fn Size(comptime T: type) type {
         pub const inf = splat(std.math.inf(T));
         pub const nan = splat(std.math.nan(T));
 
-        pub inline fn size(width: T, height: T) Self {
+        pub fn size(width: T, height: T) Self {
             return .{ .width = width, .height = height };
         }
 
-        pub inline fn splat(v: T) Self {
+        pub fn splat(v: T) Self {
             return .size(v, v);
         }
 
-        pub inline fn withAxis(axis: Axis2D, target: T, other: T) Self {
+        pub fn withAxis(axis: Axis2D, target: T, other: T) Self {
             return switch (axis) {
                 .none => @panic("invalid axis"),
                 .x => .size(target, other),
@@ -164,15 +164,15 @@ pub fn Size(comptime T: type) type {
             };
         }
 
-        pub inline fn square(len: T) Self {
+        pub fn square(len: T) Self {
             return splat(len);
         }
 
-        pub inline fn fromPoint(p: Point(T)) Self {
+        pub fn fromPoint(p: Point(T)) Self {
             return .size(p.x, p.y);
         }
 
-        pub inline fn intoPoint(self: Self) Point(T) {
+        pub fn intoPoint(self: Self) Point(T) {
             return .point(self.width, self.height);
         }
 
@@ -184,15 +184,15 @@ pub fn Size(comptime T: type) type {
             return @bitCast(self);
         }
 
-        pub inline fn intoPxPrefSize(self: Self) Size(cu.Atom.PrefSize) {
+        pub fn intoPxPrefSize(self: Self) Size(cu.Atom.PrefSize) {
             return .size(.px(self.width), .px(self.height));
         }
 
-        pub inline fn intCast(self: Self, comptime NT: type) Size(NT) {
+        pub fn intCast(self: Self, comptime NT: type) Size(NT) {
             return .size(@intCast(self.width), @intCast(self.height));
         }
 
-        pub inline fn floatFromInt(self: Self, comptime NT: type) Size(NT) {
+        pub fn floatFromInt(self: Self, comptime NT: type) Size(NT) {
             return .size(@floatFromInt(self.width), @floatFromInt(self.height));
         }
 
@@ -211,7 +211,7 @@ pub fn Size(comptime T: type) type {
     };
 }
 
-pub inline fn size(
+pub fn size(
     width: anytype,
     height: @TypeOf(width),
 ) Size(@TypeOf(width)) {
@@ -227,22 +227,22 @@ pub fn Bounds(comptime T: type) type {
 
         pub const zero = mem.zeroes(Self);
 
-        pub inline fn bounds(origin: Point(T), sz: Size(T)) Self {
+        pub fn bounds(origin: Point(T), sz: Size(T)) Self {
             return .{ .origin = origin, .size = sz };
         }
 
-        pub inline fn fromRect(rct: Rect(T)) Self {
+        pub fn fromRect(rct: Rect(T)) Self {
             return .bounds(rct.p0, rct.size());
         }
 
-        pub inline fn intCast(self: Self, comptime NT: type) Bounds(NT) {
+        pub fn intCast(self: Self, comptime NT: type) Bounds(NT) {
             return .{
                 .origin = self.origin.intCast(NT),
                 .size = self.size.intCast(NT),
             };
         }
 
-        pub inline fn floatFromInt(self: Self, comptime NT: type) Bounds(NT) {
+        pub fn floatFromInt(self: Self, comptime NT: type) Bounds(NT) {
             return .{
                 .origin = self.origin.floatFromInt(NT),
                 .size = self.size.floatFromInt(NT),
@@ -278,19 +278,19 @@ pub fn Rect(comptime T: type) type {
         pub const inf = splat(.inf);
         pub const nan = splat(.nan);
 
-        pub inline fn rect(p0: Point(T), p1: Point(T)) Self {
+        pub fn rect(p0: Point(T), p1: Point(T)) Self {
             return .{ .p0 = p0, .p1 = p1 };
         }
 
-        pub inline fn rectpts(x0: T, y0: T, x1: T, y1: T) Self {
+        pub fn rectpts(x0: T, y0: T, x1: T, y1: T) Self {
             return .rect(.point(x0, y0), .point(x1, y1));
         }
 
-        pub inline fn splat(v: T) Self {
+        pub fn splat(v: T) Self {
             return .rect(.splat(v), splat(v));
         }
 
-        pub inline fn fromBounds(bnds: Bounds(T)) Self {
+        pub fn fromBounds(bnds: Bounds(T)) Self {
             return .rect(
                 bnds.origin,
                 .point(
@@ -300,7 +300,7 @@ pub fn Rect(comptime T: type) type {
             );
         }
 
-        pub inline fn intoBounds(self: Self) Bounds(T) {
+        pub fn intoBounds(self: Self) Bounds(T) {
             return .bounds(
                 self.p0,
                 self.size(),
@@ -319,47 +319,47 @@ pub fn Rect(comptime T: type) type {
             return .rect(self.p0.intFromFloat(NT), self.p1.intFromFloat(NT));
         }
 
-        pub inline fn round(self: Self) Self {
+        pub fn round(self: Self) Self {
             return .rect(self.p0.round(), self.p1.round());
         }
 
-        pub inline fn arr(self: *Self) *[4]T {
+        pub fn arr(self: *Self) *[4]T {
             return @ptrCast(self);
         }
 
-        pub inline fn origin(self: Self) Point(T) {
+        pub fn origin(self: Self) Point(T) {
             return self.p0;
         }
 
-        pub inline fn topLeft(self: Self) Point(T) {
+        pub fn topLeft(self: Self) Point(T) {
             return self.p0;
         }
 
-        pub inline fn topRight(self: Self) Point(T) {
+        pub fn topRight(self: Self) Point(T) {
             return .point(self.p1.x, self.p0.y);
         }
 
-        pub inline fn bottomLeft(self: Self) Point(T) {
+        pub fn bottomLeft(self: Self) Point(T) {
             return .point(self.p0.x, self.p1.y);
         }
 
-        pub inline fn bottomRight(self: Self) Point(T) {
+        pub fn bottomRight(self: Self) Point(T) {
             return self.p1;
         }
 
-        pub inline fn size(self: Self) Size(T) {
+        pub fn size(self: Self) Size(T) {
             return .size(self.width(), self.height());
         }
 
-        pub inline fn width(self: Self) T {
+        pub fn width(self: Self) T {
             return self.p1.x - self.p0.x;
         }
 
-        pub inline fn height(self: Self) T {
+        pub fn height(self: Self) T {
             return self.p1.y - self.p0.y;
         }
 
-        pub inline fn lengthFromAxis(self: Self, axis: Axis2D) T {
+        pub fn lengthFromAxis(self: Self, axis: Axis2D) T {
             return switch (axis) {
                 .none => @panic("invalid axis"),
                 .x => self.width(),
@@ -367,14 +367,14 @@ pub fn Rect(comptime T: type) type {
             };
         }
 
-        pub inline fn contains(self: Self, pt: Point(T)) bool {
+        pub fn contains(self: Self, pt: Point(T)) bool {
             return pt.x > self.p0.x and
                 pt.x < self.p1.x and
                 pt.y > self.p0.y and
                 pt.y < self.p1.y;
         }
 
-        pub inline fn intersect(a: Self, b: Self) Self {
+        pub fn intersect(a: Self, b: Self) Self {
             return .rectpts(
                 @max(a.p0.x, b.p0.x),
                 @max(a.p0.y, b.p0.y),
@@ -383,15 +383,15 @@ pub fn Rect(comptime T: type) type {
             );
         }
 
-        pub inline fn verticalRange(self: Self) Range1D(T) {
+        pub fn verticalRange(self: Self) Range1D(T) {
             return .range(self.p0.y, self.p1.y);
         }
 
-        pub inline fn horizontalRange(self: Self) Range1D(T) {
+        pub fn horizontalRange(self: Self) Range1D(T) {
             return .range(self.p0.x, self.p1.x);
         }
 
-        pub inline fn rangeForAxis(self: Self, axis: Axis2D) Range1D(T) {
+        pub fn rangeForAxis(self: Self, axis: Axis2D) Range1D(T) {
             return switch (axis) {
                 .none => @panic("invalid axis"),
                 .x => self.horizontalRange(),
@@ -414,11 +414,11 @@ pub fn Rect(comptime T: type) type {
     };
 }
 
-pub inline fn rect(comptime T: type, p0: Point(T), p1: Point(T)) Rect(T) {
+pub fn rect(comptime T: type, p0: Point(T), p1: Point(T)) Rect(T) {
     return .rect(p0, p1);
 }
 
-pub inline fn rectpts(
+pub fn rectpts(
     x0: anytype,
     y0: @TypeOf(x0),
     x1: @TypeOf(x0),
@@ -575,7 +575,7 @@ pub const RgbaU8 = extern struct {
 };
 
 /// usage (during frame): `value = expSmoothBare(value, target, speed, dt)`
-pub inline fn expSmoothBare(
+pub fn expSmoothBare(
     value: anytype,
     target: anytype,
     speed: anytype,
@@ -585,7 +585,7 @@ pub inline fn expSmoothBare(
 }
 
 /// usage (during frame): `value = expSmooth(value, target)`
-pub inline fn expSmooth(
+pub fn expSmooth(
     value: anytype,
     target: anytype,
 ) @TypeOf(value, target) {
