@@ -32,7 +32,6 @@ atom_parent_stack: Stack(*Atom) = .empty, // arena
 atom_stale_list: std.ArrayListUnmanaged(Atom.Key), // gpa
 
 default_palette: Atom.pallete.Pallete = undefined,
-default_font: FontId = undefined,
 
 // scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -67,7 +66,7 @@ window_size: math.Size(f32) = .zero,
 mouse: math.Point(f32) = .nan,
 start_drag_pos: math.Point(f32) = .nan,
 
-fonthandles: std.ArrayListUnmanaged(FontHandle) = .empty,
+font_kind_map: FontKindMap,
 
 press_history_key: std.EnumArray(
     MouseButton,
@@ -88,10 +87,17 @@ pub const AtomMap = std.ArrayHashMapUnmanaged(
     false,
 );
 
-pub fn init(gpa: Allocator, callbacks: Callbacks) !*State {
+pub const InitParams = struct {
+    callbacks: Callbacks,
+    font_kind_map: FontKindMap,
+};
+
+pub fn init(gpa: Allocator, params: InitParams) !*State {
     const state = try gpa.create(State);
     state.* = .{
-        .callbacks = callbacks,
+        .callbacks = params.callbacks,
+
+        .font_kind_map = params.font_kind_map,
 
         .frame_previous_time = std.time.Instant.now() catch
             @panic("no std.time.Instant support"),
@@ -124,8 +130,6 @@ pub fn deinit(state: *State) void {
     state.atom_pool.deinit();
     state.atom_stale_list.deinit(cu.state.gpa);
 
-    state.fonthandles.deinit(cu.state.gpa);
-
     const gpa = state.gpa;
     gpa.destroy(state);
 }
@@ -138,16 +142,6 @@ pub fn pushEvent(state: *State, kind: cu.input.EventKind) void {
     }) catch {
         log.warn("event list overflow", .{});
     };
-}
-
-pub fn registerFont(state: *State, font: FontHandle) FontId {
-    const id: FontId = @enumFromInt(state.fonthandles.items.len);
-    state.fonthandles.append(state.gpa, font) catch @panic("oom");
-    return id;
-}
-
-pub fn getFont(state: *const State, id: FontId) FontHandle {
-    return state.fonthandles.items[@intFromEnum(id)];
 }
 
 pub const Callbacks = struct {
@@ -214,5 +208,13 @@ pub const GraphicsInfo = struct {
     cursor_size_px: f32,
 };
 
-pub const FontHandle = *anyopaque;
-pub const FontId = enum(u32) { _ };
+pub const FontHandle = *const anyopaque;
+
+pub const FontKind = enum {
+    body,
+    label,
+    button,
+    mono,
+};
+
+pub const FontKindMap = std.EnumArray(FontKind, FontHandle);

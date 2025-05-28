@@ -48,7 +48,6 @@ atlas_texture_bind_group_layout: *wgpu.BindGroupLayout,
 null_atlas_texture: RenderPassAtlasTexture,
 
 surface_size: mt.Size(u32),
-font_manager: *FontManager,
 batch_processor: *BatchProcessor,
 
 atlas_texture_cache: std.AutoHashMapUnmanaged(
@@ -68,6 +67,7 @@ pub const InspectOptions = struct {
 pub const InitParams = struct {
     surface_descriptor: wgpu.SurfaceDescriptor,
     initial_surface_size: mt.Size(u32),
+    font_manager: *const FontManager,
     inspect: InspectOptions,
 };
 
@@ -199,10 +199,8 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
 
     //- return
 
-    const font_manager = try FontManager.init(gpa);
-
     const batch_processor = try gpa.create(BatchProcessor);
-    batch_processor.* = try .init(font_manager, params.initial_surface_size);
+    batch_processor.* = try .init(params.font_manager, params.initial_surface_size);
 
     const renderer = try gpa.create(Renderer);
     renderer.* = .{
@@ -227,7 +225,6 @@ pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
         .null_atlas_texture = null_atlas_texture,
 
         .surface_size = params.initial_surface_size,
-        .font_manager = font_manager,
         .batch_processor = batch_processor,
     };
     return renderer;
@@ -255,8 +252,6 @@ pub fn deinit(renderer: *Renderer) void {
 
     defer renderer.atlas_texture_bind_group_layout.release();
     defer renderer.null_atlas_texture.deinit();
-
-    defer renderer.font_manager.deinit(gpa);
 
     defer gpa.destroy(renderer.batch_processor);
     defer renderer.batch_processor.deinit();
@@ -725,7 +720,11 @@ fn deviceLostCallback(
 // renderer log - only use for err/warn unless testing
 const rlog = std.log.scoped(.@"wgpu render");
 
-pub fn render(renderer: *Renderer, arena: Allocator) !void {
+pub fn render(
+    renderer: *Renderer,
+    arena: Allocator,
+    font_manager: *const FontManager,
+) !void {
     const trace =
         tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
     defer trace.end();
@@ -747,7 +746,7 @@ pub fn render(renderer: *Renderer, arena: Allocator) !void {
 
         for (batch_data, 0..) |data, i| {
             render_pass_data[i] =
-                try renderer.batchToRenderPass(data);
+                try renderer.batchToRenderPass(font_manager, data);
         }
     }
 
@@ -949,15 +948,18 @@ const UniformData = extern struct {
 
 pub const CuCallbacks = struct {
     renderer: *const Renderer,
+    font_manager: *const FontManager,
     cursor_size_px: f32,
 
     pub fn init(
         renderer: *const Renderer,
+        font_manager: *const FontManager,
         cursor_size_px: f32,
     ) !*CuCallbacks {
         const cb = try renderer.gpa.create(CuCallbacks);
         cb.* = .{
             .renderer = renderer,
+            .font_manager = font_manager,
             .cursor_size_px = cursor_size_px,
         };
         return cb;
@@ -984,9 +986,9 @@ pub const CuCallbacks = struct {
         font_handle: cu.State.FontHandle,
     ) mt.Size(f32) {
         const cb: *CuCallbacks = @ptrCast(@alignCast(context));
-        const font_face: *FontFace = @ptrCast(@alignCast(font_handle));
+        const font_face: *const FontFace = @ptrCast(@alignCast(font_handle));
 
-        const font_atlas = cb.renderer.font_manager.getAtlas(font_face);
+        const font_atlas = cb.font_manager.getAtlas(font_face);
 
         // @TODO: It might be worth caching this for later use in rendering
         const shaped = cb.renderer.batch_processor.shaper
@@ -1000,7 +1002,7 @@ pub const CuCallbacks = struct {
     fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
 
-        const font_face: *FontFace = @alignCast(@ptrCast(font_handle));
+        const font_face: *const FontFace = @alignCast(@ptrCast(font_handle));
         return font_face.line_height;
     }
 
@@ -1187,11 +1189,11 @@ pub const RenderPassData = struct {
 
 pub fn batchToRenderPass(
     renderer: *Renderer,
+    font_manager: *const FontManager,
     batch_data: BatchData,
 ) !RenderPassData {
     const atlas_texture = if (batch_data.font_face) |font_face| atlas: {
-        const font_atlas =
-            renderer.font_manager.getAtlas(font_face);
+        const font_atlas = font_manager.getAtlas(font_face);
 
         if (renderer.atlas_texture_cache.get(font_atlas)) |atlas_texture| {
             if (!font_atlas.modified) {

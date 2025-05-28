@@ -7,7 +7,8 @@ const math = cu.math;
 const debugAssert = cu.debugAssert;
 const Atom = cu.Atom;
 const AtomFlags = cu.AtomFlags;
-const FontId = cu.FontId;
+const FontHandle = cu.FontHandle;
+const FontKind = cu.FontKind;
 
 const tracy = @import("tracy");
 
@@ -45,7 +46,7 @@ pub fn startBuild(window_id: usize) void {
 
         stacks.palette
             .pushForMany(Atom.pallete.fullToPartial(cu.state.default_palette));
-        stacks.font.pushForMany(cu.state.default_font);
+        stacks.font.pushForMany(.body);
         stacks.pref_size.pushForMany(.square(.fill));
         stacks.layout_axis.pushForMany(.none);
         stacks.flags.pushForMany(.none);
@@ -211,13 +212,17 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     atom.display_string = "";
 
     // per build info
-    atom.font = stacks.font.topVolatile().?;
     atom.pref_size = stacks.pref_size.topVolatile().?;
     atom.layout_axis = stacks.layout_axis.topVolatile().?;
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
     atom.border_width = stacks.border_width.topVolatile().?;
     atom.corner_radius = stacks.corner_radius.topVolatile().?;
+
+    {
+        const kind = stacks.font.topVolatile().?;
+        atom.font = cu.state.font_kind_map.get(kind);
+    }
 
     {
         var partial = stacks.palette.topVolatile().?;
@@ -332,6 +337,7 @@ pub fn close(atom: *Atom) void {
 //= basic widgets
 
 pub fn label(string: []const u8) *Atom {
+    stacks.font.push(.label);
     const atom = buildFromKey(.nil);
     atom.display_string = string;
     atom.flags.insert(.draw_text);
@@ -382,6 +388,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
 }
 
 pub fn button(string: []const u8) cu.Interaction {
+    stacks.font.push(.button);
     const atom = build(string);
     atom.flags = .unionWithMany(&.{ .clickable, .draw_text, .draw_border });
 
@@ -609,7 +616,7 @@ pub const scroll_area = struct {
 
 pub const Stacks = struct {
     palette: VolatileStack(Atom.pallete.PalletePartial),
-    font: VolatileStack(FontId),
+    font: VolatileStack(FontKind),
     pref_size: VolatileStack(math.Size(Atom.PrefSize)),
     layout_axis: VolatileStack(Atom.LayoutAxis),
     flags: VolatileStack(Atom.Flags),
@@ -708,7 +715,7 @@ pub var stacks: Stacks = .empty;
 /// returns `value` multiplied by the top font size
 pub fn em(value: f32) f32 {
     const top_font = stacks.font.topStable().?;
-    const font_handle = cu.state.getFont(top_font);
+    const font_handle = cu.state.font_kind_map.get(top_font);
     const font_size = cu.state.callbacks.fontSize(font_handle);
     return value * font_size;
 }
@@ -716,7 +723,7 @@ pub fn em(value: f32) f32 {
 /// returns `value` multiplied by the root/default font size
 pub fn rem(value: f32) f32 {
     const root_font = cu.state.default_font;
-    const font_handle = cu.state.getFont(root_font);
+    const font_handle = cu.state.font_kind_map.get(root_font);
     const font_size = cu.state.callbacks.fontSize(font_handle);
     return value * font_size;
 }

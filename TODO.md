@@ -27,8 +27,7 @@
     - [x] #cu event handling
 - [ ] #cu truncate text with ellipses
 - [ ] #cu smooth scroll
-
-- [ ] #cu better font management system
+- [x] #cu better font management system
 
 - [ ] #wgpu texture/image rendering
     - [ ] consider wuffs for image loading (ghostty/pkg)

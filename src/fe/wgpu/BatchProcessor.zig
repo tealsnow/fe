@@ -224,8 +224,7 @@ fn processAtom(
     if (atom.flags.contains(.draw_text) or
         atom.flags.contains(.draw_text_weak))
     {
-        const font_ptr = cu.state.getFont(atom.font);
-        const font_face: *const FontFace = @ptrCast(@alignCast(font_ptr));
+        const font_face: *const FontFace = @ptrCast(@alignCast(atom.font));
 
         const entry =
             try self.text_lists.getOrPutValue(arena, font_face, .empty);

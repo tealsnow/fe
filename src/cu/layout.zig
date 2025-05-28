@@ -36,10 +36,9 @@ fn sizeText(root: *Atom) void {
     defer trace.end();
     tracy.print("{}", .{root});
 
-    if (root.display_string.len != 0) {
-        const font_handle = cu.state.getFont(root.font);
-        root.text_size = cu.state.callbacks.measureText(root.display_string, font_handle);
-    }
+    if (root.display_string.len != 0)
+        root.text_size =
+            cu.state.callbacks.measureText(root.display_string, root.font);
 
     {
         var maybe_child = root.children.first;

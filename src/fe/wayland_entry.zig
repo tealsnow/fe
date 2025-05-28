@@ -25,6 +25,10 @@ const pretty = @import("pretty");
 const plugins = @import("plugins.zig");
 
 pub fn entryPoint(gpa: Allocator) !void {
+    // setup at the end before any defers are run
+    var deinit_trace: tracy.ZoneContext = undefined;
+    defer deinit_trace.end();
+
     tracy.printAppInfo("fe", .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
 
@@ -53,10 +57,29 @@ pub fn entryPoint(gpa: Allocator) !void {
     var window_list = try WindowList.init(gpa);
     defer window_list.deinit();
 
+    var font_manager = try WgpuRenderer.FontManager.init(gpa);
+    defer font_manager.deinit(gpa);
+
     const def_font_path = try getFontFromFamilyName(gpa, "sans");
     defer gpa.free(def_font_path);
     const mono_font_path = try getFontFromFamilyName(gpa, "mono");
     defer gpa.free(mono_font_path);
+
+    const dpi = mt.Size(u16).size(
+        @intFromFloat(@round(window_list.conn.hdpi)),
+        @intFromFloat(@round(window_list.conn.vdpi)),
+    );
+
+    const font_face_map = try font_manager.makeFontFaceMap(
+        gpa,
+        .init(.{
+            .body = .{ .path = def_font_path, .pt = 8 },
+            .label = .{ .path = def_font_path, .pt = 10 },
+            .button = .{ .path = def_font_path, .pt = 10 },
+            .mono = .{ .path = mono_font_path, .pt = 10 },
+        }),
+        dpi,
+    );
 
     var app_state = AppState{
         .action_queue = &action_queue,
@@ -74,12 +97,8 @@ pub fn entryPoint(gpa: Allocator) !void {
             .app_id = "me.ketanr.fe",
             .initial_size = .size(1024, 576),
             .interface = test_window_state.windowInterface(),
-
-            .font_size = 10,
-            .fonts = &.{
-                def_font_path,
-                mono_font_path,
-            },
+            .font_manager = font_manager,
+            .font_face_map = font_face_map,
         },
     );
 
@@ -90,12 +109,8 @@ pub fn entryPoint(gpa: Allocator) !void {
             .app_id = "me.ketanr.fe",
             .initial_size = .size(800, 600),
             .interface = panel_window_state.windowInterface(),
-
-            .font_size = 10,
-            .fonts = &.{
-                def_font_path,
-                mono_font_path,
-            },
+            .font_manager = font_manager,
+            .font_face_map = font_face_map,
         },
     );
 
@@ -169,16 +184,17 @@ pub fn entryPoint(gpa: Allocator) !void {
                 }
             },
             .key => |key| key: {
-                const win = focus_window_keyboard.?;
-                win.cu_state.pushEvent(.{ .key = .{
-                    .scancode = @intCast(key.scancode),
-                    .keycode = .unknown,
-                    .mod = .{},
-                    .state = if (key.state == .pressed)
-                        .pressed
-                    else
-                        .released,
-                } });
+                if (focus_window_keyboard) |win| {
+                    win.cu_state.pushEvent(.{ .key = .{
+                        .scancode = @intCast(key.scancode),
+                        .keycode = .unknown,
+                        .mod = .{},
+                        .state = if (key.state == .pressed)
+                            .pressed
+                        else
+                            .released,
+                    } });
+                }
 
                 if (key.state != .pressed) break :key;
 
@@ -221,10 +237,15 @@ pub fn entryPoint(gpa: Allocator) !void {
                 }
             },
             .pointer_motion => |motion| {
-                const win = focus_window_pointer.?;
-                win.cu_state.pushEvent(.{
-                    .mouse_move = motion.point.floatCast(f32),
-                });
+                // @NOTE: if used since there is a race condition
+                //   between closing the window and more motion events
+                //   i.e. sometimes we would get motion events for a window
+                //   that is closed and deinited
+                if (focus_window_pointer) |win| {
+                    win.cu_state.pushEvent(.{
+                        .mouse_move = motion.point.floatCast(f32),
+                    });
+                }
             },
             .pointer_button => |button| {
                 const win = focus_window_pointer.?;
@@ -310,7 +331,13 @@ pub fn entryPoint(gpa: Allocator) !void {
         };
 
         while (action_queue.dequeue()) |action| switch (action) {
-            .quit => break :main_loop,
+            .quit => {
+                // skip defers on release
+                // on debug it is a noop
+                std.process.cleanExit();
+
+                break :main_loop;
+            },
             .close_window => |id| {
                 const window = window_list.getWindow(id);
                 if (focus_window_pointer == window)
@@ -334,15 +361,15 @@ pub fn entryPoint(gpa: Allocator) !void {
 
             window.build();
 
-            try window.renderer.render(arena);
+            try window.renderer.render(arena, font_manager);
             window.renderer.surface.present();
         }
 
         if (window_list.slice().len == 0)
-            break :main_loop;
+            action_queue.queue(.quit);
     }
 
-    std.process.cleanExit(); // skips defers on release builds
+    deinit_trace = tracy.beginZone(@src(), .{ .name = "deinit" });
 }
 
 //= action
@@ -517,8 +544,7 @@ pub const TestWindow = struct {
             menu_bar,
         );
 
-        const mono_font = state.window.font_list[1];
-        state.buildMainUI(mono_font);
+        state.buildMainUI();
     }
 
     const titlebar_buttons = struct {
@@ -583,15 +609,15 @@ pub const TestWindow = struct {
         }
     };
 
-    fn buildMainUI(state: *TestWindow, mono_font: cu.FontId) void {
+    fn buildMainUI(state: *TestWindow) void {
         b.stacks.layout_axis.push(.x);
         b.stacks.pref_size.push(.square(.grow));
         const main_pane = b.open("main pain");
         defer b.close(main_pane);
 
-        buildLeftPane(mono_font);
+        buildLeftPane();
 
-        state.buildRightPane(mono_font);
+        state.buildRightPane();
 
         //- right bar
         {
@@ -625,7 +651,7 @@ pub const TestWindow = struct {
         }
     }
 
-    fn buildLeftPane(mono_font: cu.FontId) void {
+    fn buildLeftPane() void {
         b.stacks.flags.push(.draw_side_right);
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.size(.percent(0.4), .fill));
@@ -638,8 +664,7 @@ pub const TestWindow = struct {
                 .push(.unionWith(.draw_side_bottom, .draw_text));
             b.stacks.text_align.push(.size(.end, .center));
             b.stacks.pref_size.push(.size(.grow, .text));
-            const header = b.build("left header");
-            header.display_string = "Left Header gylp";
+            _ = b.label("Left Header gylp");
         }
 
         //- content
@@ -658,7 +683,7 @@ pub const TestWindow = struct {
 
         _ = b.lineSpacer();
 
-        b.stacks.font.pushForMany(mono_font);
+        b.stacks.font.pushForMany(.mono);
         defer _ = b.stacks.font.pop();
 
         _ = b.label("This is a set of text");
@@ -713,7 +738,7 @@ pub const TestWindow = struct {
         _ = b.labelf("ctx_menu_open: {}", .{cu.state.ctx_menu_open});
     }
 
-    fn buildRightPane(state: *TestWindow, mono_font: cu.FontId) void {
+    fn buildRightPane(state: *TestWindow) void {
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.size(.grow, .fill));
         const pane = b.open("right pane");
@@ -726,9 +751,9 @@ pub const TestWindow = struct {
             b.stacks.layout_axis.push(.x);
             b.stacks.text_align.push(.square(.center));
             b.stacks.pref_size.push(.size(.grow, .text));
-            const header = b.open("right header");
+            b.stacks.font.push(.label);
+            const header = b.open("Right Header");
             defer b.close(header);
-            header.display_string = "Right Header";
 
             if (header.interaction().f.contains(.mouse_over)) {
                 b.stacks.flags
@@ -777,7 +802,7 @@ pub const TestWindow = struct {
                 const btns = b.open("buttons");
                 defer b.close(btns);
 
-                b.stacks.font.pushForMany(mono_font);
+                b.stacks.font.pushForMany(.mono);
                 defer _ = b.stacks.font.pop();
 
                 b.stacks.pref_size.push(.square(.text_pad(8)));
@@ -796,6 +821,9 @@ pub const TestWindow = struct {
 
         // scroll test
         {
+            b.stacks.font.pushForMany(.label);
+            defer _ = b.stacks.font.pop();
+
             const item_size = b.em(1);
 
             b.stacks.pref_size.push(.square(.grow));
@@ -849,6 +877,9 @@ fn buildTopbar(
     menu_buttons: MenuBarButtons(MenuContext),
 ) void {
     const tiling = window.tiling;
+
+    b.stacks.font.pushForMany(.button);
+    defer _ = b.stacks.font.pop();
 
     const height = b.em(1.5);
 
@@ -1150,7 +1181,6 @@ pub const Window = struct {
     renderer: *WgpuRenderer,
     cu_callbacks: *WgpuRenderer.CuCallbacks,
     cu_state: *cu.State,
-    font_list: []const cu.FontId,
     interface: Interface,
 
     present_frame: bool = false,
@@ -1168,38 +1198,37 @@ pub const Window = struct {
         }
     };
 
-    pub const InitOpts = struct {
+    pub const InitParams = struct {
         title: [:0]const u8,
         app_id: ?[:0]const u8 = null,
         inset: ?u32 = 15,
         initial_size: mt.Size(u32),
         min_size: ?mt.Size(u32) = .square(200),
         interface: Interface,
-
-        font_size: i32,
-        fonts: []const [:0]const u8,
+        font_manager: *const WgpuRenderer.FontManager,
+        font_face_map: WgpuRenderer.FontManager.FontFaceMap,
     };
 
     pub fn init(
         list: *WindowList,
-        opts: InitOpts,
+        params: InitParams,
     ) !*Window {
         const wl_window = try wl.Window.init(
             list.gpa,
             list.conn,
-            opts.initial_size,
+            params.initial_size,
         );
-        wl_window.setTitle(opts.title);
-        if (opts.app_id) |id| wl_window.setAppId(id);
-        wl_window.inset = opts.inset;
-        wl_window.setMinSize(if (opts.min_size) |s| s else .square(0));
+        wl_window.setTitle(params.title);
+        if (params.app_id) |id| wl_window.setAppId(id);
+        wl_window.inset = params.inset;
+        wl_window.setMinSize(if (params.min_size) |s| s else .square(0));
 
         const gpa = list.gpa;
         const conn = list.conn;
 
         //- renderer
 
-        var renderer = try WgpuRenderer.init(gpa, .{
+        const renderer = try WgpuRenderer.init(gpa, .{
             .surface_descriptor = //
             WgpuRenderer.wgpu.surfaceDescriptorFromWaylandSurface(.{
                 .label = "wayland surface",
@@ -1207,6 +1236,7 @@ pub const Window = struct {
                 .surface = wl_window.wl_surface,
             }),
             .initial_surface_size = wl_window.size,
+            .font_manager = params.font_manager,
             .inspect = .{
                 // .instance = gpa,
                 // .adapter = gpa,
@@ -1219,35 +1249,24 @@ pub const Window = struct {
 
         const cu_callbacks = try WgpuRenderer.CuCallbacks.init(
             renderer,
+            params.font_manager,
             @floatFromInt(conn.cursor_size),
         );
 
-        const cu_state = try cu.State.init(gpa, cu_callbacks.callbacks());
-
-        //- font loading
-        const font_list = list: {
-            const dpi = mt.Size(u16).size(
-                @intFromFloat(@round(conn.hdpi)),
-                @intFromFloat(@round(conn.vdpi)),
-            );
-
-            const font_list = try gpa.alloc(cu.FontId, opts.fonts.len);
-            errdefer gpa.free(font_list);
-
-            for (opts.fonts, 0..) |font_path, i| {
-                const font_face = try renderer
-                    .font_manager
-                    .initFontFace(gpa, font_path, 0, opts.font_size, dpi);
-
-                const font_id =
-                    cu_state.registerFont(@alignCast(@ptrCast(font_face)));
-
-                font_list[i] = font_id;
+        var font_kind_map = cu.FontKindMap.initUndefined();
+        {
+            var map = params.font_face_map;
+            var iter = map.iterator();
+            while (iter.next()) |entry| {
+                font_kind_map
+                    .set(entry.key, @alignCast(@ptrCast(entry.value.*)));
             }
+        }
 
-            break :list font_list;
-        };
-        errdefer gpa.free(font_list);
+        const cu_state = try cu.State.init(gpa, .{
+            .callbacks = cu_callbacks.callbacks(),
+            .font_kind_map = font_kind_map,
+        });
 
         cu_state.default_palette = .init(.{
             .background = .hexRgb(0x1d2021), // gruvbox bg0
@@ -1257,19 +1276,17 @@ pub const Window = struct {
             .hot = .hexRgb(0x665c54), // grovbox bg3
             .active = .hexRgb(0xfbf1c7), // grovbox fg0
         });
-        cu_state.default_font = font_list[0];
 
         //- return
 
         const window = try gpa.create(Window);
         window.* = .{
             .wl_window = wl_window,
-            .title = opts.title,
+            .title = params.title,
             .renderer = renderer,
             .cu_callbacks = cu_callbacks,
             .cu_state = cu_state,
-            .font_list = font_list,
-            .interface = opts.interface,
+            .interface = params.interface,
         };
 
         try list.pushWindow(window);
@@ -1282,7 +1299,6 @@ pub const Window = struct {
         window.cu_callbacks.deinit();
         window.renderer.deinit();
         window.wl_window.deinit(gpa);
-        gpa.free(window.font_list);
         gpa.destroy(window);
         window.* = undefined;
     }

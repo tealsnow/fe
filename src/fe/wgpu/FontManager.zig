@@ -1,17 +1,21 @@
 const FontManager = @This();
 
 const std = @import("std");
+const log = std.log.scoped(.@"wgpu.FontManager");
 const Allocator = std.mem.Allocator;
 
 const ft = @import("freetype");
 
-const mt = @import("cu").math;
+const cu = @import("cu");
+const mt = cu.math;
 
 const FontFace = @import("FontFace.zig");
 const FontAtlas = @import("FontAtlas.zig");
 
 ft_lib: *ft.Library,
-atlas_map: std.AutoHashMapUnmanaged(*const FontFace, *FontAtlas) = .empty,
+atlas_map: AtlasMap = .empty,
+
+pub const AtlasMap = std.AutoHashMapUnmanaged(*const FontFace, *FontAtlas);
 
 pub fn init(gpa: Allocator) !*FontManager {
     const ft_lib = try ft.Library.init();
@@ -60,10 +64,42 @@ pub fn initFontFace(
     return face;
 }
 
+pub fn fontFaceIterator(self: *const FontManager) AtlasMap.KeyIterator {
+    return self.atlas_map.keyIterator();
+}
+
 pub fn getAtlas(
     self: *const FontManager,
     font_face: *const FontFace,
 ) *FontAtlas {
     return self.atlas_map.get(font_face) orelse
-        @panic("given font face not owned by this atlas manager");
+        @panic("given font face not owned by this font manager");
+}
+
+pub const FontDesc = struct {
+    path: [:0]const u8,
+    pt: i32,
+};
+
+pub const FontPathMap = std.EnumArray(cu.FontKind, FontDesc);
+pub const FontFaceMap = std.EnumArray(cu.FontKind, *const FontFace);
+
+pub fn makeFontFaceMap(
+    self: *FontManager,
+    gpa: Allocator,
+    path_map: FontPathMap,
+    dpi: mt.Size(u16),
+) !FontFaceMap {
+    var face_map = FontFaceMap.initUndefined();
+
+    var map = path_map;
+    var iter = map.iterator();
+    while (iter.next()) |entry| {
+        const path = entry.value.path;
+        const pt = entry.value.pt;
+        const font_face = try self.initFontFace(gpa, path, 0, pt, dpi);
+        face_map.set(entry.key, font_face);
+    }
+
+    return face_map;
 }

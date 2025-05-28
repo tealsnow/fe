@@ -47,9 +47,18 @@ pub fn main() !void {
     if (tracy.isConnected())
         log.debug("tracing enabled", .{});
 
-    // =-= allocator setup =-=
+    //- allocator setup
     const root_allocator, const is_debug = gpa: {
-        if (builtin.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
+        if (builtin.os.tag == .wasi) switch (builtin.mode) {
+            .Debug, .ReleaseSafe => {
+                debug_allocator.backing_allocator = std.heap.wasm_allocator;
+                break :gpa .{ debug_allocator.allocator(), true };
+            },
+            .ReleaseFast, .ReleaseSmall => {
+                break :gpa .{ std.heap.wasm_allocator, false };
+            },
+        };
+
         break :gpa switch (builtin.mode) {
             .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
             .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
@@ -63,7 +72,9 @@ pub fn main() !void {
 
     var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
     const gpa = tracing_allocator.allocator();
+    // const gpa = root_allocator;
 
+    //- entry point
     const entry = switch (build_options.entry_point) {
         .sdl => @import("sdl_entry.zig").entry,
         .wayland => @import("wayland_entry.zig").entryPoint,

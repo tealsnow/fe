@@ -31,7 +31,7 @@ layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if
 // custom_draw_data
 text_align: math.Size(TextAlignment) = .square(.center),
 palette: pallete.Pallete = undefined,
-font: cu.State.FontId = undefined,
+font: cu.FontHandle = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
 border_width: f32 = 1, // draw_border, draw_side_top/bottom/left/right
