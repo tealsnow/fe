@@ -8,7 +8,7 @@ const PluginSchema = @import("plugin-schema").PluginSchema;
 
 const logFn = @import("logFn.zig");
 
-const log = std.log.scoped(.@"fe::plugins");
+const log = std.log.scoped(.plugins);
 
 // Mirrored in plugin-lib
 pub fn PackedSlice(comptime T: type) type {
@@ -82,7 +82,7 @@ pub const WasmGuestAllocator = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
     const Alignment = std.mem.Alignment;
-    const alloc_log = std.log.scoped(.@"fe::WasmGuestAllocator");
+    const alloc_log = std.log.scoped(.WasmGuestAllocator);
 
     context: *wasm.Context,
     memory: wasm.Memory,
@@ -386,7 +386,7 @@ pub const Plugin = struct {
         plugin_ptr: *Plugin,
     ) !void {
         defer functype.deinit();
-        log.debug("defining callback '{s}::{s}'", .{ module, name });
+        log.debug("defining callback '{s}.{s}'", .{ module, name });
         try linker.defineFunc(module, name, functype, callback, plugin_ptr, null);
     }
 

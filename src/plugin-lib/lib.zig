@@ -58,7 +58,7 @@ pub fn mkLogFn(
             comptime format: []const u8,
             args: anytype,
         ) void {
-            const scope_str = " [plugin] " ++ if (scope == .default) id else id ++ "::" ++ @tagName(scope);
+            const scope_str = " [plugin] " ++ if (scope == .default) id else id ++ "." ++ @tagName(scope);
 
             var buffer: [1024 * 4]u8 = undefined;
             const message = std.fmt.bufPrint(&buffer, format, args) catch return;
