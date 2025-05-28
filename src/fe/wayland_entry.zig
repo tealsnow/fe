@@ -22,9 +22,21 @@ const fc = @import("fontconfig.zig");
 
 const pretty = @import("pretty");
 
+const plugins = @import("plugins.zig");
+
 pub fn entryPoint(gpa: Allocator) !void {
     tracy.printAppInfo("fe", .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
+
+    //- plugin setup
+
+    log.info("setting up plugins", .{});
+
+    const host = try plugins.PluginHost.init(gpa);
+    defer host.deinit(gpa);
+
+    const plugin = host.plugins[0];
+    try plugins.doTest(plugin);
 
     var action_queue = ActionQueue.empty;
 
