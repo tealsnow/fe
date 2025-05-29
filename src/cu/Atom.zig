@@ -295,6 +295,7 @@ pub const PrefSize = extern struct {
         pixels, // value px
         percent_of_parent, // value %
         text_content, // value padding px
+        em, // value * font size
         children_sum,
     };
 
@@ -379,16 +380,23 @@ pub const PrefSize = extern struct {
     /// kind: px,
     /// value(px): value * top font size,
     /// strictness: 1,
+    /// NOTE: This calcuations is defered to the layout phase,
+    ///       ensuring that the final attached font is used.
+    ///       This the different from `builder.em` which returns a px value
     pub fn em(value: f32) PrefSize {
-        return .px(builder.em(value));
+        return .{
+            .kind = .em,
+            .value = value,
+            .strictness = 1,
+        };
     }
 
-    /// kind: px,
-    /// value(px): value * root font size,
-    /// strictness: 1,
-    pub fn rem(value: f32) PrefSize {
-        return .px(builder.rem(value));
-    }
+    // /// kind: px,
+    // /// value(px): value * root font size,
+    // /// strictness: 1,
+    // pub fn rem(value: f32) PrefSize {
+    //     return .px(builder.rem(value));
+    // }
 };
 
 pub const pallete = struct {

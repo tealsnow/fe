@@ -355,7 +355,7 @@ pub fn spacer() *Atom {
 }
 
 pub fn lineSpacer() *Atom {
-    stacks.pref_size.push(.size(.grow, .text));
+    stacks.pref_size.push(.size(.grow, .px(em(1))));
     const line_spacer = spacer();
     line_spacer.display_string = " ";
     return line_spacer;
@@ -405,7 +405,7 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
 }
 
 pub fn toggleSwitch(toggled: *bool) cu.Interaction {
-    stacks.pref_size.push(.size(.em(3), .em(1.5)));
+    stacks.pref_size.push(.size(.px(em(3)), .px(em(1.5))));
     stacks.flags.push(.unionWith(.draw_border, .clickable));
     stacks.layout_axis.push(.y);
     const toggle = open("toggle container");
@@ -720,10 +720,10 @@ pub fn em(value: f32) f32 {
     return value * font_size;
 }
 
-/// returns `value` multiplied by the root/default font size
-pub fn rem(value: f32) f32 {
-    const root_font = cu.state.default_font;
-    const font_handle = cu.state.font_kind_map.get(root_font);
-    const font_size = cu.state.callbacks.fontSize(font_handle);
-    return value * font_size;
-}
+// /// returns `value` multiplied by the root/default font size
+// pub fn rem(value: f32) f32 {
+//     const root_font = cu.state.default_font;
+//     const font_handle = cu.state.font_kind_map.get(root_font);
+//     const font_size = cu.state.callbacks.fontSize(font_handle);
+//     return value * font_size;
+// }

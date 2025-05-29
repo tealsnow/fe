@@ -36,7 +36,7 @@ fn sizeText(root: *Atom) void {
     defer trace.end();
     tracy.print("{}", .{root});
 
-    if (root.display_string.len != 0)
+    if (root.flags.contains(.draw_text) and root.display_string.len != 0)
         root.text_size =
             cu.state.callbacks.measureText(root.display_string, root.font);
 
@@ -62,12 +62,17 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
         .pixels => {
             root.fixed_size.arr()[axis] = size.value;
         },
+        .percent_of_parent => {},
         .text_content => {
             const padding = size.value;
             const text_size = root.text_size.arr()[axis];
             root.fixed_size.arr()[axis] = padding + text_size;
         },
-        else => {},
+        .em => {
+            const text_size = root.text_size.arr()[axis];
+            root.fixed_size.arr()[axis] = text_size * size.value;
+        },
+        .children_sum => {},
     }
 
     {
@@ -89,6 +94,8 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     const size = root.pref_size.arr()[axis];
 
     switch (size.kind) {
+        .none => {},
+        .pixels => {},
         .percent_of_parent => {
             debugAssert(root.parent != null, "Attempt to get size on percent of parent without a parent: {}", .{root});
             debugAssert(size.value >= 0 and size.value <= 1, "percent must be between 0 and 1: {}", .{root});
@@ -96,7 +103,9 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
             const parent = root.parent.?;
             root.fixed_size.arr()[axis] = parent.fixed_size.arr()[axis] * size.value;
         },
-        else => {},
+        .text_content => {},
+        .em => {},
+        .children_sum => {},
     }
 
     {
@@ -125,6 +134,11 @@ fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
     const size = root.pref_size.arr()[axis];
 
     switch (size.kind) {
+        .none => {},
+        .pixels => {},
+        .percent_of_parent => {},
+        .text_content => {},
+        .em => {},
         .children_sum => {
             var accum: f32 = 0;
             var maybe_child = root.children.first;
@@ -140,7 +154,6 @@ fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
 
             root.fixed_size.arr()[axis] = accum;
         },
-        else => {},
     }
 }
 
