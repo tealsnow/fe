@@ -14,6 +14,8 @@ const tracy = @import("tracy");
 
 var trace_build: tracy.ZoneContext = undefined;
 
+const b = @This();
+
 pub fn startFrame() void {
     const current_time = std.time.Instant.now() catch
         @panic("no std.time.Instant support");
@@ -612,6 +614,53 @@ pub const scroll_area = struct {
     }
 };
 
+//= center
+
+pub const centered = struct {
+    pub const CenteredData = struct {
+        axis: Atom.LayoutAxis,
+        outer: *Atom,
+        inner: *Atom,
+        padding: *Atom,
+    };
+
+    pub fn begin(axis: Atom.LayoutAxis) CenteredData {
+        std.debug.assert(axis != .none);
+
+        b.stacks.pref_size.push(.square(.grow));
+        b.stacks.layout_axis.push(axis);
+        const outer = b.open("outer");
+
+        b.stacks.pref_size.push(.withAxis(axis, .none, .grow));
+        const padding = b.spacer();
+
+        b.stacks.pref_size.push(.withAxis(axis, .fit, .grow));
+        b.stacks.layout_axis.push(axis);
+        const inner = b.open("inner");
+
+        return .{
+            .axis = axis,
+            .outer = outer,
+            .inner = inner,
+            .padding = padding,
+        };
+    }
+
+    pub fn end(data: CenteredData) void {
+        defer b.close(data.outer);
+        defer b.close(data.inner);
+
+        const outer_length = data.outer.rect.lengthFromAxis(data.axis);
+        const inner_length = data.inner.rect.lengthFromAxis(data.axis);
+        const padding_length = (outer_length - inner_length) / 2;
+        switch (data.axis) {
+            .none => unreachable,
+            .x => data.padding.pref_size.width = .px(padding_length),
+            .y => data.padding.pref_size.height = .px(padding_length),
+        }
+    }
+};
+
 //= stacks
 
 pub const Stacks = struct {
@@ -620,7 +669,7 @@ pub const Stacks = struct {
     pref_size: VolatileStack(math.Size(Atom.PrefSize)),
     layout_axis: VolatileStack(Atom.LayoutAxis),
     flags: VolatileStack(Atom.Flags),
-    text_align: VolatileStack(math.Size(Atom.TextAlignment)),
+    text_align: VolatileStack(math.Size(Atom.Alignment)),
     border_width: VolatileStack(f32),
     corner_radius: VolatileStack(f32),
 

@@ -29,7 +29,7 @@ layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if
 // group_key
 // custom_draw_func
 // custom_draw_data
-text_align: math.Size(TextAlignment) = .square(.center),
+text_align: math.Size(Alignment) = .square(.center),
 palette: pallete.Pallete = undefined,
 font: cu.FontHandle = undefined,
 // corner_radii: [4]f32
@@ -268,7 +268,7 @@ pub const Flags = struct {
     }
 };
 
-pub const TextAlignment = enum(u8) {
+pub const Alignment = enum(u8) {
     start,
     center,
     end,
@@ -289,6 +289,8 @@ pub const PrefSize = extern struct {
         em, // value * font size
         children_sum,
     };
+
+    pub const none = PrefSize{};
 
     /// kind: percent_of_parent,
     /// value(percent): 1,
