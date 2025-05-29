@@ -661,7 +661,7 @@ pub const TestWindow = struct {
         //- header
         {
             b.stacks.flags
-                .push(.unionWith(.draw_side_bottom, .draw_text));
+                .push(.init(&.{ .draw_side_bottom, .draw_text }));
             b.stacks.text_align.push(.size(.end, .center));
             b.stacks.pref_size.push(.size(.grow, .text));
             _ = b.label("Left Header gylp");
@@ -670,7 +670,7 @@ pub const TestWindow = struct {
         //- content
 
         b.stacks.flags
-            .push(.unionWith(.clip_rect, .allow_overflow));
+            .push(.init(&.{ .clip_rect, .allow_overflow }));
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.square(.grow));
         const content = b.open("left content");
@@ -747,7 +747,7 @@ pub const TestWindow = struct {
         //- header
         {
             b.stacks.flags
-                .push(.unionWith(.draw_side_bottom, .draw_text));
+                .push(.init(&.{ .draw_side_bottom, .draw_text }));
             b.stacks.layout_axis.push(.x);
             b.stacks.text_align.push(.square(.center));
             b.stacks.pref_size.push(.size(.grow, .text));
@@ -757,7 +757,7 @@ pub const TestWindow = struct {
 
             if (header.interaction().f.contains(.mouse_over)) {
                 b.stacks.flags
-                    .push(.unionWith(.draw_background, .draw_border));
+                    .push(.init(&.{ .draw_background, .draw_border }));
                 b.stacks.layout_axis.push(.y);
                 b.stacks.pref_size.push(.square(.fit));
                 b.stacks.corner_radius.push(5);
@@ -897,7 +897,7 @@ fn buildTopbar(
 
     for (menu_buttons.buttons) |menu_button| {
         b.stacks.flags
-            .push(.unionWith(.clickable, .draw_text));
+            .push(.init(&.{ .clickable, .draw_text }));
         b.stacks.pref_size.push(.size(.text_pad(8), .px(height)));
         const item = b.build(menu_button.name);
 
@@ -917,7 +917,7 @@ fn buildTopbar(
         if (b.ctx_menu.begin(item.key)) |ctx_menu| {
             defer b.ctx_menu.end(ctx_menu);
 
-            b.stacks.flags.push(.unionWith(.draw_background, .draw_border));
+            b.stacks.flags.push(.init(&.{ .draw_background, .draw_border }));
             b.stacks.layout_axis.push(.y);
             b.stacks.pref_size.push(.square(.fit));
             const menu = b.open("ctx menu");
@@ -969,7 +969,7 @@ fn buildTopbar(
     //- window buttons
     for (0..3) |i| {
         b.stacks.flags
-            .push(.unionWith(.clickable, .draw_border));
+            .push(.init(&.{ .clickable, .draw_border }));
         b.stacks.pref_size
             .push(.square(.px(height)));
         const button = b.openf("top bar button {d}", .{i});

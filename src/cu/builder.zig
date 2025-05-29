@@ -390,7 +390,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
 pub fn button(string: []const u8) cu.Interaction {
     stacks.font.push(.button);
     const atom = build(string);
-    atom.flags = .unionWithMany(&.{ .clickable, .draw_text, .draw_border });
+    atom.flags = .init(&.{ .clickable, .draw_text, .draw_border });
 
     const interaction = atom.interaction();
     baseClickableInteractionStyles(interaction);
@@ -406,7 +406,7 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
 
 pub fn toggleSwitch(toggled: *bool) cu.Interaction {
     stacks.pref_size.push(.size(.px(em(3)), .px(em(1.5))));
-    stacks.flags.push(.unionWith(.draw_border, .clickable));
+    stacks.flags.push(.init(&.{ .draw_border, .clickable }));
     stacks.layout_axis.push(.y);
     const toggle = open("toggle container");
     defer close(toggle);
@@ -532,7 +532,7 @@ pub const tooltip = struct {
         pushParent(cu.state.ui_tooltip_root);
 
         const sub_root = open("tooltip sub root");
-        sub_root.flags.insertMany(.floating);
+        sub_root.flags.insert(.floating);
 
         var pos = cu.state.mouse;
         pos.y += cu.state.graphics_info.cursor_size_px;
@@ -566,7 +566,7 @@ pub const scroll_area = struct {
         view.layout_axis = axis;
         view.flags.insert(.clip_rect);
         view.flags.insert(.view_scroll);
-        view.flags.insertMany(.allowOverflowForAxis(axis));
+        view.flags.insert(.allowOverflowForAxis(axis));
 
         const pixel_range = math.range1d(
             offset_px.*,

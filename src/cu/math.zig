@@ -196,6 +196,10 @@ pub fn Size(comptime T: type) type {
             return .size(@floatFromInt(self.width), @floatFromInt(self.height));
         }
 
+        pub fn intFromFloat(self: Self, comptime NT: type) Size(NT) {
+            return .size(@intFromFloat(self.width), @intFromFloat(self.height));
+        }
+
         pub fn format(
             self: *const Self,
             comptime fmt: []const u8,

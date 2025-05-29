@@ -186,19 +186,18 @@ pub const Flags = struct {
     pub const view_scroll = initOne(.view_scroll);
     // focusable: bool = false,
     // disabled: bool = false,
-    pub const clickable =
-        initMany(&.{ .mouse_clickable, .keyboard_clickable });
+    pub const clickable = init(&.{ .mouse_clickable, .keyboard_clickable });
 
     //- layout
     pub const floating_x = initOne(.floating_x);
     pub const floating_y = initOne(.floating_y);
-    pub const floating = initMany(&.{ .floating_x, .floating_y });
+    pub const floating = init(&.{ .floating_x, .floating_y });
     // fixed_width: bool = false,
     // fixed_height: bool = false,
     pub const allow_overflow_x = initOne(.allow_overflow_x);
     pub const allow_overflow_y = initOne(.allow_overflow_y);
     pub const allow_overflow =
-        initMany(&.{ .allow_overflow_x, .allow_overflow_y });
+        init(&.{ .allow_overflow_x, .allow_overflow_y });
 
     //- appearance
     // draw_drop_shadow: bool = false,
@@ -211,6 +210,46 @@ pub const Flags = struct {
     pub const draw_text = initOne(.draw_text);
     pub const draw_text_weak = initOne(.draw_text_weak);
     pub const clip_rect = initOne(.clip_rect);
+
+    pub fn initOne(flag: Flag) Flags {
+        return .{ .enum_set = .initOne(flag) };
+    }
+
+    pub fn init(flags: []const Flags) Flags {
+        var out = Flags.none;
+        for (flags) |flag| {
+            out.insert(flag);
+        }
+        return out;
+    }
+
+    pub fn contains(self: Flags, flags: Flags) bool {
+        var all = true;
+        var iter = flags.enum_set.iterator();
+        while (iter.next()) |flag| {
+            if (!self.enum_set.contains(flag))
+                all = false;
+        }
+        return all;
+    }
+
+    pub fn insert(self: *Flags, flags: Flags) void {
+        var iter = flags.enum_set.iterator();
+        while (iter.next()) |flag|
+            self.enum_set.insert(flag);
+    }
+
+    pub fn remove(self: *Flags, flags: Flag) void {
+        var iter = flags.enum_set.iterator();
+        while (iter.next()) |flag|
+            self.enum_set.remove(flag);
+    }
+
+    pub fn setPresent(self: *Flags, flags: Flags, present: bool) void {
+        var iter = flags.enum_set.iterator();
+        while (iter.next()) |flag|
+            self.enum_set.setPresent(flag, present);
+    }
 
     pub fn allowOverflowForAxis(axis: LayoutAxis) Flags {
         return switch (axis) {
@@ -226,54 +265,6 @@ pub const Flags = struct {
             .x => .floating_x,
             .y => .floating_y,
         };
-    }
-
-    pub fn initMany(flags: []const Flag) Flags {
-        return .{ .enum_set = .initMany(flags) };
-    }
-
-    pub fn initOne(flag: Flag) Flags {
-        return .{ .enum_set = .initOne(flag) };
-    }
-
-    pub fn contains(flags: Flags, flag: Flag) bool {
-        return flags.enum_set.contains(flag);
-    }
-
-    pub fn insert(flags: *Flags, flag: Flag) void {
-        flags.enum_set.insert(flag);
-    }
-
-    pub fn insertMany(flags: *Flags, other: Flags) void {
-        flags.* = flags.unionWith(other);
-    }
-
-    pub fn remove(flags: *Flags, flag: Flag) void {
-        flags.enum_set.remove(flag);
-    }
-
-    pub fn setPresent(flags: *Flags, flag: Flag, present: bool) void {
-        flags.enum_set.setPresent(flag, present);
-    }
-
-    pub fn unionWith(flags: Flags, other: Flags) Flags {
-        return .{ .enum_set = .unionWith(flags.enum_set, other.enum_set) };
-    }
-
-    pub fn unionWithMany(flags: []const Flags) Flags {
-        var out = Flags.none;
-        for (flags) |set| {
-            out = out.unionWith(set);
-        }
-        return out;
-    }
-
-    pub fn subsetOf(flags: Flags, other: Flags) bool {
-        return flags.enum_set.subsetOf(other.enum_set);
-    }
-
-    pub fn supersetOf(flags: Flags, other: Flags) bool {
-        return flags.enum_set.supersetOf(other.enum_set);
     }
 };
 
