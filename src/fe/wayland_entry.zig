@@ -22,14 +22,18 @@ pub fn entryPoint(gpa: Allocator) !void {
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
 
     //- plugin test
+    {
+        const plugin_test_trace = tracy.beginZone(@src(), .{ .name = "plugin test" });
+        defer plugin_test_trace.end();
 
-    log.info("setting up plugins", .{});
+        log.info("setting up plugins", .{});
 
-    const host = try plugins.PluginHost.init(gpa);
-    defer host.deinit(gpa);
+        const host = try plugins.PluginHost.init(gpa);
+        defer host.deinit(gpa);
 
-    const plugin = host.plugins[0];
-    try plugins.doTest(plugin);
+        const plugin = host.plugins[0];
+        try plugins.doTest(plugin);
+    }
 
     //- arena
 
@@ -48,13 +52,13 @@ pub fn entryPoint(gpa: Allocator) !void {
     //- windows
 
     var test_window_state = TestWindow{ .app = &state };
-    const panel_window_state = try PanelWindow.init(&state);
-
     _ = try state.newWindow(.{
         .title = "Test",
         .initial_size = .size(1024, 576),
         .interface = test_window_state.windowInterface(),
     });
+
+    const panel_window_state = try PanelWindow.init(&state);
     _ = try state.newWindow(.{
         .title = "Panels",
         .initial_size = .size(800, 600),

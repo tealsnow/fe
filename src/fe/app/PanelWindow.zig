@@ -1,7 +1,9 @@
 const PanelWindow = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.@"fe.app.PanelWindow");
+const assert = std.debug.assert;
 
 const AppState = @import("State.zig");
 const Window = AppState.Window;
@@ -9,15 +11,66 @@ const titlebar = @import("titlebar.zig");
 const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
 
 const cu = @import("cu");
+const mt = cu.math;
 const b = cu.builder;
 
 app: *AppState,
 window: *Window = undefined,
 
+panel_pool: PanelPool,
+root_panel: *Panel,
+
+const PanelPool = std.heap.MemoryPoolExtra(Panel, .{ .growable = true });
+
 pub fn init(app: *AppState) !*PanelWindow {
     const win = try app.gpa.create(PanelWindow);
-    win.* = .{ .app = app };
+    var pool = PanelPool.init(app.gpa);
+
+    const root_panel = tree: {
+        const p0 = try pool.create();
+        p0.* = .{ .name = "p0", .parent_percent = 1, .split_axis = .x };
+
+        const p1 = try pool.create();
+        p1.* = .{ .name = "p1", .parent_percent = 1.0 / 2.0, .split_axis = .y };
+        const p2 = try pool.create();
+        p2.* = .{ .name = "p2", .parent_percent = 1.0 / 2.0, .split_axis = .y };
+
+        const p3 = try pool.create();
+        p3.* = .{ .name = "p3", .parent_percent = 1.0 / 3.0, .split_axis = .x };
+        const p4 = try pool.create();
+        p4.* = .{ .name = "p4", .parent_percent = 1.0 / 3.0, .split_axis = .x };
+        const p5 = try pool.create();
+        p5.* = .{ .name = "p5", .parent_percent = 1.0 / 3.0, .split_axis = .x };
+
+        const p6 = try pool.create();
+        p6.* = .{ .name = "p6", .parent_percent = 1.0 / 2.0, .split_axis = .x };
+        const p7 = try pool.create();
+        p7.* = .{ .name = "p7", .parent_percent = 1.0 / 2.0, .split_axis = .x };
+
+        p0.addChild(p1);
+        p0.addChild(p2);
+
+        p1.addChild(p3);
+        p1.addChild(p4);
+        p1.addChild(p5);
+
+        p5.addChild(p6);
+        p5.addChild(p7);
+
+        break :tree p0;
+    };
+
+    win.* = .{
+        .app = app,
+        .panel_pool = pool,
+        .root_panel = root_panel,
+    };
     return win;
+}
+
+fn onClose(state: *PanelWindow) void {
+    state.panel_pool.deinit();
+    state.app.gpa.destroy(state);
 }
 
 pub fn windowInterface(self: *PanelWindow) Window.Interface {
@@ -43,10 +96,6 @@ pub const vtable = struct {
         state.onClose();
     }
 };
-
-fn onClose(state: *PanelWindow) void {
-    state.app.gpa.destroy(state);
-}
 
 const titlebar_buttons = struct {
     const MenuBar = titlebar.TitlebarButtons(*PanelWindow);
@@ -129,11 +178,375 @@ fn build(state: *PanelWindow) void {
         menu_bar_buttons,
     );
 
-    {
-        const centered = b.centered.begin(.y);
-        defer b.centered.end(centered);
+    const dbg_colors = [_]mt.RgbaU8{
+        .hexRgb(0x0000ff), // blue
+        .hexRgb(0x00ffff), // cyan
+        .hexRgb(0x00ff00), // green
+        .hexRgb(0xffff00), // yellow
+        .hexRgb(0xff0000), // red
+    };
 
-        b.stacks.pref_size.push(.size(.grow, .text));
-        _ = b.label("Hello, World");
+    var dbg_idx: usize = 0;
+
+    //- panel ui
+    {
+        const split_handle_size = 4;
+        const inset_size = 5;
+
+        //- root container
+        b.stacks.pref_size.push(.square(.grow));
+        b.stacks.flags.push(.draw_border);
+        b.stacks.palette.push(.init(.{
+            .border = dbg_colors[dbg_idx % dbg_colors.len],
+        }));
+        b.stacks.layout_axis.push(.x);
+        const root_container = b.open("###root_panel_container");
+        defer b.close(root_container);
+
+        const root_rect = root_container.rect;
+
+        dbg_idx += 1;
+
+        //- build non-leaf panel ui
+        var iter = state.root_panel.tree.depthFirstPreOrderIterator();
+        while (iter.next()) |panel| {
+            if (panel.tree.children.len == 0) continue;
+
+            const split_axis = panel.split_axis;
+            const axis_i = @intFromEnum(split_axis);
+
+            //- calculate rect
+            const panel_rect =
+                panel.rectFromPanel(state.app.arena, root_rect);
+            const panel_rect_size = panel_rect.size();
+
+            //- build drag boundraies
+            var child_iter = panel.tree.childIterator();
+            while (child_iter.next()) |child| {
+                if (child.tree.siblings.next == null) break;
+
+                const child_rect = child.rectFromPanelChildRect(panel_rect);
+                var boundry_rect = child_rect;
+                boundry_rect.p0.arr()[axis_i] = boundry_rect.p1.arr()[axis_i];
+                boundry_rect.p0.arr()[axis_i] -= split_handle_size;
+                boundry_rect.p1.arr()[axis_i] += split_handle_size;
+
+                b.stacks.pref_size.push(.square(.none));
+                b.stacks.flags.push(.init(&.{ .clickable, .floating }));
+                const boundry = b.buildf("###panel_boundry_{*}", .{child});
+
+                const inter = boundry.interaction();
+                if (inter.hovering()) {
+                    state.window.wl_window.conn.setCursor( //
+                        if (panel.split_axis == .x)
+                            .resize_ew
+                        else
+                            .resize_ns //
+                    ) catch @panic("");
+                }
+
+                boundry.rel_position = boundry_rect.origin().sub(root_rect.origin());
+                boundry.fixed_size = boundry_rect.size();
+
+                if (inter.dragging()) {
+                    const min_child = child;
+                    const max_child = child.tree.siblings.next.?;
+                    if (inter.pressed()) {
+                        const drag_data = mt.point(
+                            min_child.parent_percent,
+                            max_child.parent_percent,
+                        );
+
+                        cu.state.storeDragData(&drag_data);
+                    }
+
+                    const drag_data = cu.state.getDragData(mt.Point(f32)).*;
+                    // defer cu.state.storeDragData(mt.Point(f32), drag_data);
+                    const drag_delta = cu.state.dragDelta();
+
+                    const min_child_pct__pre_drag = drag_data.x;
+                    const max_child_pct__pre_drag = drag_data.y;
+
+                    const min_child_px__pre_drag =
+                        min_child_pct__pre_drag *
+                        panel_rect_size.fromAxis(split_axis);
+                    const max_child_px__pre_drag =
+                        max_child_pct__pre_drag *
+                        panel_rect_size.fromAxis(split_axis);
+
+                    const min_child_px__post_drag =
+                        min_child_px__pre_drag +
+                        drag_delta.fromAxis(split_axis);
+                    const max_child_px__post_drag =
+                        max_child_px__pre_drag -
+                        drag_delta.fromAxis(split_axis);
+
+                    const min_child_pct__post_drag =
+                        min_child_px__post_drag /
+                        panel_rect_size.fromAxis(split_axis);
+                    const max_child_pct__post_drag =
+                        max_child_px__post_drag /
+                        panel_rect_size.fromAxis(split_axis);
+
+                    min_child.parent_percent = min_child_pct__post_drag;
+                    max_child.parent_percent = max_child_pct__post_drag;
+                }
+            }
+        }
+
+        //- build leaf panel ui
+        iter.reset();
+        while (iter.next()) |panel| : (dbg_idx += 1) {
+            if (panel.tree.children.len != 0) continue;
+
+            //- setup atom
+            b.stacks.pref_size.push(.square(.none));
+            b.stacks.palette.push(.init(.{
+                .border = dbg_colors[dbg_idx % dbg_colors.len],
+            }));
+            b.stacks.flags.push(.init(&.{
+                .draw_background,
+                .draw_border,
+                .clickable,
+                .floating,
+            }));
+            b.stacks.layout_axis.push(.y);
+            const atom = b.openf("panel {s}##{*}", .{ panel.name, panel });
+            defer b.close(atom);
+
+            //- calculate rect
+            const rect =
+                panel.rectFromPanel(state.app.arena, root_rect).inset(inset_size);
+            atom.rel_position = rect.origin().sub(root_rect.origin());
+            atom.fixed_size = rect.size();
+
+            //- panel ui
+            b.stacks.pref_size.push(.square(.text_pad(8)));
+            _ = b.buttonf("hello world! {s}", .{panel.name});
+        }
     }
 }
+
+pub fn TreeMixin(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        children: struct {
+            first: ?*T = null,
+            last: ?*T = null,
+            len: usize = 0,
+        } = .{},
+        siblings: struct {
+            next: ?*T = null,
+            prev: ?*T = null,
+        } = .{},
+        parent: ?*T = null,
+
+        pub fn recurseDepthFirstPreOrder(self: *Self) Recursion {
+            const node: *T = @fieldParentPtr("tree", self);
+
+            if (node.tree.children.len != 0)
+                return .{
+                    .next = node.tree.children.first,
+                    .push_count = 1,
+                    .pop_count = 0,
+                };
+
+            var pop_count: u32 = 0;
+            var maybe_parent: ?*T = node;
+            while (maybe_parent) |parent| : //
+            (maybe_parent = parent.tree.parent) {
+                if (parent.tree.siblings.next) |next| {
+                    return .{
+                        .next = next,
+                        .push_count = 1,
+                        .pop_count = pop_count,
+                    };
+                }
+
+                pop_count += 1;
+            }
+
+            return .empty;
+        }
+
+        pub const Recursion = struct {
+            next: ?*T,
+            push_count: u32,
+            pop_count: u32,
+
+            pub const empty = Recursion{
+                .next = null,
+                .push_count = 0,
+                .pop_count = 0,
+            };
+
+            pub fn init(root: *T) Recursion {
+                return .{ .next = root, .push_count = 0, .pop_count = 0 };
+            }
+        };
+
+        pub fn depthFirstPreOrderIterator(self: *Self) DepthFirstPreOrderIterator {
+            const node: *T = @fieldParentPtr("tree", self);
+            return DepthFirstPreOrderIterator.init(node);
+        }
+
+        pub const DepthFirstPreOrderIterator = struct {
+            root: *T,
+            rec: Recursion = .empty,
+
+            pub fn init(root: *T) DepthFirstPreOrderIterator {
+                return .{
+                    .root = root,
+                    .rec = .init(root),
+                };
+            }
+
+            pub fn next(self: *DepthFirstPreOrderIterator) ?*T {
+                const result = self.rec.next orelse return null;
+                self.rec = result.tree.recurseDepthFirstPreOrder();
+                return result;
+            }
+
+            pub fn reset(self: *DepthFirstPreOrderIterator) void {
+                self.rec = .init(self.root);
+            }
+        };
+
+        pub fn childIterator(self: *Self) ChildIterator {
+            const node: *T = @fieldParentPtr("tree", self);
+            return ChildIterator{
+                .parent = node,
+                .next_node = node.tree.children.first,
+            };
+        }
+
+        pub const ChildIterator = struct {
+            parent: *T,
+            next_node: ?*T,
+
+            pub fn next(self: *ChildIterator) ?*T {
+                if (self.next_node) |node| {
+                    self.next_node = node.tree.siblings.next;
+                    return node;
+                }
+                return null;
+            }
+
+            pub fn reset(self: *ChildIterator) void {
+                self.next_node = self.parent.children.first;
+            }
+        };
+
+        pub fn parentIterator(self: *Self) ParentIterator {
+            const node: *T = @fieldParentPtr("tree", self);
+            return ParentIterator{
+                .start = node,
+                .next_node = node,
+            };
+        }
+
+        pub const ParentIterator = struct {
+            start: *T,
+            next_node: ?*T,
+
+            pub fn next(self: *ParentIterator) ?*T {
+                if (self.next_node) |node| {
+                    self.next_node = node.tree.parent;
+                    return node;
+                }
+                return null;
+            }
+
+            pub fn reset(self: *ParentIterator) void {
+                self.next_node = self.start;
+            }
+        };
+    };
+}
+
+const Panel = struct {
+    tree: TreeMixin(Panel) = .{},
+
+    name: []const u8,
+    parent_percent: f32 = 1,
+    split_axis: cu.Atom.LayoutAxis = .x,
+
+    pub fn addChild(self: *Panel, child: *Panel) void {
+        child.tree.parent = self;
+
+        if (self.tree.children.len == 0) {
+            assert(self.tree.children.first == null);
+            assert(self.tree.children.last == null);
+            self.tree.children = .{
+                .first = child,
+                .last = child,
+                .len = 1,
+            };
+        } else {
+            const last = self.tree.children.last.?;
+            assert(last.tree.siblings.next == null);
+            last.tree.siblings.next = child;
+
+            child.tree.siblings.prev = last;
+            child.tree.siblings.next = null;
+
+            self.tree.children.last = child;
+            self.tree.children.len += 1;
+        }
+    }
+
+    pub fn rectFromPanel(
+        panel: *Panel,
+        arena: Allocator,
+        root_rect: mt.Rect(f32),
+    ) mt.Rect(f32) {
+        var stack = std.ArrayListUnmanaged(*Panel).empty;
+        var depth: usize = 0;
+
+        // Walk up to root, collecting ancestors
+        var parent_iter = panel.tree.parentIterator();
+        while (parent_iter.next()) |parent| {
+            stack.append(arena, parent) catch @panic("oom");
+            depth += 1;
+        }
+
+        // Walk down from root, subdividing at each ancestor
+        var i: usize = depth;
+        var result = root_rect;
+        while (i > 0) {
+            i -= 1;
+            const curr = stack.items[i];
+            result = curr.rectFromPanelChildRect(result);
+        }
+        return result;
+    }
+
+    pub fn rectFromPanelChildRect(
+        panel: *Panel,
+        parent_rect: mt.Rect(f32),
+    ) mt.Rect(f32) {
+        var result = parent_rect;
+        const parent = panel.tree.parent orelse return parent_rect;
+
+        var parent_size = result.size();
+        const axis_i = @intFromEnum(parent.split_axis);
+
+        // Find offset for this child among siblings
+        var offset: f32 = 0;
+        var child_iter = parent.tree.childIterator();
+        while (child_iter.next()) |sibling| {
+            if (sibling == panel) break;
+            offset += sibling.parent_percent * parent_size.arr()[axis_i];
+        }
+
+        // Set start and end along the split axis
+        result.p0.arr()[axis_i] += offset;
+        result.p1.arr()[axis_i] =
+            result.p0.arr()[axis_i] +
+            panel.parent_percent *
+                parent_size.arr()[axis_i];
+
+        return result;
+    }
+};

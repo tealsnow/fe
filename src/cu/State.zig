@@ -65,6 +65,7 @@ graphics_info: GraphicsInfo,
 window_size: math.Size(f32) = .zero,
 mouse: math.Point(f32) = .nan,
 start_drag_pos: math.Point(f32) = .nan,
+drag_data: []u8,
 
 font_kind_map: FontKindMap,
 
@@ -111,6 +112,8 @@ pub fn init(gpa: Allocator, params: InitParams) !*State {
             .initCapacity(gpa, 1024),
 
         .graphics_info = undefined,
+
+        .drag_data = undefined,
     };
     state.arena = state.arena_allocator.allocator();
 
@@ -118,19 +121,23 @@ pub fn init(gpa: Allocator, params: InitParams) !*State {
 
     state.graphics_info = state.callbacks.getGraphicsInfo();
 
+    state.drag_data = try gpa.alloc(u8, 1024);
+
     return state;
 }
 
 pub fn deinit(state: *State) void {
     cu.state = state;
+    const gpa = state.gpa;
 
-    state.atom_map.deinit(state.gpa);
+    state.atom_map.deinit(gpa);
 
     state.arena_allocator.deinit();
     state.atom_pool.deinit();
-    state.atom_stale_list.deinit(cu.state.gpa);
+    state.atom_stale_list.deinit(gpa);
 
-    const gpa = state.gpa;
+    gpa.free(state.drag_data);
+
     gpa.destroy(state);
 }
 
@@ -142,6 +149,20 @@ pub fn pushEvent(state: *State, kind: cu.input.EventKind) void {
     }) catch {
         log.warn("event list overflow", .{});
     };
+}
+
+pub fn storeDragData(state: *State, ptr: anytype) void {
+    const slice = std.mem.asBytes(ptr);
+    assert(slice.len <= state.drag_data.len);
+    @memcpy(state.drag_data[0..slice.len], slice);
+}
+
+pub fn getDragData(state: *State, comptime T: type) *T {
+    return @ptrCast(@alignCast(state.drag_data));
+}
+
+pub fn dragDelta(state: *const State) math.Point(f32) {
+    return state.mouse.sub(state.start_drag_pos);
 }
 
 pub const Callbacks = struct {

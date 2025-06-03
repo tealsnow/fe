@@ -84,7 +84,7 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
 }
 
 fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
-    // pre-order
+    // depth-first pre-order
 
     const trace = tracy.beginZone(@src(), .{ .name = "upwards dependent" });
     defer trace.end();
@@ -108,6 +108,7 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
         .children_sum => {},
     }
 
+    //- recurse
     {
         var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
@@ -123,6 +124,7 @@ fn downwardsDependnt(root: *Atom, axis_kind: Axis2D) void {
     defer trace.end();
     tracy.print("{}", .{root});
 
+    //- recurse
     {
         var maybe_child = root.children.first;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
@@ -168,7 +170,7 @@ inline fn floatingForAxis(flags: Atom.Flags, axis_kind: Axis2D) bool {
 fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
     // https://github.com/EpicGamesExt/raddebugger/blob/a1e7ec5a0e9c8674f5b0271ce528f6b651d43564/src/ui/ui_core.c#L1705C1-L1705C44
 
-    // pre-order
+    // depth-first pre-order
 
     const trace = tracy.beginZone(@src(), .{ .name = "solve violations" });
     defer trace.end();
@@ -186,7 +188,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         else => unreachable,
     };
 
-    // non-layout axis
+    //- non-layout axis
     if (root.layout_axis != axis_kind and !allow_overflow) {
         const allowed_size = root.fixed_size.arr()[axis];
         var maybe_child = first_child;
@@ -201,14 +203,13 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             }
         }
     }
-    // layout axis
+    //- layout axis
     else if (!allow_overflow) {
         const total_allowed_size = root.fixed_size.arr()[axis];
         var total_size: f32 = 0;
         var total_weighted_size: f32 = 0;
 
-        // scope bc andrew refuses adding a proper c-style for loop
-        // prevent 'maybe_child' from poisening the scope
+        //- total up sizes
         {
             var maybe_child = first_child;
             while (maybe_child) |child| : (maybe_child = child.siblings.next) {
@@ -219,6 +220,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             }
         }
 
+        //- solve violations
         // if there is a violation we need to subtact some amount from all children
         const violation = total_size - total_allowed_size;
         if (violation > 0) {
@@ -239,7 +241,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
                 }
             }
 
-            // fixup child sizes
+            //- fixup child sizes
             {
                 var child_idx: usize = 0;
                 var maybe_child = first_child;
@@ -255,7 +257,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         }
     }
 
-    // fix upwards depentent sizes
+    //- fix upwards depentent sizes
     if (allow_overflow) {
         var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
@@ -269,7 +271,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         }
     }
 
-    // recurse
+    //- recurse
     {
         var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {
@@ -279,7 +281,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 }
 
 fn position(root: *Atom, axis_kind: Axis2D) void {
-    // pre-order
+    // depth-first pre-order
 
     const trace = tracy.beginZone(@src(), .{ .name = "position" });
     defer trace.end();
@@ -287,7 +289,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
 
     const axis = @intFromEnum(axis_kind);
 
-    // position text
+    //- position text
     {
         const text_size = root.text_size.arr()[axis];
         switch (root.text_align.arr()[axis]) {
@@ -324,6 +326,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
     if (root.children.count == 0) return;
     const first_child = root.children.first;
 
+    //- position
     var bounds: f32 = 0;
     {
         var layout_position: f32 = 0;
@@ -358,10 +361,10 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
         }
     }
 
-    // store view bounds
+    //- store view bounds
     root.view_bounds.arr()[axis] = bounds;
 
-    // recurse
+    //- recurse
     {
         var maybe_child = first_child;
         while (maybe_child) |child| : (maybe_child = child.siblings.next) {

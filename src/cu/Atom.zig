@@ -132,7 +132,12 @@ pub const Key = enum(u32) {
         return std.hash.XxHash32.hash(seed, string);
     }
 
-    pub fn format(key: Key, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        key: Key,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         _ = fmt;
         _ = options;
         if (key == .nil)
@@ -172,8 +177,6 @@ pub const Flag = enum(u32) {
     clip_rect,
 };
 
-// @TODO: unify interface to only deal with `Flags` not returning or taking in
-//   single `Flag`
 pub const Flags = struct {
     enum_set: std.EnumSet(Flag),
 
@@ -459,17 +462,17 @@ pub const pallete = struct {
 
     /// Merge the left with the right pallete, prioritizes the left one.
     pub fn mergePartials(
-        left_: PalletePartial,
+        left: PalletePartial,
         right: PalletePartial,
     ) PalletePartial {
-        var left = left_;
+        var out = left;
 
         inline for (0..PalletePartial.List.Indexer.count) |i| {
             const key = PalletePartial.List.Indexer.keyForIndex(i);
-            left.set(key, left.get(key) orelse right.get(key));
+            out.set(key, left.get(key) orelse right.get(key));
         }
 
-        return left;
+        return out;
     }
 
     pub fn partialIsFull(partial: PalletePartial) bool {

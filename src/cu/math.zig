@@ -164,6 +164,14 @@ pub fn Size(comptime T: type) type {
             };
         }
 
+        pub fn fromAxis(self: Self, axis: Axis2D) T {
+            return switch (axis) {
+                .none => @panic("invalid axis"),
+                .x => self.width,
+                .y => self.height,
+            };
+        }
+
         pub fn square(len: T) Self {
             return splat(len);
         }
@@ -401,6 +409,13 @@ pub fn Rect(comptime T: type) type {
                 .x => self.horizontalRange(),
                 .y => self.verticalRange(),
             };
+        }
+
+        pub fn inset(self: Self, by: T) Self {
+            return .rect(
+                .point(self.p0.x + by, self.p0.y + by),
+                .point(self.p1.x - by, self.p1.y - by),
+            );
         }
 
         pub fn format(

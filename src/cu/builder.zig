@@ -400,7 +400,7 @@ pub fn button(string: []const u8) cu.Interaction {
     return interaction;
 }
 
-pub fn buttonf(comptime fmt: []const u8, args: anytype) *Atom {
+pub fn buttonf(comptime fmt: []const u8, args: anytype) cu.Interaction {
     const string = std.fmt.allocPrint(cu.state.arena, fmt, args) catch
         @panic("oom");
     return button(string);
