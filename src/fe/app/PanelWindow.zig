@@ -13,6 +13,7 @@ const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
 const cu = @import("cu");
 const mt = cu.math;
 const b = cu.builder;
+const TreeMixin = cu.TreeMixin;
 
 app: *AppState,
 window: *Window = undefined,
@@ -170,7 +171,6 @@ fn build(state: *PanelWindow) void {
     defer window_inset_wrapper.end();
 
     const menu_bar_buttons = titlebar_buttons.menuBar(state);
-
     titlebar.buildTitlebar(
         state.window.wl_window,
         state.app.window_rounding,
@@ -233,7 +233,7 @@ fn build(state: *PanelWindow) void {
 
                 b.stacks.pref_size.push(.square(.none));
                 b.stacks.flags.push(.init(&.{ .clickable, .floating }));
-                const boundry = b.buildf("###panel_boundry_{*}", .{child});
+                const boundry = b.buildf("###panel_boundry [{*}]", .{child});
 
                 const inter = boundry.interaction();
                 if (inter.hovering()) {
@@ -311,7 +311,7 @@ fn build(state: *PanelWindow) void {
                 .floating,
             }));
             b.stacks.layout_axis.push(.y);
-            const atom = b.openf("panel {s}##{*}", .{ panel.name, panel });
+            const atom = b.openf("###panel_{s} [{*}]", .{ panel.name, panel });
             defer b.close(atom);
 
             //- calculate rect
@@ -327,144 +327,6 @@ fn build(state: *PanelWindow) void {
     }
 }
 
-pub fn TreeMixin(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        children: struct {
-            first: ?*T = null,
-            last: ?*T = null,
-            len: usize = 0,
-        } = .{},
-        siblings: struct {
-            next: ?*T = null,
-            prev: ?*T = null,
-        } = .{},
-        parent: ?*T = null,
-
-        pub fn recurseDepthFirstPreOrder(self: *Self) Recursion {
-            const node: *T = @fieldParentPtr("tree", self);
-
-            if (node.tree.children.len != 0)
-                return .{
-                    .next = node.tree.children.first,
-                    .push_count = 1,
-                    .pop_count = 0,
-                };
-
-            var pop_count: u32 = 0;
-            var maybe_parent: ?*T = node;
-            while (maybe_parent) |parent| : //
-            (maybe_parent = parent.tree.parent) {
-                if (parent.tree.siblings.next) |next| {
-                    return .{
-                        .next = next,
-                        .push_count = 1,
-                        .pop_count = pop_count,
-                    };
-                }
-
-                pop_count += 1;
-            }
-
-            return .empty;
-        }
-
-        pub const Recursion = struct {
-            next: ?*T,
-            push_count: u32,
-            pop_count: u32,
-
-            pub const empty = Recursion{
-                .next = null,
-                .push_count = 0,
-                .pop_count = 0,
-            };
-
-            pub fn init(root: *T) Recursion {
-                return .{ .next = root, .push_count = 0, .pop_count = 0 };
-            }
-        };
-
-        pub fn depthFirstPreOrderIterator(self: *Self) DepthFirstPreOrderIterator {
-            const node: *T = @fieldParentPtr("tree", self);
-            return DepthFirstPreOrderIterator.init(node);
-        }
-
-        pub const DepthFirstPreOrderIterator = struct {
-            root: *T,
-            rec: Recursion = .empty,
-
-            pub fn init(root: *T) DepthFirstPreOrderIterator {
-                return .{
-                    .root = root,
-                    .rec = .init(root),
-                };
-            }
-
-            pub fn next(self: *DepthFirstPreOrderIterator) ?*T {
-                const result = self.rec.next orelse return null;
-                self.rec = result.tree.recurseDepthFirstPreOrder();
-                return result;
-            }
-
-            pub fn reset(self: *DepthFirstPreOrderIterator) void {
-                self.rec = .init(self.root);
-            }
-        };
-
-        pub fn childIterator(self: *Self) ChildIterator {
-            const node: *T = @fieldParentPtr("tree", self);
-            return ChildIterator{
-                .parent = node,
-                .next_node = node.tree.children.first,
-            };
-        }
-
-        pub const ChildIterator = struct {
-            parent: *T,
-            next_node: ?*T,
-
-            pub fn next(self: *ChildIterator) ?*T {
-                if (self.next_node) |node| {
-                    self.next_node = node.tree.siblings.next;
-                    return node;
-                }
-                return null;
-            }
-
-            pub fn reset(self: *ChildIterator) void {
-                self.next_node = self.parent.children.first;
-            }
-        };
-
-        pub fn parentIterator(self: *Self) ParentIterator {
-            const node: *T = @fieldParentPtr("tree", self);
-            return ParentIterator{
-                .start = node,
-                .next_node = node,
-            };
-        }
-
-        pub const ParentIterator = struct {
-            start: *T,
-            next_node: ?*T,
-
-            pub fn next(self: *ParentIterator) ?*T {
-                if (self.next_node) |node| {
-                    self.next_node = node.tree.parent;
-                    return node;
-                }
-                return null;
-            }
-
-            pub fn reset(self: *ParentIterator) void {
-                self.next_node = self.start;
-            }
-        };
-    };
-}
-
 const Panel = struct {
     tree: TreeMixin(Panel) = .{},
 
@@ -473,27 +335,7 @@ const Panel = struct {
     split_axis: cu.Atom.LayoutAxis = .x,
 
     pub fn addChild(self: *Panel, child: *Panel) void {
-        child.tree.parent = self;
-
-        if (self.tree.children.len == 0) {
-            assert(self.tree.children.first == null);
-            assert(self.tree.children.last == null);
-            self.tree.children = .{
-                .first = child,
-                .last = child,
-                .len = 1,
-            };
-        } else {
-            const last = self.tree.children.last.?;
-            assert(last.tree.siblings.next == null);
-            last.tree.siblings.next = child;
-
-            child.tree.siblings.prev = last;
-            child.tree.siblings.next = null;
-
-            self.tree.children.last = child;
-            self.tree.children.len += 1;
-        }
+        self.tree.addChild(child);
     }
 
     pub fn rectFromPanel(

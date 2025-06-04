@@ -310,8 +310,8 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     // calculate possibly cliped rect
     const rect = blk: {
         var rect = atom.rect;
-        var maybe_parent: ?*Atom = atom.parent;
-        while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+        var iter = atom.tree.parentIterator();
+        while (iter.next()) |parent| {
             if (parent.flags.contains(.clip_rect)) {
                 rect = rect.intersect(parent.rect);
             }
@@ -321,8 +321,9 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
 
     // determine if we're under the context menu or not
     const ctx_menu_is_ancestor = blk: {
-        var maybe_parent: ?*Atom = atom;
-        break :blk while (maybe_parent) |parent| : (maybe_parent = parent.parent) {
+        var iter = atom.tree.parentIterator();
+        _ = iter.next(); // skip current
+        break :blk while (iter.next()) |parent| {
             if (parent == cu.state.ui_ctx_menu_root)
                 break true;
         } else false;

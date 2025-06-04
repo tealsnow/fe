@@ -25,25 +25,25 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
     // we create this as an orphan here as we want to be able to use
     // any properties on the stacks.
     cu.state.next_atom_orphan = true;
-    const hori_body = b.build("hori inset body");
+    const hori_body = b.build("###hori inset body");
 
     if (!tiling.tiled_top) {
         b.stacks.pref_size.push(.size(.fill, .px(inset)));
         b.stacks.layout_axis.push(.x);
-        const top_inset_container = b.open("top inset container");
+        const top_inset_container = b.open("###top inset container");
         defer b.close(top_inset_container);
 
         b.stacks.flags.pushForMany(.clickable);
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        const top_left = b.build("top-left inset").interaction();
+        const top_left = b.build("###top-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
-        const top_middle = b.build("top-middle inset").interaction();
+        const top_middle = b.build("###top-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        const top_right = b.build("top-right inset").interaction();
+        const top_right = b.build("###top-right inset").interaction();
 
         if (top_left.f.contains(.mouse_over))
             window.conn.setCursor(.resize_nwse) catch {};
@@ -63,12 +63,12 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
 
     b.stacks.layout_axis.push(.x);
     b.stacks.pref_size.push(.square(.grow));
-    const vert_body = b.open("vert inset body");
+    const vert_body = b.open("###vert inset body");
 
     if (!tiling.tiled_left) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
-        const left = b.build("left inset").interaction();
+        const left = b.build("###left inset").interaction();
 
         if (left.f.contains(.mouse_over))
             window.conn.setCursor(.resize_ew) catch {};
@@ -104,7 +104,7 @@ pub fn end(win_inset: WindowInsetWrapper) void {
     if (!tiling.tiled_right) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
-        const right = b.build("right inset").interaction();
+        const right = b.build("###right inset").interaction();
 
         if (right.f.contains(.mouse_over))
             window.conn.setCursor(.resize_ew) catch {};
@@ -117,20 +117,20 @@ pub fn end(win_inset: WindowInsetWrapper) void {
     if (!tiling.tiled_bottom) {
         b.stacks.layout_axis.push(.x);
         b.stacks.pref_size.push(.size(.fill, .px(inset)));
-        const bottom_inset_container = b.open("bottom inset container");
+        const bottom_inset_container = b.open("###bottom inset container");
         defer b.close(bottom_inset_container);
 
         b.stacks.flags.pushForMany(.clickable);
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        const bottom_left = b.build("bottom-left inset").interaction();
+        const bottom_left = b.build("###bottom-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
-        const bottom_middle = b.build("bottom-middle inset").interaction();
+        const bottom_middle = b.build("###bottom-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        const bottom_right = b.build("bottom-right inset").interaction();
+        const bottom_right = b.build("###bottom-right inset").interaction();
 
         if (bottom_left.f.contains(.mouse_over))
             window.conn.setCursor(.resize_nesw) catch {};

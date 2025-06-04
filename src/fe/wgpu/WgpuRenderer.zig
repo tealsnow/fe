@@ -974,7 +974,7 @@ pub const CuCallbacks = struct {
             .context = @ptrCast(@alignCast(cb)),
             .vtable = .{
                 .measureText = &measureText,
-                .fontSize = &fontSize,
+                .lineHeight = &lineHeight,
                 .getGraphicsInfo = &getGraphicsInfo,
             },
         };
@@ -999,7 +999,7 @@ pub const CuCallbacks = struct {
         return .size(size.width, size.height);
     }
 
-    fn fontSize(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
+    fn lineHeight(context: *anyopaque, font_handle: cu.State.FontHandle) f32 {
         _ = context;
 
         const font_face: *const FontFace = @alignCast(@ptrCast(font_handle));

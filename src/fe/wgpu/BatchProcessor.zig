@@ -75,15 +75,6 @@ pub fn process(
     return self.batches.items;
 }
 
-fn processRoot(
-    self: *BatchProcessor,
-    arena: Allocator,
-    root: *cu.Atom,
-) !void {
-    try self.processAtom(arena, root);
-    try self.flushBatches(arena);
-}
-
 fn flushBatches(self: *BatchProcessor, arena: Allocator) !void {
     try self.batches.ensureUnusedCapacity(arena, self.text_lists.size + 1);
 
@@ -107,152 +98,150 @@ fn flushBatches(self: *BatchProcessor, arena: Allocator) !void {
     self.reset();
 }
 
-fn processAtom(
+fn processRoot(
     self: *BatchProcessor,
     arena: Allocator,
-    atom: *cu.Atom,
+    root: *cu.Atom,
 ) !void {
-    if (std.math.isNan(atom.rect.p0.x) or
-        std.math.isNan(atom.rect.p0.y) or
-        std.math.isNan(atom.rect.p1.x) or
-        std.math.isNan(atom.rect.p1.y))
-    {
-        return;
-    }
-
     const trace =
         tracy.beginZone(@src(), .{ .name = "BatchProcessor.processAtom" });
     defer trace.end();
 
-    const rect = atom.rect;
+    defer self.flushBatches(arena) catch @panic("oom");
 
-    if (atom.flags.contains(.clip_rect)) {
-        try self.flushBatches(arena);
+    var iter = root.tree.depthFirstPreOrderIterator();
+    while (iter.next()) |atom| {
+        if (std.math.isNan(atom.rect.p0.x) or
+            std.math.isNan(atom.rect.p0.y) or
+            std.math.isNan(atom.rect.p1.x) or
+            std.math.isNan(atom.rect.p1.y))
+        {
+            return;
+        }
 
-        self.scissor_rect = rect.round().intFromFloat(u32);
-    }
-    defer if (atom.flags.contains(.clip_rect)) {
-        self.flushBatches(arena) catch {
-            // @FIXME: maybe we should just put this at the end with a try?
-            log.err("failed to flush batches for cliped rect", .{});
+        const rect = atom.rect;
+
+        if (atom.flags.contains(.clip_rect)) {
+            try self.flushBatches(arena);
+
+            self.scissor_rect = rect.round().intFromFloat(u32);
+        }
+        defer if (atom.flags.contains(.clip_rect)) {
+            self.flushBatches(arena) catch {
+                // @FIXME: maybe we should just put this at the end with a try?
+                log.err("failed to flush batches for cliped rect", .{});
+            };
         };
-    };
 
-    if (atom.flags.contains(.draw_background)) {
-        const color = atom.palette.get(.background).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = rect,
-            .color = color,
-            .corner_radius = atom.corner_radius,
-        });
-    }
+        if (atom.flags.contains(.draw_background)) {
+            const color = atom.palette.get(.background).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = rect,
+                .color = color,
+                .corner_radius = atom.corner_radius,
+            });
+        }
 
-    if (atom.flags.contains(.draw_border)) {
-        const color = atom.palette.get(.border).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = rect,
-            .color = color,
-            .corner_radius = atom.corner_radius,
-            .border_thickness = atom.border_width,
-        });
-    }
+        if (atom.flags.contains(.draw_border)) {
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = rect,
+                .color = color,
+                .corner_radius = atom.corner_radius,
+                .border_thickness = atom.border_width,
+            });
+        }
 
-    if (atom.flags.contains(.draw_side_top)) {
-        const topleft = rect.topLeft();
-        const topright = rect.topRight();
+        if (atom.flags.contains(.draw_side_top)) {
+            const topleft = rect.topLeft();
+            const topright = rect.topRight();
 
-        const border_rect = mt.Rect(f32).rect(
-            topleft,
-            .point(topright.x, topright.y + atom.border_width),
-        );
+            const border_rect = mt.Rect(f32).rect(
+                topleft,
+                .point(topright.x, topright.y + atom.border_width),
+            );
 
-        const color = atom.palette.get(.border).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = border_rect,
-            .color = color,
-        });
-    }
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
 
-    if (atom.flags.contains(.draw_side_bottom)) {
-        const bottomleft = rect.bottomLeft();
-        const bottomright = rect.bottomRight();
+        if (atom.flags.contains(.draw_side_bottom)) {
+            const bottomleft = rect.bottomLeft();
+            const bottomright = rect.bottomRight();
 
-        const border_rect = mt.Rect(f32).rect(
-            .point(bottomleft.x, bottomleft.y - atom.border_width),
-            bottomright,
-        );
+            const border_rect = mt.Rect(f32).rect(
+                .point(bottomleft.x, bottomleft.y - atom.border_width),
+                bottomright,
+            );
 
-        const color = atom.palette.get(.border).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = border_rect,
-            .color = color,
-        });
-    }
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
 
-    if (atom.flags.contains(.draw_side_left)) {
-        const topleft = rect.topLeft();
-        const bottomleft = rect.bottomLeft();
+        if (atom.flags.contains(.draw_side_left)) {
+            const topleft = rect.topLeft();
+            const bottomleft = rect.bottomLeft();
 
-        const border_rect = mt.Rect(f32).rect(
-            topleft,
-            .point(bottomleft.x + atom.border_width, bottomleft.y),
-        );
+            const border_rect = mt.Rect(f32).rect(
+                topleft,
+                .point(bottomleft.x + atom.border_width, bottomleft.y),
+            );
 
-        const color = atom.palette.get(.border).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = border_rect,
-            .color = color,
-        });
-    }
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
 
-    if (atom.flags.contains(.draw_side_right)) {
-        const topright = rect.topRight();
-        const bottomright = rect.bottomRight();
+        if (atom.flags.contains(.draw_side_right)) {
+            const topright = rect.topRight();
+            const bottomright = rect.bottomRight();
 
-        const border_rect = mt.Rect(f32).rect(
-            .point(topright.x - atom.border_width, topright.y),
-            bottomright,
-        );
+            const border_rect = mt.Rect(f32).rect(
+                .point(topright.x - atom.border_width, topright.y),
+                bottomright,
+            );
 
-        const color = atom.palette.get(.border).toRgbaF32();
-        try self.rect_list.append(arena, .{
-            .dst = border_rect,
-            .color = color,
-        });
-    }
+            const color = atom.palette.get(.border).toRgbaF32();
+            try self.rect_list.append(arena, .{
+                .dst = border_rect,
+                .color = color,
+            });
+        }
 
-    if (atom.flags.contains(.draw_text) or
-        atom.flags.contains(.draw_text_weak))
-    {
-        const font_face: *const FontFace = @ptrCast(@alignCast(atom.font));
+        if (atom.flags.contains(.draw_text) or
+            atom.flags.contains(.draw_text_weak))
+        {
+            const font_face: *const FontFace = @ptrCast(@alignCast(atom.font));
 
-        const entry =
-            try self.text_lists.getOrPutValue(arena, font_face, .empty);
+            const entry =
+                try self.text_lists.getOrPutValue(arena, font_face, .empty);
 
-        const font_atlas = self.font_manager.getAtlas(font_face);
+            const font_atlas = self.font_manager.getAtlas(font_face);
 
-        const shaped_text = try self.shaper
-            .shape(font_face, font_atlas, atom.display_string);
+            const shaped_text = try self.shaper
+                .shape(font_face, font_atlas, atom.display_string);
 
-        const color = if (atom.flags.contains(.draw_text_weak))
-            atom.palette.get(.text_weak).toRgbaF32()
-        else if (atom.flags.contains(.draw_text))
-            atom.palette.get(.text).toRgbaF32()
-        else
-            unreachable;
+            const color = if (atom.flags.contains(.draw_text_weak))
+                atom.palette.get(.text_weak).toRgbaF32()
+            else if (atom.flags.contains(.draw_text))
+                atom.palette.get(.text).toRgbaF32()
+            else
+                unreachable;
 
-        try shaped_text.generateRects(
-            arena,
-            entry.value_ptr,
-            atom.text_rect.p0,
-            color,
-        );
-    }
-
-    {
-        var maybe_child = atom.children.first;
-        while (maybe_child) |child| : (maybe_child = child.siblings.next) {
-            try self.processAtom(arena, child);
+            try shaped_text.generateRects(
+                arena,
+                entry.value_ptr,
+                atom.text_rect.p0,
+                color,
+            );
         }
     }
 }

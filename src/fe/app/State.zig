@@ -405,7 +405,7 @@ pub const Window = struct {
     cu_state: *cu.State,
     interface: Interface,
 
-    present_frame: bool = false,
+    present_frame: bool = true,
 
     pub const Interface = struct {
         context: *anyopaque,

@@ -206,9 +206,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     }
 
     // zero out per build info
-    atom.children = .{};
-    atom.siblings = .{};
-    atom.parent = null;
+    atom.tree = .{};
 
     atom.string = "";
     atom.display_string = "";
@@ -252,30 +250,9 @@ pub fn buildFromKey(key: Atom.Key) *Atom {
     return atom;
 }
 
-pub fn addChildToParent(parent: *Atom, child: *Atom) void {
-    child.parent = parent;
-
-    if (parent.children.count != 0) {
-        const last = parent.children.last.?;
-        last.siblings.next = child;
-        last.siblings.prev = null;
-        child.siblings.prev = last;
-        child.siblings.next = null;
-        parent.children.last = child;
-
-        parent.children.count += 1;
-    } else {
-        parent.children = .{
-            .first = child,
-            .last = child,
-            .count = 1,
-        };
-    }
-}
-
 pub fn addToTopParent(atom: *Atom) void {
     const parent = cu.state.atom_parent_stack.top() orelse return;
-    addChildToParent(parent, atom);
+    parent.tree.addChild(atom);
 }
 
 pub fn buildFromString(string: []const u8) *Atom {
@@ -506,7 +483,7 @@ pub const ctx_menu = struct {
         stacks.layout_axis.push(.y);
         cu.state.next_atom_orphan = true;
         const sub_root = open("ctx menu sub root");
-        addChildToParent(cu.state.ui_ctx_menu_root, sub_root);
+        cu.state.ui_ctx_menu_root.tree.addChild(sub_root);
 
         if (cu.state.next_ctx_menu_anchor_key != .nil) {
             const anchor_atom =
@@ -765,7 +742,7 @@ pub var stacks: Stacks = .empty;
 pub fn em(value: f32) f32 {
     const top_font = stacks.font.topStable().?;
     const font_handle = cu.state.font_kind_map.get(top_font);
-    const font_size = cu.state.callbacks.fontSize(font_handle);
+    const font_size = cu.state.callbacks.lineHeight(font_handle);
     return value * font_size;
 }
 

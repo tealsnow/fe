@@ -175,7 +175,7 @@ pub const Callbacks = struct {
             text: []const u8,
             font: FontHandle,
         ) math.Size(f32),
-        fontSize: *const fn (context: *anyopaque, font: FontHandle) f32,
+        lineHeight: *const fn (context: *anyopaque, font: FontHandle) f32,
         getGraphicsInfo: *const fn (context: *anyopaque) GraphicsInfo,
     };
 
@@ -187,8 +187,8 @@ pub const Callbacks = struct {
         return self.vtable.measureText(self.context, text, font);
     }
 
-    pub fn fontSize(self: *Callbacks, font: FontHandle) f32 {
-        return self.vtable.fontSize(self.context, font);
+    pub fn lineHeight(self: *Callbacks, font: FontHandle) f32 {
+        return self.vtable.lineHeight(self.context, font);
     }
 
     pub fn getGraphicsInfo(self: *Callbacks) GraphicsInfo {
