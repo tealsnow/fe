@@ -37,6 +37,7 @@
             wabt
             tracy
             renderdoc
+            just
 
             # wasm
             wasmtime-c-api
