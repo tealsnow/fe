@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .tracy = .{
-            .url = "git+https://github.com/tealsnow/zig-tracy.git?ref=dev#29c1ecdd076d4627060bd5f730e5bfb2ca901405",
-            .hash = "tracy-0.0.9-Dn49mz1UAAAWXE-GbbfFK0l1b_A-SC-zgkMTTrS2EFqM",
+            .url = "https://github.com/tealsnow/zig-tracy/archive/refs/tags/v0.0.10.zip",
+            .hash = "tracy-0.0.10-Dn49m0BVAABy7U1qRaKRsTd8qanvAIYxX1cdOgFPkdsr",
             .lazy = true,
         },
         .sdl3 = .{
