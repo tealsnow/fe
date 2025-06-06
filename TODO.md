@@ -9,7 +9,6 @@
 - [ ] #general consider using google/highway for simd (ghostty/pkg)
 - [ ] #general use simdutf for transcoding if I need it (ghostty/pkg)
 - [ ] #general use utf8proc for normalization and other operations (ghostty/pkg)
-- [ ] #general investigate using gtk for windowing and events
 - [ ] #general pre-reserve mmaped memory for allocators
 - [ ] #general hot reloading
     - maybe plugins?
@@ -22,12 +21,20 @@
     - [x] #cu builder support
     - [x] #cu event handling
 - [x] #cu better font management system
-- [ ] #cu consider general alignment property or just make it a widget
 - [ ] #cu disabled state for atoms
 - [ ] #cu focus behaviour
 - [ ] #cu use icu or freebidi for bidi handling
 - [ ] #cu truncate text with ellipses
 - [ ] #cu smooth scroll
+
+- [x] #cu internal spacing
+- [ ] #cu alignment
+- [ ] #cu padding
+- [ ] #cu hover cursor
+- [ ] #cu debug ui
+
+- [ ] #cu reorganise and clean up State
+- [ ] #cu reorganise and clean up Atom
 
 - [x] #wgpu avoid reuploading texture every frame
 - [ ] #wgpu texture/image rendering

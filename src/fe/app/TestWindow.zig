@@ -153,26 +153,20 @@ fn buildMainUI(state: *TestWindow) void {
         b.stacks.flags.push(.draw_side_left);
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.size(icon_size, .grow));
-        const bar = b.open("right bar");
+        const bar = b.open("###right bar");
         defer b.close(bar);
 
         //- inner
         {
             b.stacks.layout_axis.push(.y);
-            b.stacks.pref_size.push(.size(icon_size, .fit));
-            const inner = b.open("right bar inner");
+            b.stacks.pref_size.push(.size(icon_size, .fit_spaced(4)));
+            const inner = b.open("###right bar inner");
             defer b.close(inner);
 
             for (0..5) |i| {
-                {
-                    b.stacks.flags
-                        .push(.draw_border);
-                    b.stacks.pref_size.push(.square(icon_size));
-                    _ = b.buildf("right bar icon {d}", .{i});
-                }
-
-                b.stacks.pref_size.push(.size(icon_size, .px(4)));
-                _ = b.spacer();
+                b.stacks.flags.push(.draw_border);
+                b.stacks.pref_size.push(.square(icon_size));
+                _ = b.buildf("###right bar icon {d}", .{i});
             }
         }
     }
@@ -325,19 +319,19 @@ fn buildRightPane(state: *TestWindow) void {
 
         {
             b.stacks.layout_axis.push(.x);
-            b.stacks.pref_size.push(.square(.fit));
+            b.stacks.pref_size.push(.square(.fit_spaced(2)));
             const btns = b.open("buttons");
             defer b.close(btns);
 
             b.stacks.font.pushForMany(.mono);
             defer _ = b.stacks.font.pop();
 
-            b.stacks.pref_size.push(.square(.text_pad(8)));
+            b.stacks.pref_size.push(.square(.px(b.em(2))));
             if (b.button("+").clicked()) {
                 state.test_scroll_offset += 10;
             }
 
-            b.stacks.pref_size.push(.square(.text_pad(8)));
+            b.stacks.pref_size.push(.square(.px(b.em(2))));
             if (b.button("-").clicked()) {
                 state.test_scroll_offset -= 10;
             }

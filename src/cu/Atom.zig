@@ -29,7 +29,7 @@ border_width: f32 = 1, // draw_border, draw_side_top/bottom/left/right
 corner_radius: f32 = 0, // draw_border, draw_background
 
 // build artifacts - persistant
-fixed_size: math.Size(f32) = .zero,
+fixed_size: math.Size(f32) = .zero, // computed size
 rel_position: math.Point(f32) = .zero,
 rect: math.Rect(f32) = .zero,
 text_size: math.Size(f32) = .zero,
@@ -281,33 +281,10 @@ pub const PrefSize = extern struct {
         percent_of_parent, // value %
         text_content, // value padding px
         em, // value * font size
-        children_sum,
+        children_sum, // value child_spacing px
     };
 
     pub const none = PrefSize{};
-
-    /// kind: percent_of_parent,
-    /// value(percent): 1,
-    /// strictness: 0,
-    pub const grow = percent_relaxed(1);
-
-    /// kind: percent_of_parent,
-    /// value(percent): 1,
-    /// strictness: 1,
-    pub const fill = percent(1);
-
-    /// kind: children_sum,
-    /// strictness: 0,
-    pub const fit = PrefSize{ .kind = .children_sum };
-
-    /// kind: text_content,
-    /// value(padding(px)): 4,
-    /// strictness: 1,
-    pub const text = PrefSize{
-        .kind = .text_content,
-        .value = 2,
-        .strictness = 1,
-    };
 
     /// kind: pixels,
     /// value(pixels): pxs,
@@ -332,6 +309,16 @@ pub const PrefSize = extern struct {
     }
 
     /// kind: percent_of_parent,
+    /// value(percent): 1,
+    /// strictness: 1,
+    pub const fill = percent(1);
+
+    /// kind: percent_of_parent,
+    /// value(percent): 1,
+    /// strictness: 0,
+    pub const grow = percent_relaxed(1);
+
+    /// kind: percent_of_parent,
     /// value(percent): pct,
     /// strictness: 1,
     pub fn percent(pct: f32) PrefSize {
@@ -352,6 +339,15 @@ pub const PrefSize = extern struct {
             .strictness = 0,
         };
     }
+
+    /// kind: text_content,
+    /// value(padding(px)): 4,
+    /// strictness: 1,
+    pub const text = PrefSize{
+        .kind = .text_content,
+        .value = 2,
+        .strictness = 1,
+    };
 
     /// kind: text_content,
     /// value(padding(px)): padding,
@@ -378,12 +374,21 @@ pub const PrefSize = extern struct {
         };
     }
 
-    // /// kind: px,
-    // /// value(px): value * root font size,
-    // /// strictness: 1,
-    // pub fn rem(value: f32) PrefSize {
-    //     return .px(builder.rem(value));
-    // }
+    /// kind: children_sum,
+    /// value(child spacing): 0,
+    /// strictness: 0,
+    pub const fit = PrefSize{ .kind = .children_sum };
+
+    /// kind: children_sum,
+    /// value(child spacing): child_spacing,
+    /// strictness: 0,
+    pub fn fit_spaced(child_spacing: f32) PrefSize {
+        return .{
+            .kind = .children_sum,
+            .value = child_spacing,
+            .strictness = 0,
+        };
+    }
 };
 
 pub const pallete = struct {

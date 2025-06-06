@@ -57,6 +57,8 @@ pub fn startBuild(window_id: usize) void {
         stacks.corner_radius.pushForMany(0);
     }
 
+    dbg.idx = 0;
+
     //- setup ui roots
     {
         stacks.layout_axis.push(.x);
@@ -738,12 +740,40 @@ pub const Stacks = struct {
 
 pub var stacks: Stacks = .empty;
 
+pub const dbg = struct {
+    const colors = [_]math.RgbaU8{
+        .hexRgb(0x0000ff), // blue
+        .hexRgb(0x00ffff), // cyan
+        .hexRgb(0x00ff00), // green
+        .hexRgb(0xffff00), // yellow
+        .hexRgb(0xff0000), // red
+    };
+
+    var idx: usize = 0;
+
+    pub fn getColor() math.RgbaU8 {
+        const color = colors[idx % colors.len];
+        idx += 1;
+        return color;
+    }
+
+    pub fn debugBorder(atom: *Atom) void {
+        atom.flags.insert(.draw_border);
+        atom.palette.set(.border, getColor());
+    }
+};
+
 /// returns `value` multiplied by the top font size
 pub fn em(value: f32) f32 {
     const top_font = stacks.font.topStable().?;
-    const font_handle = cu.state.font_kind_map.get(top_font);
-    const font_size = cu.state.callbacks.lineHeight(font_handle);
+    const font_size = fontHeight(top_font);
     return value * font_size;
+}
+
+pub fn fontHeight(font_kind: FontKind) f32 {
+    const font_handle = cu.state.font_kind_map.get(font_kind);
+    const font_size = cu.state.callbacks.lineHeight(font_handle);
+    return font_size;
 }
 
 // /// returns `value` multiplied by the root/default font size

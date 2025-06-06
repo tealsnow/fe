@@ -54,6 +54,9 @@ fn sizeText(root: *Atom, axis_kind: Axis2D) void {
     }
 }
 
+// pixels
+// text_content
+// em
 fn standalone(root: *Atom, axis_kind: Axis2D) void {
     // any-order
 
@@ -84,6 +87,7 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
     }
 }
 
+// percent_of_parent
 fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     // depth-first pre-order
 
@@ -128,6 +132,7 @@ fn downwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     downwardsDependentRec(root, axis_kind);
 }
 
+// children_sum
 fn downwardsDependentRec(root: *Atom, axis_kind: Axis2D) void {
     // post-order
 
@@ -140,19 +145,21 @@ fn downwardsDependentRec(root: *Atom, axis_kind: Axis2D) void {
     }
 
     const axis = @intFromEnum(axis_kind);
-    const size = root.pref_size.arr()[axis];
+    const pref_size = root.pref_size.arr()[axis];
 
-    switch (size.kind) {
+    switch (pref_size.kind) {
         .none => {},
         .pixels => {},
         .percent_of_parent => {},
         .text_content => {},
         .em => {},
         .children_sum => {
+            const child_spacing = pref_size.value;
+
             var accum: f32 = 0;
-            var maybe_child = root.tree.children.first;
-            while (maybe_child) |child| : //
-            (maybe_child = child.tree.siblings.next) {
+            var count: usize = 0;
+            var child_iter = root.tree.childIterator();
+            while (child_iter.next()) |child| : (count += 1) {
                 if (!child.flags.contains(.floatingForAxis(axis_kind))) {
                     if (axis_kind == root.layout_axis) {
                         accum += child.fixed_size.arr()[axis];
@@ -160,6 +167,11 @@ fn downwardsDependentRec(root: *Atom, axis_kind: Axis2D) void {
                         accum = @max(accum, child.fixed_size.arr()[axis]);
                     }
                 }
+            }
+
+            if (axis_kind == root.layout_axis) {
+                const num = @as(f32, @floatFromInt(count -| 1)); // saturating sub
+                accum += num * child_spacing;
             }
 
             root.fixed_size.arr()[axis] = accum;
@@ -194,6 +206,10 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
         };
 
         //- non-layout axis
+        // work out allowed size
+        // iterate over children
+        //   if child size is greater than allowed size
+        //      reduce it by an amount
         if (atom.layout_axis != axis_kind and !allow_overflow) {
             const allowed_size = atom.fixed_size.arr()[axis];
             child_iter.reset();
@@ -337,22 +353,43 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
         //- position
         var bounds: f32 = 0;
         {
+            const pref_size = atom.pref_size.arr()[axis];
+            const child_spacing =
+                if (pref_size.kind == .children_sum) pref_size.value else 0;
+
             var layout_position: f32 = 0;
             var child_iter = atom.tree.childIterator();
             while (child_iter.next()) |child| {
+                if (child.flags.contains(.floatingForAxis(axis_kind))) continue;
+
                 // // grab original position
                 // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
 
-                if (!child.flags.contains(.floatingForAxis(axis_kind))) {
-                    child.rel_position.arr()[axis] = layout_position;
-                    if (atom.layout_axis == axis_kind) {
-                        layout_position += child.fixed_size.arr()[axis];
-                        bounds += child.fixed_size.arr()[axis];
-                    } else {
-                        bounds = @max(bounds, child.fixed_size.arr()[axis]);
+                //- position children
+                child.rel_position.arr()[axis] = layout_position;
+
+                if (atom.layout_axis == axis_kind) {
+                    layout_position += child.fixed_size.arr()[axis];
+                    bounds += child.fixed_size.arr()[axis];
+
+                    if (child.tree.siblings.next != null) {
+                        layout_position += child_spacing;
+                        bounds += child_spacing;
                     }
+                } else {
+                    bounds = @max(bounds, child.fixed_size.arr()[axis]);
                 }
 
+                // // grab new position
+                // const new_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
+
+                // store position delta
+                // ...
+            }
+
+            //- convert from rel_position + size to on screen rect
+            child_iter.reset();
+            while (child_iter.next()) |child| {
                 child.rect.p0.arr()[axis] =
                     atom.rect.p0.arr()[axis] + child.rel_position.arr()[axis];
                 child.rect.p1.arr()[axis] =
@@ -362,12 +399,6 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                 child.rect.p0.y = @floor(child.rect.p0.y);
                 child.rect.p1.x = @floor(child.rect.p1.x);
                 child.rect.p1.y = @floor(child.rect.p1.y);
-
-                // // grab new position
-                // const new_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
-
-                // store position delta
-                // ...
             }
         }
 

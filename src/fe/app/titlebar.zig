@@ -1,3 +1,5 @@
+const log = @import("std").log.scoped(.@"fe.app.titlebar");
+
 pub const wl = @import("../platform/linux/wayland/wayland.zig");
 
 const cu = @import("cu");
