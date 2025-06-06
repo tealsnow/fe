@@ -23,7 +23,8 @@ pub fn entryPoint(gpa: Allocator) !void {
 
     //- plugin test
     {
-        const plugin_test_trace = tracy.beginZone(@src(), .{ .name = "plugin test" });
+        const plugin_test_trace =
+            tracy.beginZone(@src(), .{ .name = "plugin test" });
         defer plugin_test_trace.end();
 
         log.info("setting up plugins", .{});

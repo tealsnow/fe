@@ -27,8 +27,8 @@
 - [ ] #cu truncate text with ellipses
 - [ ] #cu smooth scroll
 
-- [ ] #cu alignment
 - [ ] #cu padding
+- [x] #cu alignment
 - [x] #cu internal spacing
 - [x] #cu hover cursor
 

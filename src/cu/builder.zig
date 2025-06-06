@@ -54,6 +54,7 @@ pub fn startBuild(window_id: usize) void {
         stacks.hover_pointer.pushForMany(.default);
         stacks.flags.pushForMany(.none);
         stacks.text_align.pushForMany(.square(.center));
+        stacks.alignment.pushForMany(.square(.start));
         stacks.border_width.pushForMany(1);
         stacks.corner_radius.pushForMany(0);
     }
@@ -235,6 +236,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     atom.hover_pointer = stacks.hover_pointer.topVolatile().?;
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
+    atom.alignment = stacks.alignment.topVolatile().?;
     atom.border_width = stacks.border_width.topVolatile().?;
     atom.corner_radius = stacks.corner_radius.topVolatile().?;
 
@@ -667,6 +669,7 @@ pub const Stacks = struct {
     hover_pointer: VolatileStack(cu.PointerKind),
     flags: VolatileStack(Atom.Flags),
     text_align: VolatileStack(math.Size(Atom.Alignment)),
+    alignment: VolatileStack(math.Size(Atom.Alignment)),
     border_width: VolatileStack(f32),
     corner_radius: VolatileStack(f32),
 
@@ -678,6 +681,7 @@ pub const Stacks = struct {
         .hover_pointer = .empty,
         .flags = .empty,
         .text_align = .empty,
+        .alignment = .empty,
         .border_width = .empty,
         .corner_radius = .empty,
     };

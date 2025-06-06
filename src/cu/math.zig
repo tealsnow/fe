@@ -331,11 +331,19 @@ pub fn Rect(comptime T: type) type {
             return .rect(self.p0.intFromFloat(NT), self.p1.intFromFloat(NT));
         }
 
+        pub fn floor(self: Self) Self {
+            return .rect(self.p0.floor(), self.p1.floor());
+        }
+
         pub fn round(self: Self) Self {
             return .rect(self.p0.round(), self.p1.round());
         }
 
-        pub fn arr(self: *Self) *[4]T {
+        pub fn arr(self: *Self) *[2]Point(T) {
+            return @ptrCast(self);
+        }
+
+        pub fn arrpts(self: *Self) *[4]T {
             return @ptrCast(self);
         }
 

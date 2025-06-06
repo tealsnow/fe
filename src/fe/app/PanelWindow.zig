@@ -128,7 +128,7 @@ const titlebar_buttons = struct {
 
             _ = state.app.newWindow(.{
                 .title = "Panel",
-                .initial_size = .size(1024, 576),
+                .initial_size = .size(800, 600),
                 .interface = panel_window_state.windowInterface(),
             }) catch |err| {
                 log.err("failed to create new panel window: {}", .{err});
@@ -178,16 +178,6 @@ fn build(state: *PanelWindow) void {
         menu_bar_buttons,
     );
 
-    const dbg_colors = [_]mt.RgbaU8{
-        .hexRgb(0x0000ff), // blue
-        .hexRgb(0x00ffff), // cyan
-        .hexRgb(0x00ff00), // green
-        .hexRgb(0xffff00), // yellow
-        .hexRgb(0xff0000), // red
-    };
-
-    var dbg_idx: usize = 0;
-
     //- panel ui
     {
         const split_handle_size = 2;
@@ -195,17 +185,13 @@ fn build(state: *PanelWindow) void {
 
         //- root container
         b.stacks.pref_size.push(.square(.grow));
-        b.stacks.flags.push(.draw_border);
-        b.stacks.palette.push(.init(.{
-            .border = dbg_colors[dbg_idx % dbg_colors.len],
-        }));
         b.stacks.layout_axis.push(.x);
         const root_container = b.open("###root_panel_container");
         defer b.close(root_container);
 
-        const root_rect = root_container.rect;
+        b.dbg.debugBorder(root_container);
 
-        dbg_idx += 1;
+        const root_rect = root_container.rect;
 
         //- build non-leaf panel ui
         var iter = state.root_panel.tree.depthFirstPreOrderIterator();
@@ -290,14 +276,11 @@ fn build(state: *PanelWindow) void {
 
         //- build leaf panel ui
         iter.reset();
-        while (iter.next()) |panel| : (dbg_idx += 1) {
+        while (iter.next()) |panel| {
             if (panel.tree.children.len != 0) continue;
 
             //- setup atom
             b.stacks.pref_size.push(.square(.none));
-            b.stacks.palette.push(.init(.{
-                .border = dbg_colors[dbg_idx % dbg_colors.len],
-            }));
             b.stacks.flags.push(.init(&.{
                 .draw_background,
                 .draw_border,
@@ -305,8 +288,11 @@ fn build(state: *PanelWindow) void {
                 .floating,
             }));
             b.stacks.layout_axis.push(.y);
+            b.stacks.alignment.push(.square(.center));
             const atom = b.openf("###panel_{s} [{*}]", .{ panel.name, panel });
             defer b.close(atom);
+
+            b.dbg.debugBorder(atom);
 
             //- calculate rect
             const rect =

@@ -21,6 +21,7 @@ hover_pointer: cu.PointerKind = .default,
 // custom_draw_func
 // custom_draw_data
 text_align: math.Size(Alignment) = .square(.center),
+alignment: math.Size(Alignment) = .square(.start),
 palette: pallete.Pallete = undefined,
 font: cu.FontHandle = undefined,
 // corner_radii: [4]f32

@@ -342,10 +342,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                 },
             }
 
-            atom.text_rect.p0.x = @floor(atom.text_rect.p0.x);
-            atom.text_rect.p0.y = @floor(atom.text_rect.p0.y);
-            atom.text_rect.p1.x = @floor(atom.text_rect.p1.x);
-            atom.text_rect.p1.y = @floor(atom.text_rect.p1.y);
+            atom.text_rect = atom.text_rect.round();
         }
 
         if (atom.tree.children.len == 0) continue;
@@ -353,14 +350,43 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
         //- position
         var bounds: f32 = 0;
         {
+            var child_iter = atom.tree.childIterator();
+
+            //- children size
+            // avoid working out sizes if not used
+            var children_size: f32 = 0;
+            if (atom.alignment.arr()[axis] != .start)
+                while (child_iter.next()) |child| {
+                    if (child.flags.contains(.floatingForAxis(axis_kind)))
+                        continue;
+
+                    if (atom.layout_axis == axis_kind) {
+                        children_size += child.fixed_size.arr()[axis];
+                    } else {
+                        children_size = @max(
+                            children_size,
+                            child.fixed_size.arr()[axis],
+                        );
+                    }
+                };
+
+            //- start layout position
+            var layout_position: f32 = switch (atom.alignment.arr()[axis]) {
+                .start => 0,
+                .center => (atom.fixed_size.arr()[axis] - children_size) / 2,
+                .end => atom.fixed_size.arr()[axis] - children_size,
+            };
+
+            //- child spacing if any
             const pref_size = atom.pref_size.arr()[axis];
             const child_spacing =
                 if (pref_size.kind == .children_sum) pref_size.value else 0;
 
-            var layout_position: f32 = 0;
-            var child_iter = atom.tree.childIterator();
+            //- position children
+            child_iter.reset();
             while (child_iter.next()) |child| {
-                if (child.flags.contains(.floatingForAxis(axis_kind))) continue;
+                if (child.flags.contains(.floatingForAxis(axis_kind)))
+                    continue;
 
                 // // grab original position
                 // var original_position = @min(child.rect.p.p0.arr[axis_i], child.rect.p.p1.arr[axis_i]);
@@ -387,7 +413,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                 // ...
             }
 
-            //- convert from rel_position + size to on screen rect
+            //- position children on screen
             child_iter.reset();
             while (child_iter.next()) |child| {
                 child.rect.p0.arr()[axis] =
@@ -395,10 +421,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                 child.rect.p1.arr()[axis] =
                     child.rect.p0.arr()[axis] + child.fixed_size.arr()[axis];
 
-                child.rect.p0.x = @floor(child.rect.p0.x);
-                child.rect.p0.y = @floor(child.rect.p0.y);
-                child.rect.p1.x = @floor(child.rect.p1.x);
-                child.rect.p1.y = @floor(child.rect.p1.y);
+                child.rect = child.rect.round();
             }
         }
 
