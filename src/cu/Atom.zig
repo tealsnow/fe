@@ -16,7 +16,7 @@ display_string: []const u8 = "",
 flags: Flags = .none,
 pref_size: math.Size(PrefSize) = .zero,
 layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
-// hover_cursor
+hover_pointer: cu.PointerKind = .default,
 // group_key
 // custom_draw_func
 // custom_draw_data

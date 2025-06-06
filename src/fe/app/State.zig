@@ -325,6 +325,13 @@ pub fn runUpdate(state: *State) !void {
 
         window.build();
 
+        if (state.focus_window_pointer == window) {
+            if (window.cu_state.pointer_kind) |pointer_kind| {
+                try state.window_list.conn
+                    .setCursor(cuPointerKindToWlCursorKind(pointer_kind));
+            }
+        }
+
         try window.renderer.render(state.arena, state.font_manager);
         window.renderer.surface.present();
     }
@@ -573,4 +580,49 @@ fn getFontFromFamilyName(
 
     const path = try match.getString(.file, 0);
     return try gpa.dupeZ(u8, path);
+}
+
+//= cu pointer kind to wl cursor kind
+
+pub fn cuPointerKindToWlCursorKind(
+    pointer_kind: cu.PointerKind,
+) wl.CursorKind {
+    return switch (pointer_kind) {
+        .default => .default,
+        .context_menu => .context_menu,
+        .help => .help,
+        .pointer => .pointer,
+        .progress => .progress,
+        .wait => .wait,
+        .cell => .cell,
+        .crosshair => .crosshair,
+
+        .text => .text,
+
+        .dnd_alias => .dnd_alias,
+        .dnd_copy => .dnd_copy,
+        .dnd_move => .dnd_move,
+        .dnd_no_drop => .dnd_no_drop,
+        .dnd_not_allowed => .dnd_not_allowed,
+        .dnd_grab => .dnd_grab,
+        .dnd_grabbing => .dnd_grabbing,
+
+        .resize_e => .resize_e,
+        .resize_n => .resize_n,
+        .resize_ne => .resize_ne,
+        .resize_nw => .resize_nw,
+        .resize_s => .resize_s,
+        .resize_se => .resize_se,
+        .resize_sw => .resize_sw,
+        .resize_w => .resize_w,
+        .resize_ew => .resize_ew,
+        .resize_ns => .resize_ns,
+        .resize_nesw => .resize_nesw,
+        .resize_nwse => .resize_nwse,
+        .resize_col => .resize_col,
+        .resize_row => .resize_row,
+
+        .zoom_in => .zoom_in,
+        .zoom_out => .zoom_out,
+    };
 }

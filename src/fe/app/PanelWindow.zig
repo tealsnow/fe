@@ -190,8 +190,8 @@ fn build(state: *PanelWindow) void {
 
     //- panel ui
     {
-        const split_handle_size = 4;
-        const inset_size = 5;
+        const split_handle_size = 2;
+        const inset_size = 4;
 
         //- root container
         b.stacks.pref_size.push(.square(.grow));
@@ -233,21 +233,15 @@ fn build(state: *PanelWindow) void {
 
                 b.stacks.pref_size.push(.square(.none));
                 b.stacks.flags.push(.init(&.{ .clickable, .floating }));
+                b.stacks.hover_pointer.push(
+                    if (panel.split_axis == .x) .resize_ew else .resize_ns,
+                );
                 const boundry = b.buildf("###panel_boundry [{*}]", .{child});
-
-                const inter = boundry.interaction();
-                if (inter.hovering()) {
-                    state.window.wl_window.conn.setCursor( //
-                        if (panel.split_axis == .x)
-                            .resize_ew
-                        else
-                            .resize_ns //
-                    ) catch @panic("");
-                }
 
                 boundry.rel_position = boundry_rect.origin().sub(root_rect.origin());
                 boundry.fixed_size = boundry_rect.size();
 
+                const inter = boundry.interaction();
                 if (inter.dragging()) {
                     const min_child = child;
                     const max_child = child.tree.siblings.next.?;

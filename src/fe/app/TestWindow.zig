@@ -268,15 +268,41 @@ fn buildRightPane(state: *TestWindow) void {
     //- header
     {
         b.stacks.flags
-            .push(.init(&.{ .draw_side_bottom, .draw_text }));
+            .push(.init(&.{ .draw_side_bottom, .draw_text, .clickable }));
         b.stacks.layout_axis.push(.x);
         b.stacks.text_align.push(.square(.center));
         b.stacks.pref_size.push(.size(.grow, .text));
         b.stacks.font.push(.label);
+        b.stacks.hover_pointer.push(.context_menu);
         const header = b.open("Right Header");
         defer b.close(header);
 
-        if (header.interaction().f.contains(.mouse_over)) {
+        const inter = header.interaction();
+
+        if (inter.clicked()) {
+            b.ctx_menu.openMenu(
+                header.key,
+                cu.state.ui_root.key,
+                cu.state.pointer_pos,
+            );
+        }
+
+        if (b.ctx_menu.begin(header.key)) |ctx_menu| {
+            defer b.ctx_menu.end(ctx_menu);
+
+            b.stacks.flags.push(.init(&.{ .draw_background, .draw_border }));
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.square(.fit));
+            const menu = b.open("ctx menu");
+            defer b.close(menu);
+
+            b.stacks.pref_size.push(.square(.text_pad(8)));
+            _ = b.button("foo");
+            b.stacks.pref_size.push(.square(.text_pad(8)));
+            _ = b.button("bar");
+        }
+
+        if (inter.hovering() and !cu.state.ctx_menu_open) {
             b.stacks.flags
                 .push(.init(&.{ .draw_background, .draw_border }));
             b.stacks.layout_axis.push(.y);

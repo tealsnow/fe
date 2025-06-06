@@ -51,6 +51,7 @@ pub fn startBuild(window_id: usize) void {
         stacks.font.pushForMany(.body);
         stacks.pref_size.pushForMany(.square(.fill));
         stacks.layout_axis.pushForMany(.none);
+        stacks.hover_pointer.pushForMany(.default);
         stacks.flags.pushForMany(.none);
         stacks.text_align.pushForMany(.square(.center));
         stacks.border_width.pushForMany(1);
@@ -160,6 +161,21 @@ pub fn endBuild() void {
         cu.state.ui_built = true;
         cu.state.event_list.len = 0;
     }
+
+    //- work out the hover cursor
+    {
+        var iter = cu.state.ui_root.tree.depthFirstPreOrderIterator();
+        var hovered_atom: ?*Atom = null;
+        while (iter.next()) |atom| {
+            if (atom.rect.contains(cu.state.pointer_pos)) {
+                hovered_atom = atom;
+            }
+        }
+        cu.state.pointer_kind = if (hovered_atom) |atom|
+            atom.hover_pointer
+        else
+            null;
+    }
 }
 
 pub fn tryAtomFromKey(key: Atom.Key) ?*Atom {
@@ -216,6 +232,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     // per build info
     atom.pref_size = stacks.pref_size.topVolatile().?;
     atom.layout_axis = stacks.layout_axis.topVolatile().?;
+    atom.hover_pointer = stacks.hover_pointer.topVolatile().?;
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
     atom.border_width = stacks.border_width.topVolatile().?;
@@ -515,7 +532,7 @@ pub const tooltip = struct {
         const sub_root = open("tooltip sub root");
         sub_root.flags.insert(.floating);
 
-        var pos = cu.state.mouse;
+        var pos = cu.state.pointer_pos;
         pos.y += cu.state.graphics_info.cursor_size_px;
         sub_root.rel_position = pos;
 
@@ -647,6 +664,7 @@ pub const Stacks = struct {
     font: VolatileStack(FontKind),
     pref_size: VolatileStack(math.Size(Atom.PrefSize)),
     layout_axis: VolatileStack(Atom.LayoutAxis),
+    hover_pointer: VolatileStack(cu.PointerKind),
     flags: VolatileStack(Atom.Flags),
     text_align: VolatileStack(math.Size(Atom.Alignment)),
     border_width: VolatileStack(f32),
@@ -657,6 +675,7 @@ pub const Stacks = struct {
         .pref_size = .empty,
         .font = .empty,
         .layout_axis = .empty,
+        .hover_pointer = .empty,
         .flags = .empty,
         .text_align = .empty,
         .border_width = .empty,

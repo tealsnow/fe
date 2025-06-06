@@ -16,6 +16,7 @@ pub const State = @import("State.zig");
 pub const FontHandle = State.FontHandle;
 pub const FontKind = State.FontKind;
 pub const FontKindMap = State.FontKindMap;
+pub const PointerKind = State.PointerKind;
 pub const math = @import("math.zig");
 pub const builder = @import("builder.zig");
 pub const input = @import("input.zig");

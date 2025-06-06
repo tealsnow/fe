@@ -27,10 +27,11 @@
 - [ ] #cu truncate text with ellipses
 - [ ] #cu smooth scroll
 
-- [x] #cu internal spacing
 - [ ] #cu alignment
 - [ ] #cu padding
-- [ ] #cu hover cursor
+- [x] #cu internal spacing
+- [x] #cu hover cursor
+
 - [ ] #cu debug ui
 
 - [ ] #cu reorganise and clean up State

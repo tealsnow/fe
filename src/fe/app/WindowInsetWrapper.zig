@@ -37,26 +37,23 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
+        b.stacks.hover_pointer.push(.resize_nwse);
         const top_left = b.build("###top-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
+        b.stacks.hover_pointer.push(.resize_ns);
         const top_middle = b.build("###top-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
+        b.stacks.hover_pointer.push(.resize_nesw);
         const top_right = b.build("###top-right inset").interaction();
 
-        if (top_left.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_nwse) catch {};
         if (top_left.pressed())
             window.startResize(.top_left);
 
-        if (top_middle.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_ns) catch {};
         if (top_middle.pressed())
             window.startResize(.top);
 
-        if (top_right.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_nesw) catch {};
         if (top_right.pressed())
             window.startResize(.top_right);
     }
@@ -68,10 +65,9 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
     if (!tiling.tiled_left) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
+        b.stacks.hover_pointer.push(.resize_ew);
         const left = b.build("###left inset").interaction();
 
-        if (left.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_ew) catch {};
         if (left.pressed())
             window.startResize(.left);
     }
@@ -81,10 +77,6 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
     b.pushParent(hori_body);
 
     hori_body.pref_size = .square(.grow);
-
-    const hori_inter = hori_body.interaction();
-    if (hori_inter.f.contains(.mouse_over))
-        window.conn.setCursor(.default) catch {};
 
     return .{
         .window = window,
@@ -104,10 +96,9 @@ pub fn end(win_inset: WindowInsetWrapper) void {
     if (!tiling.tiled_right) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
+        b.stacks.hover_pointer.push(.resize_ew);
         const right = b.build("###right inset").interaction();
 
-        if (right.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_ew) catch {};
         if (right.pressed())
             window.startResize(.right);
     }
@@ -124,26 +115,23 @@ pub fn end(win_inset: WindowInsetWrapper) void {
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
+        b.stacks.hover_pointer.push(.resize_nesw);
         const bottom_left = b.build("###bottom-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
+        b.stacks.hover_pointer.push(.resize_ns);
         const bottom_middle = b.build("###bottom-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
+        b.stacks.hover_pointer.push(.resize_nwse);
         const bottom_right = b.build("###bottom-right inset").interaction();
 
-        if (bottom_left.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_nesw) catch {};
         if (bottom_left.pressed())
             window.startResize(.bottom_left);
 
-        if (bottom_middle.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_ns) catch {};
         if (bottom_middle.pressed())
             window.startResize(.bottom);
 
-        if (bottom_right.f.contains(.mouse_over))
-            window.conn.setCursor(.resize_nwse) catch {};
         if (bottom_right.pressed())
             window.startResize(.bottom_right);
     }

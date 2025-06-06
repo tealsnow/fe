@@ -335,8 +335,8 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
     else
         math.Rect(f32).zero;
 
-    const in_bounds = !blacklist_rect.contains(cu.state.mouse) and
-        rect.contains(cu.state.mouse);
+    const in_bounds = !blacklist_rect.contains(cu.state.pointer_pos) and
+        rect.contains(cu.state.pointer_pos);
 
     var i: usize = 0;
     while (i < cu.state.event_list.len) : (i += 1) {
@@ -356,7 +356,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                     cu.state.hot_atom_key = atom.key;
                     cu.state.active_atom_key.set(button.button, atom.key);
 
-                    cu.state.start_drag_pos = cu.state.mouse;
+                    cu.state.pointer_pos_start_drag = cu.state.pointer_pos;
 
                     setButtonGeneric(&inter.f, .pressed, button.button);
 
@@ -422,7 +422,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                 }
             },
             .mouse_move => |pos| {
-                cu.state.mouse = pos;
+                cu.state.pointer_pos = pos;
             },
             .scroll => |pt| {
                 if (in_bounds and atom.flags.contains(.view_scroll)) {
@@ -435,8 +435,8 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         }
     }
 
-    if (rect.contains(cu.state.mouse) and
-        !blacklist_rect.contains(cu.state.mouse))
+    if (rect.contains(cu.state.pointer_pos) and
+        !blacklist_rect.contains(cu.state.pointer_pos))
     {
         inter.f.insert(.mouse_over);
     }

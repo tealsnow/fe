@@ -77,11 +77,10 @@ pub fn buildTitlebar(
             const menu = b.open("ctx menu");
             defer b.close(menu);
 
-            // b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
-            // defer _ = b.stacks.pref_size.pop();
+            b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
+            defer _ = b.stacks.pref_size.pop();
 
             for (menu_button.items) |menu_item| {
-                b.stacks.pref_size.push(.square(.text_pad(8)));
                 if (b.button(menu_item.name).clicked()) {
                     menu_item.action(menu_buttons.context);
                     b.ctx_menu.closeMenu();
@@ -101,8 +100,8 @@ pub fn buildTitlebar(
             window.toggleMaximized();
         if (inter.f.contains(.right_pressed))
             window.showWindowMenu(.point(
-                @intFromFloat(cu.state.mouse.x),
-                @intFromFloat(cu.state.mouse.y),
+                @intFromFloat(cu.state.pointer_pos.x),
+                @intFromFloat(cu.state.pointer_pos.y),
             ));
         if (inter.dragging()) {
             window.startMove();

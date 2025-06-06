@@ -63,8 +63,9 @@ event_list: std.BoundedArray(cu.input.Event, 32) = .{},
 graphics_info: GraphicsInfo,
 
 window_size: math.Size(f32) = .zero,
-mouse: math.Point(f32) = .nan,
-start_drag_pos: math.Point(f32) = .nan,
+pointer_pos: math.Point(f32) = .nan,
+pointer_kind: ?PointerKind = null,
+pointer_pos_start_drag: math.Point(f32) = .nan,
 drag_data: []u8,
 
 font_kind_map: FontKindMap,
@@ -162,7 +163,7 @@ pub fn getDragData(state: *State, comptime T: type) *T {
 }
 
 pub fn dragDelta(state: *const State) math.Point(f32) {
-    return state.mouse.sub(state.start_drag_pos);
+    return state.pointer_pos.sub(state.pointer_pos_start_drag);
 }
 
 pub const Callbacks = struct {
@@ -239,3 +240,42 @@ pub const FontKind = enum {
 };
 
 pub const FontKindMap = std.EnumArray(FontKind, FontHandle);
+
+pub const PointerKind = enum {
+    default,
+    context_menu,
+    help,
+    pointer,
+    progress,
+    wait,
+    cell,
+    crosshair,
+
+    text,
+
+    dnd_alias,
+    dnd_copy,
+    dnd_move,
+    dnd_no_drop,
+    dnd_not_allowed,
+    dnd_grab,
+    dnd_grabbing,
+
+    resize_e,
+    resize_n,
+    resize_ne,
+    resize_nw,
+    resize_s,
+    resize_se,
+    resize_sw,
+    resize_w,
+    resize_ew,
+    resize_ns,
+    resize_nesw,
+    resize_nwse,
+    resize_col,
+    resize_row,
+
+    zoom_in,
+    zoom_out,
+};
