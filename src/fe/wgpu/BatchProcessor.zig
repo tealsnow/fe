@@ -60,10 +60,6 @@ pub fn process(
 ) ![]const BatchData {
     if (!cu.state.ui_built) return &[_]BatchData{};
 
-    const trace =
-        tracy.beginZone(@src(), .{ .name = "BatchProcessor.process" });
-    defer trace.end();
-
     self.surface_size = surface_size;
     self.batches = .empty;
     self.reset();
@@ -80,6 +76,10 @@ fn processRoot(
     arena: Allocator,
     root: *cu.Atom,
 ) !void {
+    const trace = tracy.beginZone(@src(), .{ .name = "BatchProcessor.processRoot" });
+    defer trace.end();
+    trace.text("root: {}", .{root});
+
     try self.processAtom(arena, root);
     try self.flushBatches(arena);
 }
@@ -119,10 +119,6 @@ fn processAtom(
     {
         return;
     }
-
-    const trace =
-        tracy.beginZone(@src(), .{ .name = "BatchProcessor.processAtom" });
-    defer trace.end();
 
     const rect = atom.rect;
 

@@ -313,27 +313,33 @@ pub fn runUpdate(state: *State) !void {
         },
     };
 
-    for (state.window_list.slice()) |window| {
-        if (!window.present_frame) continue;
-
-        const frame_trace =
-            tracy.startDiscontinuousFrame("window");
+    {
+        const frame_trace = tracy.startDiscontinuousFrame("present");
         defer frame_trace.end();
-        tracy.print("window: {s}", .{window.title});
 
-        window.present_frame = false;
+        for (state.window_list.slice()) |window| {
+            if (!window.present_frame) continue;
 
-        window.build();
+            const trace_window =
+                tracy.beginZone(@src(), .{ .name = "window" });
+            defer trace_window.end();
+            trace_window.name("window: {s}", .{window.title});
+            trace_window.text("{*}", .{window});
 
-        if (state.focus_window_pointer == window) {
-            if (window.cu_state.pointer_kind) |pointer_kind| {
-                try state.window_list.conn
-                    .setCursor(cuPointerKindToWlCursorKind(pointer_kind));
+            window.present_frame = false;
+
+            window.build();
+
+            if (state.focus_window_pointer == window) {
+                if (window.cu_state.pointer_kind) |pointer_kind| {
+                    try state.window_list.conn
+                        .setCursor(cuPointerKindToWlCursorKind(pointer_kind));
+                }
             }
-        }
 
-        try window.renderer.render(state.arena, state.font_manager);
-        window.renderer.surface.present();
+            try window.renderer.render(state.arena, state.font_manager);
+            window.renderer.surface.present();
+        }
     }
 
     if (state.window_list.slice().len == 0)

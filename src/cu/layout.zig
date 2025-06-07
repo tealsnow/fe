@@ -17,7 +17,7 @@ const debug_print_atom = false;
 pub fn layout(root: *Atom) !void {
     const trace = tracy.beginZone(@src(), .{ .name = "layout" });
     defer trace.end();
-    tracy.print("{}", .{root});
+    trace.text("root: {}", .{root});
 
     for (Axis2D.array) |axis| {
         sizeText(root, axis);
@@ -34,6 +34,7 @@ fn sizeText(root: *Atom, axis_kind: Axis2D) void {
 
     const trace = tracy.beginZone(@src(), .{ .name = "size text" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
@@ -62,6 +63,7 @@ fn standalone(root: *Atom, axis_kind: Axis2D) void {
 
     const trace = tracy.beginZone(@src(), .{ .name = "standalone" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
@@ -93,6 +95,7 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
 
     const trace = tracy.beginZone(@src(), .{ .name = "upwards dependent" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
@@ -128,6 +131,7 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
 fn downwardsDependent(root: *Atom, axis_kind: Axis2D) void {
     const trace = tracy.beginZone(@src(), .{ .name = "downwards dependent" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     downwardsDependentRec(root, axis_kind);
 }
@@ -186,6 +190,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
 
     const trace = tracy.beginZone(@src(), .{ .name = "solve violations" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
@@ -304,6 +309,7 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
 
     const trace = tracy.beginZone(@src(), .{ .name = "position" });
     defer trace.end();
+    trace.text("root: {}", .{root});
 
     const axis = @intFromEnum(axis_kind);
 

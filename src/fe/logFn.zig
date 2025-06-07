@@ -90,7 +90,7 @@ pub fn logFnRuntime(
         .message = message,
     };
 
-    tracy.print(tracy_fmt, tracy_args);
+    tracy.message(tracy_fmt, tracy_args);
 
     stderr: {
         const stderr = std.io.getStdErr().writer();

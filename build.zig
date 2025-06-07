@@ -266,19 +266,6 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    if (profile) {
-        // @TODO: Figure out a portable alternative to setsid
-        // @NOTE: setsid used since `addSystemCommand` is blocking
-        //  without it, the build system would launch tracy then wait for
-        //  it to close before running the app
-        const tracy_cmd = b.addSystemCommand(&.{
-            "setsid", //
-            "-f", "tracy", //
-            "-a", "localhost", //
-        });
-        run_cmd.step.dependOn(&tracy_cmd.step);
-    }
-
     //- check
 
     const check_step = b.step("check", "Run a dry build");
