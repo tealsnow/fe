@@ -51,7 +51,7 @@ pub fn startBuild(window_id: usize) void {
         stacks.font.pushForMany(.body);
         stacks.pref_size.pushForMany(.square(.fill));
         stacks.layout_axis.pushForMany(.none);
-        stacks.hover_pointer.pushForMany(.default);
+        // stacks.hover_cursor intentialally left out
         stacks.flags.pushForMany(.none);
         stacks.text_align.pushForMany(.square(.center));
         stacks.alignment.pushForMany(.square(.start));
@@ -165,17 +165,23 @@ pub fn endBuild() void {
 
     //- work out the hover cursor
     {
-        var iter = cu.state.ui_root.tree.depthFirstPreOrderIterator();
-        var hovered_atom: ?*Atom = null;
-        while (iter.next()) |atom| {
-            if (atom.rect.contains(cu.state.pointer_pos)) {
-                hovered_atom = atom;
-            }
+        var pointer_kind: ?cu.PointerKind = null;
+
+        findHoverPointerKindForRoot(cu.state.ui_root, &pointer_kind);
+        findHoverPointerKindForRoot(cu.state.ui_ctx_menu_root, &pointer_kind);
+        findHoverPointerKindForRoot(cu.state.ui_tooltip_root, &pointer_kind);
+
+        cu.state.pointer_kind = pointer_kind;
+    }
+}
+
+fn findHoverPointerKindForRoot(root: *Atom, pointer_kind: *?cu.PointerKind) void {
+    var iter = root.tree.depthFirstPreOrderIterator();
+    while (iter.next()) |atom| {
+        if (atom.rect.contains(cu.state.pointer_pos)) {
+            if (atom.hover_pointer) |kind|
+                pointer_kind.* = kind;
         }
-        cu.state.pointer_kind = if (hovered_atom) |atom|
-            atom.hover_pointer
-        else
-            null;
     }
 }
 
@@ -233,7 +239,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     // per build info
     atom.pref_size = stacks.pref_size.topVolatile().?;
     atom.layout_axis = stacks.layout_axis.topVolatile().?;
-    atom.hover_pointer = stacks.hover_pointer.topVolatile().?;
+    atom.hover_pointer = stacks.hover_pointer.topVolatile();
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
     atom.alignment = stacks.alignment.topVolatile().?;
@@ -389,6 +395,7 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
 
 pub fn button(string: []const u8) cu.Interaction {
     stacks.font.push(.button);
+    stacks.hover_pointer.push(.clickable);
     const atom = build(string);
     atom.flags = .init(&.{ .clickable, .draw_text, .draw_border });
 
@@ -408,6 +415,7 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
     stacks.pref_size.push(.size(.px(em(3)), .px(em(1.5))));
     stacks.flags.push(.init(&.{ .draw_border, .clickable }));
     stacks.layout_axis.push(.y);
+    stacks.hover_pointer.push(.clickable);
     const toggle = open("toggle container");
     defer close(toggle);
 

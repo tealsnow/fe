@@ -331,10 +331,11 @@ pub fn runUpdate(state: *State) !void {
             window.build();
 
             if (state.focus_window_pointer == window) {
-                if (window.cu_state.pointer_kind) |pointer_kind| {
-                    try state.window_list.conn
-                        .setCursor(cuPointerKindToWlCursorKind(pointer_kind));
-                }
+                const pointer_kind = if (window.cu_state.pointer_kind) |kind|
+                    cuPointerKindToWlCursorKind(kind)
+                else
+                    .default;
+                try state.window_list.conn.setCursor(pointer_kind);
             }
 
             try window.renderer.render(state.arena, state.font_manager);
@@ -597,7 +598,7 @@ pub fn cuPointerKindToWlCursorKind(
         .default => .default,
         .context_menu => .context_menu,
         .help => .help,
-        .pointer => .pointer,
+        .clickable => .pointer,
         .progress => .progress,
         .wait => .wait,
         .cell => .cell,

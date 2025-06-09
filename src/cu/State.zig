@@ -245,7 +245,7 @@ pub const PointerKind = enum {
     default,
     context_menu,
     help,
-    pointer,
+    clickable,
     progress,
     wait,
     cell,
