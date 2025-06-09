@@ -358,6 +358,11 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
         {
             var child_iter = atom.tree.childIterator();
 
+            //- get child spacing if any
+            const pref_size = atom.pref_size.arr()[axis];
+            const child_spacing =
+                if (pref_size.kind == .children_sum) pref_size.value else 0;
+
             //- children size
             // avoid working out sizes if not used
             var children_size: f32 = 0;
@@ -368,6 +373,8 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
 
                     if (atom.layout_axis == axis_kind) {
                         children_size += child.fixed_size.arr()[axis];
+                        if (child.tree.siblings.next != null)
+                            children_size += child_spacing;
                     } else {
                         children_size = @max(
                             children_size,
@@ -382,11 +389,6 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                 .center => (atom.fixed_size.arr()[axis] - children_size) / 2,
                 .end => atom.fixed_size.arr()[axis] - children_size,
             };
-
-            //- child spacing if any
-            const pref_size = atom.pref_size.arr()[axis];
-            const child_spacing =
-                if (pref_size.kind == .children_sum) pref_size.value else 0;
 
             //- position children
             child_iter.reset();
