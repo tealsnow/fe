@@ -21,20 +21,24 @@ pub fn entryPoint(gpa: Allocator) !void {
     tracy.printAppInfo(AppState.APP_ID, .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
 
-    //- plugin test
-    {
-        const plugin_test_trace =
-            tracy.beginZone(@src(), .{ .name = "plugin test" });
-        defer plugin_test_trace.end();
-
-        log.info("setting up plugins", .{});
-
-        const host = try plugins.PluginHost.init(gpa);
-        defer host.deinit(gpa);
-
-        const plugin = host.plugins[0];
-        try plugins.doTest(plugin);
-    }
+    // @FIXME: keep getting error about improper instramentation in tracy:
+    //   a free event without a matching allocation
+    //   likely that the in wasm allocator is not being traced i.e.
+    //   an allocation in guest that is then freed in the host
+    // //- plugin test
+    // {
+    //     const plugin_test_trace =
+    //         tracy.beginZone(@src(), .{ .name = "plugin test" });
+    //     defer plugin_test_trace.end();
+    //
+    //     log.info("setting up plugins", .{});
+    //
+    //     const host = try plugins.PluginHost.init(gpa);
+    //     defer host.deinit(gpa);
+    //
+    //     const plugin = host.plugins[0];
+    //     try plugins.doTest(plugin);
+    // }
 
     //- arena
 
