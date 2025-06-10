@@ -295,8 +295,9 @@ fn build(state: *PanelWindow) void {
             b.dbg.debugBorder(atom);
 
             //- calculate rect
-            const rect =
-                panel.rectFromPanel(state.app.arena, root_rect).inset(inset_size);
+            const rect = panel
+                .rectFromPanel(state.app.arena, root_rect)
+                .innerRect(.splat(inset_size));
             atom.rel_position = rect.origin().sub(root_rect.origin());
             atom.fixed_size = rect.size();
 

@@ -14,20 +14,23 @@ key: Key,
 string: []const u8 = "",
 display_string: []const u8 = "",
 flags: Flags = .none,
+
 pref_size: math.Size(PrefSize) = .zero,
 layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
 hover_pointer: ?cu.PointerKind = null,
 // group_key
-// custom_draw_func
-// custom_draw_data
 text_align: math.Size(Alignment) = .square(.center),
 alignment: math.Size(Alignment) = .square(.start),
+padding: Padding = .zero,
+
 palette: pallete.Pallete = undefined,
 font: cu.FontHandle = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
 border_width: f32 = 1, // draw_border, draw_side_top/bottom/left/right
 corner_radius: f32 = 0, // draw_border, draw_background
+// custom_draw_func
+// custom_draw_data
 
 // build artifacts - persistant
 fixed_size: math.Size(f32) = .zero, // computed size
@@ -45,6 +48,7 @@ hot_t: f32 = 0,
 active_t: f32 = 0,
 
 pub const LayoutAxis = math.Axis2D;
+pub const Padding = math.SideOffsets2D(f32);
 
 pub inline fn interaction(atom: *Atom) cu.Interaction {
     return cu.input.interactionFromAtom(atom);
@@ -364,9 +368,10 @@ pub const PrefSize = extern struct {
     /// kind: px,
     /// value(px): value * top font size,
     /// strictness: 1,
-    /// NOTE: This calcuations is defered to the layout phase,
+    /// NOTE: The calculation is defered to the layout phase,
     ///       ensuring that the final attached font is used.
-    ///       This the different from `builder.em` which returns a px value
+    ///       This the different from `builder.em` which returns
+    ///       a px value from the top font at the time of call
     pub fn em(value: f32) PrefSize {
         return .{
             .kind = .em,
@@ -379,6 +384,14 @@ pub const PrefSize = extern struct {
     /// value(child spacing): 0,
     /// strictness: 0,
     pub const fit = PrefSize{ .kind = .children_sum };
+
+    /// kind: children_sum,
+    /// value(child spacing): 0,
+    /// strictness: 0,
+    pub const fit_strict = PrefSize{
+        .kind = .children_sum,
+        .strictness = 1,
+    };
 
     /// kind: children_sum,
     /// value(child spacing): child_spacing,

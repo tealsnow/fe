@@ -55,6 +55,7 @@ pub fn startBuild(window_id: usize) void {
         stacks.flags.pushForMany(.none);
         stacks.text_align.pushForMany(.square(.center));
         stacks.alignment.pushForMany(.square(.start));
+        stacks.padding.pushForMany(.zero);
         stacks.border_width.pushForMany(1);
         stacks.corner_radius.pushForMany(0);
     }
@@ -239,10 +240,11 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     // per build info
     atom.pref_size = stacks.pref_size.topVolatile().?;
     atom.layout_axis = stacks.layout_axis.topVolatile().?;
-    atom.hover_pointer = stacks.hover_pointer.topVolatile();
+    atom.hover_pointer = stacks.hover_pointer.topVolatile(); // may be null
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
     atom.alignment = stacks.alignment.topVolatile().?;
+    atom.padding = stacks.padding.topVolatile().?;
     atom.border_width = stacks.border_width.topVolatile().?;
     atom.corner_radius = stacks.corner_radius.topVolatile().?;
 
@@ -539,7 +541,7 @@ pub const tooltip = struct {
     pub fn begin() *Atom {
         pushParent(cu.state.ui_tooltip_root);
 
-        const sub_root = open("tooltip sub root");
+        const sub_root = open("###tooltip sub root");
         sub_root.flags.insert(.floating);
 
         var pos = cu.state.pointer_pos;
@@ -570,7 +572,7 @@ pub const scroll_area = struct {
         item_size_px: f32,
         offset_px: *f32,
     ) ScrollAreaData {
-        const view = open("scroll view");
+        const view = open("###scroll view");
         view.layout_axis = axis;
         view.flags.insert(.clip_rect);
         view.flags.insert(.view_scroll);
@@ -589,7 +591,7 @@ pub const scroll_area = struct {
         stacks.flags.push(.floatingForAxis(axis));
         stacks.layout_axis.push(axis);
         stacks.pref_size.push(.square(.fit));
-        const container = open("scroll container");
+        const container = open("###scroll container");
 
         container.rel_position = .withAxis(axis, -offset_px.*, 0);
 
@@ -678,6 +680,7 @@ pub const Stacks = struct {
     flags: VolatileStack(Atom.Flags),
     text_align: VolatileStack(math.Size(Atom.Alignment)),
     alignment: VolatileStack(math.Size(Atom.Alignment)),
+    padding: VolatileStack(Atom.Padding),
     border_width: VolatileStack(f32),
     corner_radius: VolatileStack(f32),
 
@@ -690,6 +693,7 @@ pub const Stacks = struct {
         .flags = .empty,
         .text_align = .empty,
         .alignment = .empty,
+        .padding = .empty,
         .border_width = .empty,
         .corner_radius = .empty,
     };

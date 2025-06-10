@@ -27,7 +27,7 @@
 - [ ] #cu truncate text with ellipses
 - [ ] #cu smooth scroll
 
-- [ ] #cu padding
+- [x] #cu padding
 - [x] #cu alignment
 - [x] #cu internal spacing
 - [x] #cu hover cursor
@@ -36,6 +36,8 @@
 
 - [ ] #cu reorganise and clean up State
 - [ ] #cu reorganise and clean up Atom
+
+- [ ] #cu remove none option from layout axis / Axis2D
 
 - [x] #wgpu avoid reuploading texture every frame
 - [ ] #wgpu texture/image rendering

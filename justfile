@@ -3,18 +3,18 @@
 
 set dotenv-load := true
 
+@default:
+    just --list
+
 alias b := build
 alias r := run
 alias c := check
 
-@default:
-    just --list
-
 build:
-    zig build -fincremental
+    zig build -Duse_llvm=true
 
 run:
-    zig build -fincremental run
+    zig build -Duse_llvm=true run
 
 profile:
     pidof tracy-profiler || tracy -a localhost &

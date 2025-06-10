@@ -38,6 +38,7 @@
             tracy
             renderdoc
             just
+            gf
 
             # wasm
             wasmtime-c-api

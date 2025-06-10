@@ -419,10 +419,17 @@ pub fn Rect(comptime T: type) type {
             };
         }
 
-        pub fn inset(self: Self, by: T) Self {
+        pub fn innerRect(self: Self, offsets: SideOffsets2D(T)) Self {
             return .rect(
-                .point(self.p0.x + by, self.p0.y + by),
-                .point(self.p1.x - by, self.p1.y - by),
+                .point(self.p0.x + offsets.left, self.p0.y + offsets.top),
+                .point(self.p1.x - offsets.right, self.p1.y - offsets.bottom),
+            );
+        }
+
+        pub fn outerRect(self: Self, offsets: SideOffsets2D(T)) Self {
+            return .rect(
+                .point(self.p0.x - offsets.left, self.p0.y - offsets.top),
+                .point(self.p1.x + offsets.right, self.p1.y + offsets.bottom),
             );
         }
 
@@ -489,6 +496,67 @@ pub fn Range1D(comptime T: type) type {
 
 pub fn range1d(min: anytype, max: @TypeOf(min)) Range1D(@TypeOf(min)) {
     return .range(min, max);
+}
+
+pub fn SideOffsets2D(comptime T: type) type {
+    return extern struct {
+        left: T, // x
+        top: T, // y
+        right: T, // x
+        bottom: T, // y
+
+        const Self = @This();
+        pub const zero = mem.zeroes(Self);
+        pub const inf = splat(.inf);
+        pub const nan = splat(.nan);
+
+        pub fn splat(v: T) Self {
+            return .{
+                .top = v,
+                .right = v,
+                .bottom = v,
+                .left = v,
+            };
+        }
+
+        pub fn all(v: T) Self {
+            return .splat(v);
+        }
+
+        pub fn horizontal(v: T) Self {
+            return .{
+                .left = v,
+                .top = 0,
+                .right = v,
+                .bottom = 0,
+            };
+        }
+
+        pub fn vertical(v: T) Self {
+            return .{
+                .left = 0,
+                .top = v,
+                .right = 0,
+                .bottom = v,
+            };
+        }
+
+        pub fn getHorizontalTotal(self: Self) T {
+            return self.left + self.right;
+        }
+
+        pub fn getVerticalTotal(self: Self) T {
+            return self.top + self.bottom;
+        }
+
+        pub fn leftTop(self: *Self) *[2]T {
+            return @ptrCast(self);
+        }
+
+        pub fn rightBottom(self: *Self) *[2]T {
+            return @ptrFromInt(@intFromPtr(self) + @sizeOf(T) * 2);
+        }
+    };
 }
 
 pub const RgbaF32 = extern struct {

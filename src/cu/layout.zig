@@ -118,8 +118,11 @@ fn upwardsDependent(root: *Atom, axis_kind: Axis2D) void {
                 );
 
                 const parent = atom.tree.parent.?;
-                atom.fixed_size.arr()[axis] =
-                    parent.fixed_size.arr()[axis] * size.value;
+                const parent_size = parent.fixed_size.arr()[axis] -
+                    parent.padding.leftTop()[axis] -
+                    parent.padding.rightBottom()[axis];
+
+                atom.fixed_size.arr()[axis] = parent_size * size.value;
             },
             .text_content => {},
             .em => {},
@@ -174,9 +177,12 @@ fn downwardsDependentRec(root: *Atom, axis_kind: Axis2D) void {
             }
 
             if (axis_kind == root.layout_axis) {
-                const num = @as(f32, @floatFromInt(count -| 1)); // saturating sub
-                accum += num * child_spacing;
+                count -|= 1; // saturating sub
+                accum += child_spacing * @as(f32, @floatFromInt(count));
             }
+
+            accum += root.padding.leftTop()[axis];
+            accum += root.padding.rightBottom()[axis];
 
             root.fixed_size.arr()[axis] = accum;
         },
@@ -210,18 +216,21 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             else => unreachable,
         };
 
+        const total_allowed_size = atom.fixed_size.arr()[axis] -
+            atom.padding.leftTop()[axis] -
+            atom.padding.rightBottom()[axis];
+
         //- non-layout axis
         // work out allowed size
         // iterate over children
         //   if child size is greater than allowed size
         //      reduce it by an amount
         if (atom.layout_axis != axis_kind and !allow_overflow) {
-            const allowed_size = atom.fixed_size.arr()[axis];
             child_iter.reset();
             while (child_iter.next()) |child| {
                 if (!child.flags.contains(.floatingForAxis(axis_kind))) {
                     const child_size = child.fixed_size.arr()[axis];
-                    const violation = child_size - allowed_size;
+                    const violation = child_size - total_allowed_size;
                     const max_fixup = child_size;
                     const fixup = std.math.clamp(violation, 0, max_fixup);
                     if (fixup > 0)
@@ -230,8 +239,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             }
         }
         //- layout axis
-        else if (!allow_overflow) {
-            const total_allowed_size = atom.fixed_size.arr()[axis];
+        else if (!allow_overflow) blk: {
             var total_size: f32 = 0;
             var total_weighted_size: f32 = 0;
 
@@ -250,38 +258,38 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             //- solve violations
             // if there is a violation we need to subtact some amount from all children
             const violation = total_size - total_allowed_size;
-            if (violation > 0) {
-                // figure out how much we can take in total
-                // var child_fixup_sum: f32 = 0;
-                const child_fixups =
-                    cu.state.arena.alloc(f32, atom.tree.children.len) catch
-                        @panic("oom");
-                {
-                    var child_idx: usize = 0;
-                    child_iter.reset();
-                    while (child_iter.next()) |child| : (child_idx += 1) {
-                        if (!child.flags.contains(.floatingForAxis(axis_kind))) {
-                            var fixup_size_this_child =
-                                child.fixed_size.arr()[axis] *
-                                (1 - child.pref_size.arr()[axis].strictness);
-                            fixup_size_this_child = @max(0, fixup_size_this_child);
-                            child_fixups[child_idx] = fixup_size_this_child;
-                            // child_fixup_sum += fixup_size_this_child;
-                        }
+            if (violation <= 0) break :blk;
+
+            // figure out how much we can take in total
+            // var child_fixup_sum: f32 = 0;
+            const child_fixups =
+                cu.state.arena.alloc(f32, atom.tree.children.len) catch
+                    @panic("oom");
+            {
+                var child_idx: usize = 0;
+                child_iter.reset();
+                while (child_iter.next()) |child| : (child_idx += 1) {
+                    if (!child.flags.contains(.floatingForAxis(axis_kind))) {
+                        var fixup_size_this_child =
+                            child.fixed_size.arr()[axis] *
+                            (1 - child.pref_size.arr()[axis].strictness);
+                        fixup_size_this_child = @max(0, fixup_size_this_child);
+                        child_fixups[child_idx] = fixup_size_this_child;
+                        // child_fixup_sum += fixup_size_this_child;
                     }
                 }
+            }
 
-                //- fixup child sizes
-                {
-                    var child_idx: usize = 0;
-                    child_iter.reset();
-                    while (child_iter.next()) |child| : (child_idx += 1) {
-                        if (!child.flags.contains(.floatingForAxis(axis_kind))) {
-                            var fixup_pct = (violation / total_weighted_size);
-                            fixup_pct = @max(fixup_pct, 0);
-                            child.fixed_size.arr()[axis] -=
-                                child_fixups[child_idx] * fixup_pct;
-                        }
+            //- fixup child sizes
+            {
+                var child_idx: usize = 0;
+                child_iter.reset();
+                while (child_iter.next()) |child| : (child_idx += 1) {
+                    if (!child.flags.contains(.floatingForAxis(axis_kind))) {
+                        var fixup_pct = (violation / total_weighted_size);
+                        fixup_pct = @max(fixup_pct, 0);
+                        child.fixed_size.arr()[axis] -=
+                            child_fixups[child_idx] * fixup_pct;
                     }
                 }
             }
@@ -383,12 +391,19 @@ fn position(root: *Atom, axis_kind: Axis2D) void {
                     }
                 };
 
+            const padded_size = atom.fixed_size.arr()[axis] -
+                atom.padding.leftTop()[axis] -
+                atom.padding.rightBottom()[axis];
+
             //- start layout position
             var layout_position: f32 = switch (atom.alignment.arr()[axis]) {
                 .start => 0,
-                .center => (atom.fixed_size.arr()[axis] - children_size) / 2,
-                .end => atom.fixed_size.arr()[axis] - children_size,
+                .center => (padded_size - children_size) / 2,
+                .end => padded_size - children_size,
             };
+
+            const start_padding = atom.padding.leftTop()[axis];
+            layout_position += start_padding;
 
             //- position children
             child_iter.reset();

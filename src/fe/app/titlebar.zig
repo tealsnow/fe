@@ -53,6 +53,7 @@ pub fn buildTitlebar(
         b.stacks.flags
             .push(.init(&.{ .clickable, .draw_text }));
         b.stacks.pref_size.push(.size(.text_pad(8), .px(height)));
+        b.stacks.hover_pointer.push(.clickable);
         const item = b.build(menu_button.name);
 
         const inter = item.interaction();
@@ -136,11 +137,9 @@ pub fn buildTitlebar(
             switch (i) {
                 0 => window.minimize(),
                 1 => window.toggleMaximized(),
-                2 => window.conn.event_queue.queue(
-                    .{ .kind = .{ .toplevel_close = .{
-                        .window_id = window.id,
-                    } } },
-                ),
+                2 => window.conn.event_queue.queue(.{ .kind = .{
+                    .toplevel_close = .{ .window_id = window.id },
+                } }),
                 else => unreachable,
             }
         }

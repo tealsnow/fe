@@ -146,37 +146,14 @@ fn buildMainUI(state: *TestWindow) void {
 
     state.buildRightPane();
 
-    //- right bar
-    {
-        const icon_size = cu.Atom.PrefSize.px(24);
-
-        b.stacks.flags.push(.draw_side_left);
-        b.stacks.layout_axis.push(.y);
-        b.stacks.pref_size.push(.size(icon_size, .grow));
-        const bar = b.open("###right bar");
-        defer b.close(bar);
-
-        //- inner
-        {
-            b.stacks.layout_axis.push(.y);
-            b.stacks.pref_size.push(.size(icon_size, .fit_spaced(4)));
-            const inner = b.open("###right bar inner");
-            defer b.close(inner);
-
-            for (0..5) |i| {
-                b.stacks.flags.push(.draw_border);
-                b.stacks.pref_size.push(.square(icon_size));
-                _ = b.buildf("###right bar icon {d}", .{i});
-            }
-        }
-    }
+    buildRightBar();
 }
 
 fn buildLeftPane() void {
     b.stacks.flags.push(.draw_side_right);
     b.stacks.layout_axis.push(.y);
     b.stacks.pref_size.push(.size(.percent(0.4), .fill));
-    const pane = b.open("left pane");
+    const pane = b.open("###left pane");
     defer b.close(pane);
 
     //- header
@@ -185,7 +162,7 @@ fn buildLeftPane() void {
             .push(.init(&.{ .draw_side_bottom, .draw_text }));
         b.stacks.text_align.push(.size(.end, .center));
         b.stacks.pref_size.push(.size(.grow, .text));
-        _ = b.label("Left Header gylp");
+        _ = b.label("Left Header");
     }
 
     //- content
@@ -194,7 +171,8 @@ fn buildLeftPane() void {
         .push(.init(&.{ .clip_rect, .allow_overflow }));
     b.stacks.layout_axis.push(.y);
     b.stacks.pref_size.push(.square(.grow));
-    const content = b.open("left content");
+    b.stacks.padding.push(.all(4));
+    const content = b.open("###left content");
     defer b.close(content);
 
     b.stacks.pref_size.pushForMany(.square(.text));
@@ -262,7 +240,7 @@ fn buildLeftPane() void {
 fn buildRightPane(state: *TestWindow) void {
     b.stacks.layout_axis.push(.y);
     b.stacks.pref_size.push(.size(.grow, .fill));
-    const pane = b.open("right pane");
+    const pane = b.open("###right pane");
     defer b.close(pane);
 
     //- header
@@ -323,7 +301,8 @@ fn buildRightPane(state: *TestWindow) void {
     //- content
     b.stacks.layout_axis.push(.y);
     b.stacks.pref_size.push(.square(.grow));
-    const content = b.open("right content");
+    b.stacks.padding.push(.all(4));
+    const content = b.open("###right content");
     defer b.close(content);
 
     b.stacks.corner_radius.push(b.em(0.8));
@@ -331,10 +310,11 @@ fn buildRightPane(state: *TestWindow) void {
 
     _ = b.lineSpacer();
 
+    //- scroll test offset + buttons
     {
         b.stacks.layout_axis.push(.y);
         b.stacks.pref_size.push(.size(.grow, .fit));
-        const counter_container = b.open("counter");
+        const counter_container = b.open("###scroll test offset");
         defer b.close(counter_container);
 
         b.stacks.pref_size.push(.square(.text));
@@ -346,7 +326,7 @@ fn buildRightPane(state: *TestWindow) void {
         {
             b.stacks.layout_axis.push(.x);
             b.stacks.pref_size.push(.square(.fit_spaced(2)));
-            const btns = b.open("buttons");
+            const btns = b.open("###buttons");
             defer b.close(btns);
 
             b.stacks.font.pushForMany(.mono);
@@ -366,12 +346,9 @@ fn buildRightPane(state: *TestWindow) void {
 
     _ = b.lineSpacer();
 
-    // scroll test
+    //- scroll test
     {
-        b.stacks.font.pushForMany(.label);
-        defer _ = b.stacks.font.pop();
-
-        const item_size = b.em(1);
+        const item_size = b.fontHeight(.label);
 
         b.stacks.pref_size.push(.square(.grow));
         b.stacks.flags.push(.draw_border);
@@ -391,6 +368,40 @@ fn buildRightPane(state: *TestWindow) void {
             scroll_data.index_range.max) |i|
         {
             _ = b.labelf("item {d}", .{i});
+        }
+    }
+}
+
+fn buildRightBar() void {
+    //- right bar
+    {
+        // const icon_size = cu.Atom.PrefSize.px(24);
+
+        b.stacks.flags.push(.draw_side_left);
+        b.stacks.layout_axis.push(.y);
+        b.stacks.pref_size.push(.size(.fit_strict, .grow));
+        b.stacks.alignment.push(.square(.center));
+        const bar = b.open("###right bar");
+        defer b.close(bar);
+
+        //- inner
+        {
+            b.stacks.layout_axis.push(.y);
+            b.stacks.pref_size.push(.size(.fit, .fit_spaced(4)));
+            b.stacks.padding.push(.horizontal(4));
+            const inner = b.open("###right bar inner");
+            defer b.close(inner);
+
+            for (0..5) |i| {
+                b.stacks.flags.push(.init(&.{ .draw_border, .clickable }));
+                b.stacks.pref_size.push(.square(.px(24)));
+                b.stacks.hover_pointer.push(.clickable);
+                const icon = b.buildf("###right bar icon {d}", .{i});
+
+                const inter = icon.interaction();
+                if (inter.hovering())
+                    icon.palette.set(.border, .hexRgb(0xFF0000));
+            }
         }
     }
 }
