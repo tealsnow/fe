@@ -37,7 +37,7 @@
 - [ ] #cu reorganise and clean up State
 - [ ] #cu reorganise and clean up Atom
 
-- [ ] #cu remove none option from layout axis / Axis2D
+- [x] #cu remove none option from layout axis / Axis2D
 
 - [x] #wgpu avoid reuploading texture every frame
 - [ ] #wgpu texture/image rendering

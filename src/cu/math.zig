@@ -24,7 +24,6 @@ pub fn Point(comptime T: type) type {
 
         pub fn withAxis(axis: Axis2D, target: T, other: T) Self {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => .point(target, other),
                 .y => .point(other, target),
             };
@@ -32,7 +31,6 @@ pub fn Point(comptime T: type) type {
 
         pub fn fromAxis(self: Self, axis: Axis2D) T {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => self.x,
                 .y => self.y,
             };
@@ -127,13 +125,8 @@ pub fn point(x: anytype, y: @TypeOf(x)) Point(@TypeOf(x)) {
 }
 
 pub const Axis2D = enum(u2) {
-    none = std.math.maxInt(u2),
-
     x = 0,
     y,
-
-    pub const width = Axis2D.x;
-    pub const height = Axis2D.y;
 
     pub const array = [2]Axis2D{ .x, .y };
 };
@@ -158,7 +151,6 @@ pub fn Size(comptime T: type) type {
 
         pub fn withAxis(axis: Axis2D, target: T, other: T) Self {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => .size(target, other),
                 .y => .size(other, target),
             };
@@ -166,7 +158,6 @@ pub fn Size(comptime T: type) type {
 
         pub fn fromAxis(self: Self, axis: Axis2D) T {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => self.width,
                 .y => self.height,
             };
@@ -381,7 +372,6 @@ pub fn Rect(comptime T: type) type {
 
         pub fn lengthFromAxis(self: Self, axis: Axis2D) T {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => self.width(),
                 .y => self.height(),
             };
@@ -413,7 +403,6 @@ pub fn Rect(comptime T: type) type {
 
         pub fn rangeForAxis(self: Self, axis: Axis2D) Range1D(T) {
             return switch (axis) {
-                .none => @panic("invalid axis"),
                 .x => self.horizontalRange(),
                 .y => self.verticalRange(),
             };

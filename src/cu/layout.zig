@@ -40,7 +40,6 @@ fn sizeText(root: *Atom, axis_kind: Axis2D) void {
     while (iter.next()) |atom| {
         if (atom.flags.contains(.draw_text) and atom.display_string.len != 0)
             switch (axis_kind) {
-                .none => unreachable,
                 .x => {
                     atom.text_size.width = cu.state.callbacks.measureText(
                         atom.display_string,
@@ -201,20 +200,12 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
         if (atom.tree.children.len == 0) continue;
-        debugAssert(
-            atom.layout_axis != .none,
-            "Cannot have no layout axis with children: {}",
-            .{atom},
-        );
         var child_iter = atom.tree.childIterator();
 
         const axis = @intFromEnum(axis_kind);
 
-        const allow_overflow = switch (axis_kind) {
-            .x => atom.flags.contains(.allow_overflow_x),
-            .y => atom.flags.contains(.allow_overflow_y),
-            else => unreachable,
-        };
+        const allow_overflow =
+            atom.flags.contains(.allowOverflowForAxis(axis_kind));
 
         const total_allowed_size = atom.fixed_size.arr()[axis] -
             atom.padding.leftTop()[axis] -

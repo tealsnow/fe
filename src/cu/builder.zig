@@ -50,7 +50,7 @@ pub fn startBuild(window_id: usize) void {
             .pushForMany(Atom.pallete.fullToPartial(cu.state.default_palette));
         stacks.font.pushForMany(.body);
         stacks.pref_size.pushForMany(.square(.fill));
-        stacks.layout_axis.pushForMany(.none);
+        stacks.layout_axis.pushForMany(.x);
         // stacks.hover_cursor intentialally left out
         stacks.flags.pushForMany(.none);
         stacks.text_align.pushForMany(.square(.center));

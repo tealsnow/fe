@@ -16,7 +16,7 @@ display_string: []const u8 = "",
 flags: Flags = .none,
 
 pref_size: math.Size(PrefSize) = .zero,
-layout_axis: LayoutAxis = .none, // ensure this is set if children are added, if not an assertion will fail
+layout_axis: LayoutAxis = .x,
 hover_pointer: ?cu.PointerKind = null,
 // group_key
 text_align: math.Size(Alignment) = .square(.center),
@@ -252,7 +252,6 @@ pub const Flags = struct {
 
     pub fn allowOverflowForAxis(axis: LayoutAxis) Flags {
         return switch (axis) {
-            .none => @panic("invalid axis"),
             .x => .allow_overflow_x,
             .y => .allow_overflow_y,
         };
@@ -260,7 +259,6 @@ pub const Flags = struct {
 
     pub fn floatingForAxis(axis: LayoutAxis) Flags {
         return switch (axis) {
-            .none => @panic("invalid axis"),
             .x => .floating_x,
             .y => .floating_y,
         };
