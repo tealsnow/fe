@@ -39,6 +39,12 @@
 
 - [x] #cu remove none option from layout axis / Axis2D
 
+- [ ] #cu completely redo how fonts are handled
+    - it should be something closer to jetpack compose
+      where we have a font description: family, size, styles, etc
+      that we pass to the renderer to figure out
+      none of this pre-configuring shit
+
 - [x] #wgpu avoid reuploading texture every frame
 - [ ] #wgpu texture/image rendering
     - [ ] consider wuffs for image loading (ghostty/pkg)

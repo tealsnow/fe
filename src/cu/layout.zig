@@ -223,7 +223,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
                     const child_size = child.fixed_size.arr()[axis];
                     const violation = child_size - total_allowed_size;
                     const max_fixup = child_size;
-                    const fixup = std.math.clamp(violation, 0, max_fixup);
+                    const fixup = @min(violation, max_fixup);
                     if (fixup > 0)
                         child.fixed_size.arr()[axis] -= fixup;
                 }
@@ -260,14 +260,15 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
                 var child_idx: usize = 0;
                 child_iter.reset();
                 while (child_iter.next()) |child| : (child_idx += 1) {
-                    if (!child.flags.contains(.floatingForAxis(axis_kind))) {
-                        var fixup_size_this_child =
-                            child.fixed_size.arr()[axis] *
-                            (1 - child.pref_size.arr()[axis].strictness);
-                        fixup_size_this_child = @max(0, fixup_size_this_child);
-                        child_fixups[child_idx] = fixup_size_this_child;
-                        // child_fixup_sum += fixup_size_this_child;
-                    }
+                    if (child.flags.contains(.floatingForAxis(axis_kind)))
+                        continue;
+
+                    var fixup_size_this_child =
+                        child.fixed_size.arr()[axis] *
+                        (1 - child.pref_size.arr()[axis].strictness);
+                    fixup_size_this_child = @max(0, fixup_size_this_child);
+                    child_fixups[child_idx] = fixup_size_this_child;
+                    // child_fixup_sum += fixup_size_this_child;
                 }
             }
 

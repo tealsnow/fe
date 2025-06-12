@@ -232,20 +232,19 @@ fn build(state: *PanelWindow) void {
                     const min_child = child;
                     const max_child = child.tree.siblings.next.?;
                     if (inter.pressed()) {
-                        const drag_data = mt.point(
+                        const drag_data = [2]f32{
                             min_child.parent_percent,
                             max_child.parent_percent,
-                        );
+                        };
 
                         cu.state.storeDragData(&drag_data);
                     }
 
-                    const drag_data = cu.state.getDragData(mt.Point(f32)).*;
-                    // defer cu.state.storeDragData(mt.Point(f32), drag_data);
+                    const drag_data = cu.state.getDragData([2]f32).*;
                     const drag_delta = cu.state.dragDelta();
 
-                    const min_child_pct__pre_drag = drag_data.x;
-                    const max_child_pct__pre_drag = drag_data.y;
+                    const min_child_pct__pre_drag = drag_data[0];
+                    const max_child_pct__pre_drag = drag_data[1];
 
                     const min_child_px__pre_drag =
                         min_child_pct__pre_drag *

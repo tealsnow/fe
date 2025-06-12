@@ -331,13 +331,13 @@ fn buildRightPane(state: *TestWindow) void {
 
             b.stacks.font.pushForMany(.mono);
             defer _ = b.stacks.font.pop();
+            b.stacks.pref_size.pushForMany(.square(.px_strict(b.em(2))));
+            defer _ = b.stacks.pref_size.pop();
 
-            b.stacks.pref_size.push(.square(.px(b.em(2))));
             if (b.button("+").clicked()) {
                 state.test_scroll_offset += 10;
             }
 
-            b.stacks.pref_size.push(.square(.px(b.em(2))));
             if (b.button("-").clicked()) {
                 state.test_scroll_offset -= 10;
             }
@@ -352,20 +352,20 @@ fn buildRightPane(state: *TestWindow) void {
 
         b.stacks.pref_size.push(.square(.grow));
         b.stacks.flags.push(.draw_border);
-        const scroll_data = b.scroll_area.begin(
-            .y,
-            item_size,
-            &state.test_scroll_offset,
-        );
-        defer b.scroll_area.end(scroll_data);
+        const scroll_handle = b.scroll_area.basic.begin(.{
+            .scroll_axis = .y,
+            .item_size_px = item_size,
+            .ptr_offset_px = &state.test_scroll_offset,
+        });
+        defer b.scroll_area.basic.end(scroll_handle);
 
         b.stacks.text_align.pushForMany(.size(.start, .center));
         defer _ = b.stacks.text_align.pop();
         b.stacks.pref_size.pushForMany(.size(.grow, .px(item_size)));
         defer _ = b.stacks.pref_size.pop();
 
-        for (scroll_data.index_range.min.. //
-            scroll_data.index_range.max) |i|
+        for (scroll_handle.index_range.min.. //
+            scroll_handle.index_range.max) |i|
         {
             _ = b.labelf("item {d}", .{i});
         }

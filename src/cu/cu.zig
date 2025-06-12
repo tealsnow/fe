@@ -23,6 +23,7 @@ pub const input = @import("input.zig");
 pub const Interaction = input.Interaction;
 pub const CircleBuffer = @import("circle_buffer.zig").CircleBuffer;
 pub const TreeMixin = @import("tree_mixin.zig").TreeMixin;
+pub const debug = @import("debug.zig");
 
 // const scope_locals = @import("scope_locals.zig");
 

@@ -12,6 +12,7 @@ const Window = AppState.Window;
 
 const TestWindow = @import("app/TestWindow.zig");
 const PanelWindow = @import("app/PanelWindow.zig");
+const DebugWindow = @import("app/DebugWindow.zig");
 
 pub fn entryPoint(gpa: Allocator) !void {
     // setup at the end before any defers are run
@@ -70,6 +71,13 @@ pub fn entryPoint(gpa: Allocator) !void {
         .interface = panel_window_state.windowInterface(),
     });
 
+    var debug_window_state = DebugWindow{ .app = &state };
+    _ = try state.newWindow(.{
+        .title = "Debug",
+        .initial_size = .size(800, 600),
+        .interface = debug_window_state.windowInterface(),
+    });
+
     //- main loop
 
     log.info("starting main loop", .{});
@@ -83,6 +91,9 @@ pub fn entryPoint(gpa: Allocator) !void {
 
         _ = arena_alloc.reset(.retain_capacity);
         tracing_arena_alloc.discard();
+
+        // cu.debug.printTree(test_window_state.window.cu_state.ui_root);
+        // if (true) std.process.exit(0);
     }
 
     deinit_trace = tracy.beginZone(@src(), .{ .name = "deinit" });

@@ -39,20 +39,20 @@ pub fn buildTitlebar(
 
     b.stacks.flags.push(.draw_side_bottom);
     b.stacks.layout_axis.push(.x);
-    b.stacks.pref_size.push(.size(.fill, .px(height)));
+    b.stacks.pref_size.push(.size(.fill, .px_strict(height)));
     const topbar = b.open("###titlebar");
     defer b.close(topbar);
 
     if (!tiling.isTiled()) {
         b.stacks.pref_size
-            .push(.size(.px(rounding), .grow));
+            .push(.size(.px_strict(rounding), .grow));
         _ = b.spacer();
     }
 
     for (menu_buttons.buttons) |menu_button| {
         b.stacks.flags
             .push(.init(&.{ .clickable, .draw_text }));
-        b.stacks.pref_size.push(.size(.text_pad(8), .px(height)));
+        b.stacks.pref_size.push(.size(.text_pad(8), .px_strict(height)));
         b.stacks.hover_pointer.push(.clickable);
         const item = b.build(menu_button.name);
 
@@ -93,7 +93,7 @@ pub fn buildTitlebar(
     //- spacer
     {
         b.stacks.flags.push(.clickable);
-        b.stacks.pref_size.push(.size(.grow, .px(height)));
+        b.stacks.pref_size.push(.size(.grow, .px_strict(height)));
         const topbar_space = b.build("###spacer");
 
         const inter = topbar_space.interaction();
@@ -124,7 +124,7 @@ pub fn buildTitlebar(
     //- window buttons
     for (0..3) |i| {
         b.stacks.flags.push(.init(&.{ .clickable, .draw_border }));
-        b.stacks.pref_size.push(.square(.px(height)));
+        b.stacks.pref_size.push(.square(.px_strict(height)));
         b.stacks.hover_pointer.push(.clickable);
         const button = b.openf("###top bar button {d}", .{i});
         defer b.close(button);
@@ -146,7 +146,7 @@ pub fn buildTitlebar(
     }
 
     if (!tiling.isTiled()) {
-        b.stacks.pref_size.push(.size(.px(rounding), .grow));
+        b.stacks.pref_size.push(.size(.px_strict(rounding), .grow));
         _ = b.spacer();
     }
 }

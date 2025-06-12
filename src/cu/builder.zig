@@ -299,6 +299,10 @@ pub fn buildFromString(string: []const u8) *Atom {
     return atom;
 }
 
+pub fn format(comptime fmt: []const u8, args: anytype) []const u8 {
+    return std.fmt.allocPrint(cu.state.arena, fmt, args) catch @panic("oom");
+}
+
 pub fn buildFromStringF(comptime fmt: []const u8, args: anytype) *Atom {
     const string = std.fmt.allocPrint(cu.state.arena, fmt, args) catch
         @panic("oom");
@@ -414,7 +418,7 @@ pub fn buttonf(comptime fmt: []const u8, args: anytype) cu.Interaction {
 }
 
 pub fn toggleSwitch(toggled: *bool) cu.Interaction {
-    stacks.pref_size.push(.size(.px(em(3)), .px(em(1.5))));
+    stacks.pref_size.push(.size(.px_strict(em(3)), .px_strict(em(1.5))));
     stacks.flags.push(.init(&.{ .draw_border, .clickable }));
     stacks.layout_axis.push(.y);
     stacks.hover_pointer.push(.clickable);
@@ -560,66 +564,75 @@ pub const tooltip = struct {
 //= scroll area
 
 pub const scroll_area = struct {
-    pub const ScrollAreaData = struct {
-        view: *Atom,
-        container: *Atom,
-
-        index_range: math.Range1D(usize),
-    };
-
-    pub fn begin(
-        axis: Atom.LayoutAxis,
-        item_size_px: f32,
-        offset_px: *f32,
-    ) ScrollAreaData {
-        const view = open("###scroll view");
-        view.layout_axis = axis;
-        view.flags.insert(.clip_rect);
-        view.flags.insert(.view_scroll);
-        view.flags.insert(.allowOverflowForAxis(axis));
-
-        const pixel_range = math.range1d(
-            offset_px.*,
-            offset_px.* + view.rect.lengthFromAxis(axis),
-        );
-
-        const index_range = math.range1d(
-            @as(usize, @intFromFloat(pixel_range.min / item_size_px)),
-            @as(usize, @intFromFloat(pixel_range.max / item_size_px)) + 1,
-        );
-
-        stacks.flags.push(.floatingForAxis(axis));
-        stacks.layout_axis.push(axis);
-        stacks.pref_size.push(.square(.fit));
-        const container = open("###scroll container");
-
-        container.rel_position = .withAxis(axis, -offset_px.*, 0);
-
-        const space_before =
-            @as(f32, @floatFromInt(index_range.min)) * item_size_px;
-        // const space_after =
-        //     @as(f32, @floatFromInt(index_range.max)) * item_size_px;
-
-        stacks.pref_size.push(.withAxis(axis, .px(space_before), .grow));
-        _ = spacer();
-
-        offset_px.* +=
-            view.interaction().scroll.fromAxis(axis);
-        if (offset_px.* < 0)
-            offset_px.* = 0;
-
-        return .{
-            .view = view,
-            .container = container,
-
-            .index_range = index_range,
+    pub const basic = struct {
+        pub const Params = struct {
+            scroll_axis: Atom.LayoutAxis,
+            item_size_px: f32,
+            ptr_offset_px: *f32,
         };
-    }
 
-    pub fn end(data: ScrollAreaData) void {
-        close(data.container);
-        close(data.view);
-    }
+        pub const Handle = struct {
+            view: *Atom,
+            offset_container: *Atom,
+
+            index_range: math.Range1D(usize),
+        };
+
+        pub fn begin(
+            params: Params,
+        ) Handle {
+            const axis = params.scroll_axis;
+            const item_size_px = params.item_size_px;
+            const offset_px = params.ptr_offset_px;
+
+            const view = open("###scroll view");
+            view.layout_axis = axis;
+            view.flags.insert(.clip_rect);
+            view.flags.insert(.view_scroll);
+            view.flags.insert(.allowOverflowForAxis(axis));
+
+            offset_px.* += view.interaction().scroll.fromAxis(axis);
+            if (offset_px.* < 0)
+                offset_px.* = 0;
+
+            const pixel_range = math.range1d(
+                offset_px.*,
+                offset_px.* + view.rect.lengthFromAxis(axis),
+            );
+
+            const index_range = math.range1d(
+                @as(usize, @intFromFloat(pixel_range.min / item_size_px)),
+                @as(usize, @intFromFloat(pixel_range.max / item_size_px)) + 1,
+            );
+
+            stacks.flags.push(.floatingForAxis(axis));
+            stacks.layout_axis.push(axis);
+            stacks.pref_size.push(.square(.fit));
+            const offset_container = open("###scroll container");
+
+            offset_container.rel_position = .withAxis(axis, -offset_px.*, 0);
+
+            const space_before_px =
+                @as(f32, @floatFromInt(index_range.min)) * item_size_px;
+            // const space_after =
+            //     @as(f32, @floatFromInt(index_range.max)) * item_size_px;
+
+            stacks.pref_size.push(.withAxis(axis, .px(space_before_px), .grow));
+            _ = spacer();
+
+            return .{
+                .view = view,
+                .offset_container = offset_container,
+
+                .index_range = index_range,
+            };
+        }
+
+        pub fn end(data: Handle) void {
+            close(data.offset_container);
+            close(data.view);
+        }
+    };
 };
 
 //= center

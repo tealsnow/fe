@@ -22,8 +22,6 @@ const b = cu.builder;
 
 pub const APP_ID = "me.ketanr.fe";
 
-const PanelWindow = @import("PanelWindow.zig");
-
 //= params
 
 running: bool = true,
@@ -55,8 +53,10 @@ pub fn init(gpa: Allocator, arena: Allocator) !State {
     defer gpa.free(mono_font_path);
 
     const dpi = mt.Size(u16).size(
-        @intFromFloat(@round(window_list.conn.hdpi)),
-        @intFromFloat(@round(window_list.conn.vdpi)),
+        // @intFromFloat(@round(window_list.conn.hdpi)),
+        // @intFromFloat(@round(window_list.conn.vdpi)),
+        96,
+        96,
     );
 
     const font_face_map = try font_manager.makeFontFaceMap(
@@ -229,7 +229,8 @@ pub fn runUpdate(state: *State) !void {
         },
         .pointer_scroll => |scroll| scroll: {
             const win = state.focus_window_pointer orelse break :scroll;
-            const value = scroll.value orelse break :scroll;
+            var value = scroll.value orelse break :scroll;
+            value *= 2;
             win.cu_state.pushEvent(.{
                 .scroll = if (scroll.axis == .vertical)
                     .point(0, @floatCast(value))

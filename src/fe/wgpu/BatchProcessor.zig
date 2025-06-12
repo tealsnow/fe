@@ -125,7 +125,10 @@ fn processAtom(
     if (atom.flags.contains(.clip_rect)) {
         try self.flushBatches(arena);
 
-        self.scissor_rect = rect.round().intFromFloat(u32);
+        self.scissor_rect = rect
+            .round()
+            .intFromFloat(u32)
+            .clampToSize(self.surface_size);
     }
     defer if (atom.flags.contains(.clip_rect)) {
         self.flushBatches(arena) catch {

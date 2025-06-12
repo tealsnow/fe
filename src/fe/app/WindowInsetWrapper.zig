@@ -16,9 +16,7 @@ vert_body: *cu.Atom,
 hori_body: *cu.Atom,
 
 pub fn begin(window: *const wl.Window) WindowInsetWrapper {
-    const inset_int = window.inset orelse 0;
-    const inset: f32 = @floatFromInt(inset_int);
-
+    const inset: f32 = @floatFromInt(window.inset orelse 0);
     const tiling = window.tiling;
 
     // Since we create atoms before where we want to add this to the tree

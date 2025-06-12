@@ -20,7 +20,7 @@ layout_axis: LayoutAxis = .x,
 hover_pointer: ?cu.PointerKind = null,
 // group_key
 text_align: math.Size(Alignment) = .square(.center),
-alignment: math.Size(Alignment) = .square(.start),
+alignment: math.Size(Alignment) = .square(.start), // @FIXME: rename to children alignemnt
 padding: Padding = .zero,
 
 palette: pallete.Pallete = undefined,
@@ -271,6 +271,11 @@ pub const Alignment = enum(u8) {
     end,
 };
 
+/// NOTE: Be careful about strictness, if the layout cannot be solved with the
+///       provided strictness it will more or less just give up and provide
+///       nan values for the screen rect. Resulting in either a crash with a
+///       badly behaved renderer or in the atoms not being rendered in a better
+///       behaved one.
 pub const PrefSize = extern struct {
     kind: Kind = .none,
     /// pixels: px, percent_of_parent: %, text_content: padding(px)
@@ -291,23 +296,23 @@ pub const PrefSize = extern struct {
 
     /// kind: pixels,
     /// value(pixels): pxs,
-    /// strictness: 1,
+    /// strictness: 0,
     pub fn px(pxs: f32) PrefSize {
         return .{
             .kind = .pixels,
             .value = pxs,
-            .strictness = 1,
+            .strictness = 0,
         };
     }
 
     /// kind: pixels,
     /// value(pixels): pxs,
-    /// strictness: 0,
-    pub fn px_relaxed(pxs: f32) PrefSize {
+    /// strictness: 1,
+    pub fn px_strict(pxs: f32) PrefSize {
         return .{
             .kind = .pixels,
             .value = pxs,
-            .strictness = 0,
+            .strictness = 1,
         };
     }
 

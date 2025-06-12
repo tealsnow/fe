@@ -129,6 +129,13 @@ pub const Axis2D = enum(u2) {
     y,
 
     pub const array = [2]Axis2D{ .x, .y };
+
+    pub fn other(axis: Axis2D) Axis2D {
+        return switch (axis) {
+            .x => .y,
+            .y => .x,
+        };
+    }
 };
 
 pub fn Size(comptime T: type) type {
@@ -249,6 +256,19 @@ pub fn Bounds(comptime T: type) type {
             return .{
                 .origin = self.origin.floatFromInt(NT),
                 .size = self.size.floatFromInt(NT),
+            };
+        }
+
+        pub fn clamp(self: Self, other: Self) Self {
+            return .{
+                .origin = .point(
+                    @max(self.origin.x, other.origin.x),
+                    @max(self.origin.y, other.origin.y),
+                ),
+                .size = .size(
+                    @min(self.size.width, other.size.width),
+                    @min(self.size.height, other.size.height),
+                ),
             };
         }
 
@@ -390,6 +410,24 @@ pub fn Rect(comptime T: type) type {
                 @max(a.p0.y, b.p0.y),
                 @min(a.p1.x, b.p1.x),
                 @min(a.p1.y, b.p1.y),
+            );
+        }
+
+        pub fn clamp(a: Self, b: Self) Self {
+            return .rectpts(
+                @max(a.p0.x, b.p0.x),
+                @max(a.p0.y, b.p0.y),
+                @min(a.p1.x, b.p1.x),
+                @min(a.p1.y, b.p1.y),
+            );
+        }
+
+        pub fn clampToSize(self: Self, sz: Size(T)) Self {
+            return .rectpts(
+                @max(self.p0.x, 0),
+                @max(self.p0.y, 0),
+                @min(self.p1.x, sz.width),
+                @min(self.p1.y, sz.height),
             );
         }
 
@@ -655,6 +693,17 @@ pub const RgbaU8 = extern struct {
                 t,
             ),
         );
+    }
+
+    pub fn format(
+        self: *const RgbaU8,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = options;
+        _ = fmt;
+        try writer.print("0x{x}", .{self.asHex()});
     }
 };
 

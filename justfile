@@ -20,6 +20,9 @@ profile:
     pidof tracy-profiler || tracy -a localhost &
     zig build -fincremental -Dprofile run
 
+debug: build
+    gf2 ./zig-out/bin/fe
+
 nproc := `nproc --all`
 check:
     zig build -fincremental --prominent-compile-errors  \
