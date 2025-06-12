@@ -5,3 +5,4 @@ zig-out
 .vscode
 out.log
 .envrc.local
+.project.gf
