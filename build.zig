@@ -252,7 +252,7 @@ pub fn build(b: *std.Build) void {
     });
 
     if (!no_bin) {
-        const install = plug_test_bin.installPlugin(b, "plugins/test");
+        const install = plug_test_bin.installPlugin(b, "share/fe/plugins/test");
         fe_exe.step.dependOn(&install.step);
     }
 
