@@ -3,7 +3,7 @@ const Renderer = @This();
 const builtin = @import("builtin");
 const std = @import("std");
 
-const fc = @import("fontconfig.zig");
+const fc = @import("misc/fontconfig.zig");
 const sdl = @import("sdl3");
 
 const cu = @import("cu");

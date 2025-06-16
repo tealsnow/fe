@@ -1,10 +1,5 @@
 const std = @import("std");
 
-pub const EntryPoint = enum {
-    sdl,
-    wayland,
-};
-
 const Scanner = @import("wayland").Scanner;
 
 pub fn build(b: *std.Build) void {
@@ -13,46 +8,44 @@ pub fn build(b: *std.Build) void {
 
     //- options
 
-    const entry_point =
+    const no_bin =
         b.option(
-            EntryPoint,
-            "entry_point",
-            "specify entry point to use",
-        ) orelse .wayland;
+            bool,
+            "no_bin",
+            "Do not emit binaries (default: false)",
+        ) orelse false;
 
     const profile =
         b.option(
             bool,
             "profile",
-            "Enable profiling with tracy (always uses llvm)",
+            "Enable profiling with tracy (default: false)",
         ) orelse false;
 
     const use_llvm =
         b.option(
             bool,
             "use_llvm",
-            "switch to use llvm or not " ++
-                "(defaults to false for debug and true for release or when profiling is enabled)",
-        ) orelse
-        if (optimize == .Debug) profile else false;
+            "build using the llvm backend (default: true)",
+        ) orelse true;
+
+    if (profile and !use_llvm)
+        std.log.warn(
+            "profiling without using llvm backend might not work corretly",
+            .{},
+        );
 
     const log_level: std.log.Level =
         b.option(
             std.log.Level,
             "log_level",
-            "What log level to use regardless of the build mode",
+            "What log level to use regardless of the build mode " ++
+                "(defaults: Debug -> debug, ReleaseSafe -> info, ReleaseFast, ReleaseSmall -> warn)",
         ) orelse switch (optimize) {
             .Debug => .debug,
             .ReleaseSafe => .info,
             .ReleaseFast, .ReleaseSmall => .warn,
         };
-
-    const poll_event_loop =
-        b.option(
-            bool,
-            "poll_event_loop",
-            "Whether to poll for events or have a timeout (default: false)",
-        ) orelse false;
 
     //- fmt
 
@@ -102,7 +95,10 @@ pub fn build(b: *std.Build) void {
         .use_lld = use_llvm,
         // .use_lld = false,
     });
-    b.installArtifact(cu_lib);
+    if (no_bin)
+        b.getInstallStep().dependOn(&cu_lib.step)
+    else
+        b.installArtifact(cu_lib);
 
     //- fe
 
@@ -120,90 +116,94 @@ pub fn build(b: *std.Build) void {
         .use_lld = use_llvm,
         // .use_lld = false,
     });
-    b.installArtifact(fe_exe);
+    if (no_bin)
+        b.getInstallStep().dependOn(&fe_exe.step)
+    else
+        b.installArtifact(fe_exe);
 
     fe_mod.link_libc = true;
     fe_mod.linkSystemLibrary("fontconfig", .{ .needed = true });
     fe_mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
-    switch (entry_point) {
-        .sdl => {
-            const sdl3 = b.lazyDependency("sdl3", .{
-                .target = target,
-                .optimize = optimize,
-            });
+    //- sdl
+    if (false) {
+        const sdl3 = b.lazyDependency("sdl3", .{
+            .target = target,
+            .optimize = optimize,
+        });
 
-            if (sdl3) |m| {
-                fe_mod.addImport("sdl3", m.module("sdl3"));
+        if (sdl3) |m| {
+            fe_mod.addImport("sdl3", m.module("sdl3"));
 
-                fe_mod.linkSystemLibrary("sdl3", .{ .needed = true });
-                fe_mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
-            }
-        },
-        .wayland => {
-            const xkbcommon = b.lazyDependency("xkbcommon", .{});
+            fe_mod.linkSystemLibrary("sdl3", .{ .needed = true });
+            fe_mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
+        }
+    }
 
-            const scanner = Scanner.create(b, .{});
+    //- linux wayland
+    {
+        const xkbcommon = b.lazyDependency("xkbcommon", .{});
 
-            const wayland = b.createModule(.{
-                .root_source_file = scanner.result,
-            });
+        const scanner = Scanner.create(b, .{});
 
-            scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
-            scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
-            scanner.addSystemProtocol(
-                "staging/cursor-shape/cursor-shape-v1.xml",
-            );
-            scanner.addSystemProtocol(
-                "unstable/pointer-gestures/pointer-gestures-unstable-v1.xml",
-            );
+        const wayland = b.createModule(.{
+            .root_source_file = scanner.result,
+        });
 
-            scanner.generate("wl_compositor", 5);
-            scanner.generate("wl_shm", 2);
-            scanner.generate("wl_output", 4);
-            scanner.generate("xdg_wm_base", 6);
-            scanner.generate("wl_seat", 8);
-            scanner.generate("wp_cursor_shape_manager_v1", 1);
-            scanner.generate("zwp_pointer_gestures_v1", 3);
+        scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+        scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
+        scanner.addSystemProtocol(
+            "staging/cursor-shape/cursor-shape-v1.xml",
+        );
+        scanner.addSystemProtocol(
+            "unstable/pointer-gestures/pointer-gestures-unstable-v1.xml",
+        );
 
-            fe_mod.addImport("wayland", wayland);
-            fe_mod.linkSystemLibrary("wayland-client", .{ .needed = true });
-            fe_mod.linkSystemLibrary("wayland-cursor", .{ .needed = true });
+        scanner.generate("wl_compositor", 5);
+        scanner.generate("wl_shm", 2);
+        scanner.generate("wl_output", 4);
+        scanner.generate("xdg_wm_base", 6);
+        scanner.generate("wl_seat", 8);
+        scanner.generate("wp_cursor_shape_manager_v1", 1);
+        scanner.generate("zwp_pointer_gestures_v1", 3);
 
-            if (xkbcommon) |m|
-                fe_mod.addImport("xkbcommon", m.module("xkbcommon"));
-            fe_mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
+        fe_mod.addImport("wayland", wayland);
+        fe_mod.linkSystemLibrary("wayland-client", .{ .needed = true });
+        fe_mod.linkSystemLibrary("wayland-cursor", .{ .needed = true });
 
-            fe_mod.addSystemIncludePath(b.path("glib-2.0"));
-            fe_mod.linkSystemLibrary("gio-2", .{ .needed = true });
+        if (xkbcommon) |m|
+            fe_mod.addImport("xkbcommon", m.module("xkbcommon"));
+        fe_mod.linkSystemLibrary("xkbcommon", .{ .needed = true });
 
-            //- wgpu
+        fe_mod.addSystemIncludePath(b.path("glib-2.0"));
+        fe_mod.linkSystemLibrary("gio-2", .{ .needed = true });
 
-            const wgpu = b.lazyDependency("wgpu_native", .{
-                .target = target,
-                .optimize = optimize,
-            });
-            if (wgpu) |m| {
-                fe_mod.addImport("wgpu", m.module("wgpu"));
-                fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
-            }
+        //- wgpu
 
-            //- freetype
+        const wgpu = b.lazyDependency("wgpu_native", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        if (wgpu) |m| {
+            fe_mod.addImport("wgpu", m.module("wgpu"));
+            fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
+        }
 
-            const freetype = b.lazyDependency("freetype", .{
-                .target = target,
-                .optimize = optimize,
-            });
-            if (freetype) |m| {
-                fe_mod.addImport("freetype", m.module("freetype"));
-                fe_mod.linkLibrary(m.artifact("freetype"));
-            }
+        //- freetype
 
-            //- harfbuzz
+        const freetype = b.lazyDependency("freetype", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        if (freetype) |m| {
+            fe_mod.addImport("freetype", m.module("freetype"));
+            fe_mod.linkLibrary(m.artifact("freetype"));
+        }
 
-            fe_mod.addSystemIncludePath(b.path("harfbuzz"));
-            fe_mod.linkSystemLibrary("harfbuzz", .{ .needed = true });
-        },
+        //- harfbuzz
+
+        fe_mod.addSystemIncludePath(b.path("harfbuzz"));
+        fe_mod.linkSystemLibrary("harfbuzz", .{ .needed = true });
     }
 
     fe_mod.addImport("cu", cu_mod);
@@ -225,8 +225,6 @@ pub fn build(b: *std.Build) void {
 
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
-    options.addOption(bool, "poll_event_loop", poll_event_loop);
-    options.addOption(EntryPoint, "entry_point", entry_point);
     fe_mod.addOptions("build_options", options);
 
     //- test plugin
@@ -253,23 +251,20 @@ pub fn build(b: *std.Build) void {
         .root_module = plug_test_mod,
     });
 
-    const install = plug_test_bin.installPlugin(b, "plugins/test");
-
-    fe_exe.step.dependOn(&install.step);
+    if (!no_bin) {
+        const install = plug_test_bin.installPlugin(b, "plugins/test");
+        fe_exe.step.dependOn(&install.step);
+    }
 
     //- run
 
-    const run_cmd = b.addRunArtifact(fe_exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    //- check
-
-    const check_step = b.step("check", "Run a dry build");
-    check_step.dependOn(&fe_exe.step);
+    if (!no_bin) {
+        const run_cmd = b.addRunArtifact(fe_exe);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| run_cmd.addArgs(args);
+        const run_step = b.step("run", "Run the app");
+        run_step.dependOn(&run_cmd.step);
+    }
 }
 
 //= Plugin build helpers

@@ -16,20 +16,33 @@ var trace_build: tracy.ZoneContext = undefined;
 
 const b = @This();
 
+var frame_previous_time: std.time.Instant = std.mem.zeroes(std.time.Instant);
+pub var dt_s: f32 = 0;
+
 pub fn startFrame() void {
     const current_time = std.time.Instant.now() catch
         @panic("no std.time.Instant support");
 
-    const dt_ns = current_time.since(cu.state.frame_previous_time);
-    cu.state.frame_previous_time = current_time;
+    const dt_ns = current_time.since(frame_previous_time);
+    frame_previous_time = current_time;
 
-    cu.state.dt_s =
-        @as(f32, @floatFromInt(dt_ns)) / @as(f32, std.time.ns_per_s);
+    dt_s = @as(f32, @floatFromInt(dt_ns)) / @as(f32, std.time.ns_per_s);
 }
 
 pub fn endFrame() void {
     //
 }
+
+pub const InteractionStyle = struct {
+    target: Atom.PaletteColor = .border,
+    hot: math.RgbaU8,
+    active: math.RgbaU8,
+};
+
+pub const InteractionStyles = struct {
+    button: InteractionStyle,
+    toggle_switch: InteractionStyle,
+};
 
 pub fn startBuild(window_id: usize) void {
     trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
@@ -47,7 +60,7 @@ pub fn startBuild(window_id: usize) void {
         stacks = .empty;
 
         stacks.palette
-            .pushForMany(Atom.pallete.fullToPartial(cu.state.default_palette));
+            .pushForMany(Atom.palettes.fullToPartial(cu.state.root_palette));
         stacks.font.pushForMany(.body);
         stacks.pref_size.pushForMany(.square(.fill));
         stacks.layout_axis.pushForMany(.x);
@@ -164,24 +177,26 @@ pub fn endBuild() void {
         cu.state.event_list.len = 0;
     }
 
-    //- work out the hover cursor
-    {
-        var pointer_kind: ?cu.PointerKind = null;
+    //- work out the hover poiner shape
+    const cursor_shape: ?cu.CursorShape = blk: {
+        var cursor_shape: ?cu.CursorShape = null;
 
-        findHoverPointerKindForRoot(cu.state.ui_root, &pointer_kind);
-        findHoverPointerKindForRoot(cu.state.ui_ctx_menu_root, &pointer_kind);
-        findHoverPointerKindForRoot(cu.state.ui_tooltip_root, &pointer_kind);
-
-        cu.state.pointer_kind = pointer_kind;
-    }
+        findHoverPointerKindForRoot(cu.state.ui_tooltip_root, &cursor_shape);
+        if (cursor_shape != null) break :blk cursor_shape;
+        findHoverPointerKindForRoot(cu.state.ui_ctx_menu_root, &cursor_shape);
+        if (cursor_shape != null) break :blk cursor_shape;
+        findHoverPointerKindForRoot(cu.state.ui_root, &cursor_shape);
+        break :blk cursor_shape;
+    };
+    cu.state.cursor_shape = cursor_shape;
 }
 
-fn findHoverPointerKindForRoot(root: *Atom, pointer_kind: *?cu.PointerKind) void {
+fn findHoverPointerKindForRoot(root: *Atom, cursor_shape: *?cu.CursorShape) void {
     var iter = root.tree.depthFirstPreOrderIterator();
     while (iter.next()) |atom| {
         if (atom.rect.contains(cu.state.pointer_pos)) {
-            if (atom.hover_pointer) |kind|
-                pointer_kind.* = kind;
+            if (atom.hover_cursor_shape) |kind|
+                cursor_shape.* = kind;
         }
     }
 }
@@ -240,7 +255,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     // per build info
     atom.pref_size = stacks.pref_size.topVolatile().?;
     atom.layout_axis = stacks.layout_axis.topVolatile().?;
-    atom.hover_pointer = stacks.hover_pointer.topVolatile(); // may be null
+    atom.hover_cursor_shape = stacks.hover_cursor_shape.topVolatile(); // may be null
     atom.flags = stacks.flags.topVolatile().?;
     atom.text_align = stacks.text_align.topVolatile().?;
     atom.alignment = stacks.alignment.topVolatile().?;
@@ -256,11 +271,11 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
     {
         var partial = stacks.palette.topVolatile().?;
         var i: usize = 0;
-        while (!Atom.pallete.partialIsFull(partial)) : (i += 1) {
+        while (!Atom.palettes.partialIsFull(partial)) : (i += 1) {
             const next = stacks.palette.peek(i) orelse break;
-            partial = Atom.pallete.mergePartials(partial, next);
+            partial = Atom.palettes.mergePartials(partial, next);
         }
-        atom.palette = Atom.pallete.partialToFull(partial) orelse
+        atom.palette = Atom.palettes.partialToFull(partial) orelse
             @panic("could not contruct a full pallete from stack");
     }
 
@@ -373,7 +388,10 @@ pub fn lineSpacer() *Atom {
     return line_spacer;
 }
 
-pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
+pub fn baseClickableInteractionStyles(
+    inter: cu.Interaction,
+    style: InteractionStyle,
+) void {
     // @FIXME: the tranitions to and from no interation and hovering work,
     //  and from hovering to clicking, but not from clicking back to hovering
 
@@ -392,21 +410,24 @@ pub fn baseClickableInteractionStyles(inter: cu.Interaction) void {
     const palette = atom.palette;
     const from, const to, const lerp_t =
         if (is_active)
-            .{ palette.get(.hot), palette.get(.active), atom.active_t }
+            .{ style.hot, style.active, atom.active_t }
         else
-            .{ palette.get(.border), palette.get(.hot), atom.hot_t };
+            .{ palette.get(style.target), style.hot, atom.hot_t };
 
-    atom.palette.set(.border, from.lerp(to, lerp_t));
+    atom.palette.set(style.target, from.lerp(to, lerp_t));
 }
 
 pub fn button(string: []const u8) cu.Interaction {
     stacks.font.push(.button);
-    stacks.hover_pointer.push(.clickable);
+    stacks.hover_cursor_shape.push(.pointer);
     const atom = build(string);
     atom.flags = .init(&.{ .clickable, .draw_text, .draw_border });
 
     const interaction = atom.interaction();
-    baseClickableInteractionStyles(interaction);
+    baseClickableInteractionStyles(
+        interaction,
+        cu.state.interaction_styles.button,
+    );
 
     return interaction;
 }
@@ -421,7 +442,7 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
     stacks.pref_size.push(.size(.px_strict(em(3)), .px_strict(em(1.5))));
     stacks.flags.push(.init(&.{ .draw_border, .clickable }));
     stacks.layout_axis.push(.y);
-    stacks.hover_pointer.push(.clickable);
+    stacks.hover_cursor_shape.push(.pointer);
     const toggle = open("toggle container");
     defer close(toggle);
 
@@ -459,7 +480,10 @@ pub fn toggleSwitch(toggled: *bool) cu.Interaction {
     }
 
     const inter = toggle.interaction();
-    baseClickableInteractionStyles(inter);
+    baseClickableInteractionStyles(
+        inter,
+        cu.state.interaction_styles.toggle_switch,
+    );
 
     if (inter.clicked())
         toggled.* = !toggled.*;
@@ -685,11 +709,11 @@ pub const centered = struct {
 //= stacks
 
 pub const Stacks = struct {
-    palette: VolatileStack(Atom.pallete.PalletePartial),
+    palette: VolatileStack(Atom.PalettePartial),
     font: VolatileStack(FontKind),
     pref_size: VolatileStack(math.Size(Atom.PrefSize)),
     layout_axis: VolatileStack(Atom.LayoutAxis),
-    hover_pointer: VolatileStack(cu.PointerKind),
+    hover_cursor_shape: VolatileStack(cu.CursorShape),
     flags: VolatileStack(Atom.Flags),
     text_align: VolatileStack(math.Size(Atom.Alignment)),
     alignment: VolatileStack(math.Size(Atom.Alignment)),
@@ -702,7 +726,7 @@ pub const Stacks = struct {
         .pref_size = .empty,
         .font = .empty,
         .layout_axis = .empty,
-        .hover_pointer = .empty,
+        .hover_cursor_shape = .empty,
         .flags = .empty,
         .text_align = .empty,
         .alignment = .empty,

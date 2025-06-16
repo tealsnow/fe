@@ -1,6 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const TermColor = @import("TermColor.zig");
+const TermColor = @import("misc/TermColor.zig");
 
 const tracy = @import("tracy");
 

@@ -467,7 +467,15 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             if (Atom.Key.eql(atom.key, cu.state.active_atom_key.get(button)) or
                 inter.buttonPressed(button))
             {
-                setButtonGeneric(&inter.f, .dragging, button);
+                // @FIXME: although this now allows double clickes when only
+                //  before the drag flag is flipped it breaks the panel window
+                //  resizing quite dramatically,
+                //  I think we need to re-think dragging:
+                //  multiple events maybe: start, doing, end?
+                const delta = cu.state.dragDelta();
+                const min_delta = 3; // @FIXME: make this distance configurable
+                if (@abs(delta.x) > min_delta or @abs(delta.y) > min_delta)
+                    setButtonGeneric(&inter.f, .dragging, button);
             }
         }
     }

@@ -17,13 +17,13 @@ flags: Flags = .none,
 
 pref_size: math.Size(PrefSize) = .zero,
 layout_axis: LayoutAxis = .x,
-hover_pointer: ?cu.PointerKind = null,
+hover_cursor_shape: ?cu.CursorShape = null,
 // group_key
 text_align: math.Size(Alignment) = .square(.center),
 alignment: math.Size(Alignment) = .square(.start), // @FIXME: rename to children alignemnt
 padding: Padding = .zero,
 
-palette: pallete.Pallete = undefined,
+palette: Palette = undefined,
 font: cu.FontHandle = undefined,
 // corner_radii: [4]f32
 // transparency: f32 = 1.0,
@@ -169,7 +169,6 @@ pub const Flag = enum(u32) {
     draw_side_left,
     draw_side_right,
     draw_text,
-    draw_text_weak,
     clip_rect,
 };
 
@@ -207,7 +206,6 @@ pub const Flags = struct {
     pub const draw_side_left = initOne(.draw_side_left);
     pub const draw_side_right = initOne(.draw_side_right);
     pub const draw_text = initOne(.draw_text);
-    pub const draw_text_weak = initOne(.draw_text_weak);
     pub const clip_rect = initOne(.clip_rect);
 
     pub fn initOne(flag: Flag) Flags {
@@ -408,111 +406,105 @@ pub const PrefSize = extern struct {
     }
 };
 
-pub const pallete = struct {
-    pub const PalleteColor = enum {
-        background,
-        text,
-        text_weak,
-        border,
-        hot,
-        active,
-        // overlay,
-        // cursor,
-        // selection,
-    };
+pub const PaletteColor = enum {
+    background,
+    border,
+    text,
+};
 
-    pub const Pallete = struct {
-        const List = std.EnumArray(PalleteColor, math.RgbaU8);
+pub const Palette = struct {
+    const List = std.EnumArray(PaletteColor, math.RgbaU8);
 
-        list: List,
+    list: List,
 
-        pub fn init(
-            init_values: std.enums.EnumFieldStruct(
-                List.Key,
-                List.Value,
-                null,
-            ),
-        ) Pallete {
-            return .{ .list = .init(init_values) };
-        }
+    pub fn init(
+        init_values: std.enums.EnumFieldStruct(
+            List.Key,
+            List.Value,
+            null,
+        ),
+    ) Palette {
+        return .{ .list = .init(init_values) };
+    }
 
-        pub fn get(self: Pallete, key: PalleteColor) math.RgbaU8 {
-            return self.list.get(key);
-        }
+    pub fn get(self: Palette, key: PaletteColor) math.RgbaU8 {
+        return self.list.get(key);
+    }
 
-        pub fn set(self: *Pallete, key: PalleteColor, value: math.RgbaU8) void {
-            return self.list.set(key, value);
-        }
-    };
+    pub fn set(self: *Palette, key: PaletteColor, value: math.RgbaU8) void {
+        return self.list.set(key, value);
+    }
+};
 
-    pub const PalletePartial = struct {
-        const List = std.EnumArray(PalleteColor, ?math.RgbaU8);
+pub const PalettePartial = struct {
+    const List = std.EnumArray(PaletteColor, ?math.RgbaU8);
 
-        list: List,
+    list: List,
 
-        pub fn init(
-            init_values: std.enums.EnumFieldStruct(
-                List.Key,
-                List.Value,
-                @as(?math.RgbaU8, null),
-            ),
-        ) PalletePartial {
-            return .{ .list = .initDefault(@as(?math.RgbaU8, null), init_values) };
-        }
+    pub fn init(
+        init_values: std.enums.EnumFieldStruct(
+            List.Key,
+            List.Value,
+            @as(?math.RgbaU8, null),
+        ),
+    ) PalettePartial {
+        return .{ .list = .initDefault(@as(?math.RgbaU8, null), init_values) };
+    }
 
-        pub fn get(self: PalletePartial, key: PalleteColor) ?math.RgbaU8 {
-            return self.list.get(key);
-        }
+    pub fn get(self: PalettePartial, key: PaletteColor) ?math.RgbaU8 {
+        return self.list.get(key);
+    }
 
-        pub fn set(
-            self: *PalletePartial,
-            key: PalleteColor,
-            value: ?math.RgbaU8,
-        ) void {
-            return self.list.set(key, value);
-        }
-    };
+    pub fn set(
+        self: *PalettePartial,
+        key: PaletteColor,
+        value: ?math.RgbaU8,
+    ) void {
+        return self.list.set(key, value);
+    }
+};
 
+pub const palettes = struct {
     /// Merge the left with the right pallete, prioritizes the left one.
     pub fn mergePartials(
-        left: PalletePartial,
-        right: PalletePartial,
-    ) PalletePartial {
+        left: PalettePartial,
+        right: PalettePartial,
+    ) PalettePartial {
         var out = left;
 
-        inline for (0..PalletePartial.List.Indexer.count) |i| {
-            const key = PalletePartial.List.Indexer.keyForIndex(i);
+        inline for (0..PalettePartial.List.Indexer.count) |i| {
+            const key = PalettePartial.List.Indexer.keyForIndex(i);
             out.set(key, left.get(key) orelse right.get(key));
         }
 
         return out;
     }
 
-    pub fn partialIsFull(partial: PalletePartial) bool {
-        inline for (0..PalletePartial.List.Indexer.count) |i| {
-            const key = PalletePartial.List.Indexer.keyForIndex(i);
+    pub fn partialIsFull(partial: PalettePartial) bool {
+        inline for (0..PalettePartial.List.Indexer.count) |i| {
+            const key = PalettePartial.List.Indexer.keyForIndex(i);
             if (partial.get(key) == null)
                 return false;
         }
         return true;
     }
 
-    pub fn partialToFull(partial: PalletePartial) ?Pallete {
-        var list = Pallete{ .list = .initUndefined() };
+    pub fn partialToFull(partial: PalettePartial) ?Palette {
+        var list = Palette{ .list = .initUndefined() };
 
-        inline for (0..Pallete.List.Indexer.count) |i| {
-            const key = Pallete.List.Indexer.keyForIndex(i);
+        inline for (0..Palette.List.Indexer.count) |i| {
+            const key = Palette.List.Indexer.keyForIndex(i);
             list.set(key, partial.get(key) orelse return null);
         }
 
         return list;
     }
 
-    pub fn fullToPartial(full: Pallete) PalletePartial {
-        var list = PalletePartial{ .list = .initUndefined() };
+    pub fn fullToPartial(full: Palette) PalettePartial {
+        var list = PalettePartial{ .list = .initUndefined() };
 
-        inline for (0..PalletePartial.List.Indexer.count) |i| {
-            const key = PalletePartial.List.Indexer.keyForIndex(i);
+        inline for (0..PalettePartial.List.Indexer.count) |i| {
+            const key = PalettePartial.List.Indexer.keyForIndex(i);
             list.set(key, full.get(key));
         }
 

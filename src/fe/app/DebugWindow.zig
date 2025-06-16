@@ -3,123 +3,130 @@ const Self = @This();
 const std = @import("std");
 const log = std.log.scoped(.@"app.DebugWindow");
 
-const AppState = @import("State.zig");
-const Window = AppState.Window;
-const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
-const titlebar = @import("titlebar.zig");
+const App = @import("App.zig");
 
 const cu = @import("cu");
 const mt = cu.math;
 const b = cu.builder;
 const Atom = cu.Atom;
 
-app: *AppState,
-
-window: *Window = undefined,
+app: *App,
+window: *App.BackendWindow,
+cu_state: *cu.State,
 
 target: ?*cu.State = null,
-
 debug_ui_state: cu.debug.DebugUIState = .init,
 
-pub fn windowInterface(self: *Self) Window.Interface {
+pub fn init(app: *App) !*Self {
+    const window = try app.newWindow("Debug");
+    const cu_state = try cu.State.init(app.gpa, .{
+        .callbacks = window.callbacks(),
+        .font_kind_map = window.font_kind_map,
+        .interaction_styles = app.interaction_styles,
+        .root_palette = app.root_palette,
+    });
+
+    const self = try app.gpa.create(Self);
+    self.* = .{
+        .app = app,
+        .window = window,
+        .cu_state = cu_state,
+    };
+    return self;
+}
+
+pub fn deinit(self: *Self) void {
+    self.cu_state.deinit();
+
+    const gpa = self.app.gpa;
+    gpa.destroy(self);
+}
+
+pub fn appWindow(self: *Self) App.AppWindow {
     return .{
+        .id = self.window.getId(),
         .context = @ptrCast(self),
         .vtable = &.{
-            .build = vtable.build,
-            .close = vtable.close,
+            .deinit = &vtable.deinit,
+            .getWindow = &vtable.getWindow,
+            .getCuState = &vtable.getCuState,
+            .buildUI = &vtable.buildUI,
         },
     };
 }
 
 pub const vtable = struct {
-    fn build(ctx: *anyopaque, window: *Window) void {
+    fn deinit(ctx: *anyopaque) void {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        self.window = window;
-        self.build();
+        self.deinit();
     }
-
-    fn close(ctx: *anyopaque, window: *Window) void {
-        _ = ctx;
-        _ = window;
+    fn getWindow(ctx: *anyopaque) *App.BackendWindow {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        return self.window;
+    }
+    fn getCuState(ctx: *anyopaque) *cu.State {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        return self.cu_state;
+    }
+    fn buildUI(ctx: *anyopaque) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        self.buildUI();
     }
 };
 
-fn build(self: *Self) void {
-    const window_rounding = self.app.window_rounding;
-
-    const tiling = self.window.wl_window.tiling;
-    b.stacks.flags.push(flags: {
-        var flags = cu.AtomFlags.draw_background;
-
-        if (!tiling.isTiled()) {
-            flags.insert(.draw_border);
-            b.stacks.corner_radius.push(window_rounding);
-        } else {
-            flags.setPresent(.draw_side_top, !tiling.tiled_top);
-            flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
-            flags.setPresent(.draw_side_left, !tiling.tiled_left);
-            flags.setPresent(.draw_side_right, !tiling.tiled_right);
-        }
-
-        break :flags flags;
-    });
-    b.stacks.layout_axis.push(.y);
-    const window_inset_wrapper =
-        WindowInsetWrapper.begin(self.window.wl_window);
-    defer window_inset_wrapper.end();
-
-    const menu_bar = titlebar_buttons.menuBar(self);
-
-    titlebar.buildTitlebar(
-        self.window.wl_window,
-        self.app.window_rounding,
-        *Self,
-        menu_bar,
-    );
-
-    self.buildMainUI();
-}
-
-const titlebar_buttons = struct {
-    const MenuBar = titlebar.TitlebarButtons(*Self);
+const menu_bar = struct {
+    const MenuBar = App.MenuBar;
 
     pub fn menuBar(self: *Self) MenuBar {
         return .{
             .context = self,
-            .buttons = &buttons,
+            .root = &.{
+                debug.button,
+            },
         };
     }
 
-    pub const buttons = [_]MenuBar.Button{
-        debug.button,
-    };
-
     pub const debug = struct {
-        pub const button = MenuBar.Button{
+        pub const button = MenuBar.MenuList{
             .name = "Debug",
             .items = &.{
-                .{ .name = "pick new", .action = reset },
-                .{ .name = "close", .action = close },
-                .{ .name = "quit", .action = quit },
+                .{ .button = .{ .name = "reset", .action = reset } },
+                .{ .button = .{ .name = "close", .action = close } },
+                .{ .button = .{ .name = "quit", .action = quit } },
             },
         };
 
-        fn reset(self: *Self) void {
+        fn reset(ctx: *anyopaque) void {
+            const self: *Self = @ptrCast(@alignCast(ctx));
             self.target = null;
             self.debug_ui_state = .init;
         }
 
-        pub fn close(self: *Self) void {
+        pub fn close(ctx: *anyopaque) void {
+            const self: *Self = @ptrCast(@alignCast(ctx));
             self.app.action_queue.queue(.{
                 .close_window = self.window.wl_window.id,
             });
         }
 
-        pub fn quit(self: *Self) void {
+        pub fn quit(ctx: *anyopaque) void {
+            const self: *Self = @ptrCast(@alignCast(ctx));
             self.app.action_queue.queue(.quit);
         }
     };
 };
+
+fn buildUI(self: *Self) void {
+    self.cu_state.select();
+
+    b.startBuild(@intFromPtr(self.window));
+    defer b.endBuild();
+
+    self.window.startBuild(menu_bar.menuBar(self));
+    defer self.window.endBuild();
+
+    self.buildMainUI();
+}
 
 fn buildMainUI(self: *Self) void {
     b.stacks.layout_axis.push(.y);
@@ -136,11 +143,12 @@ fn buildMainUI(self: *Self) void {
         b.stacks.pref_size.pushForMany(.square(.text_pad(8)));
         defer _ = b.stacks.pref_size.pop();
 
-        for (self.app.window_list.slice(), 0..) |window, i| {
-            const btn = b.buttonf("{s}##{d}", .{ window.title, i });
+        for (self.app.windows.values(), 0..) |window, i| {
+            const title = window.getWindow().getTitle();
+            const btn = b.buttonf("{s}##{d}", .{ title, i });
 
             if (btn.clicked()) {
-                self.target = window.cu_state;
+                self.target = window.getCuState();
             }
         }
 

@@ -16,7 +16,7 @@ const math = cu.math;
 const AtomFlags = cu.AtomFlags;
 const b = cu.builder;
 
-const fc = @import("fontconfig.zig");
+const fc = @import("misc/fontconfig.zig");
 const CuSdlRenderer = @import("CuSdlRenderer.zig");
 const plugins = @import("plugins.zig");
 

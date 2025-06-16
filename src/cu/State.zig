@@ -5,6 +5,7 @@ const log = std.log.scoped(.@"cu.State");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const assert = std.debug.assert;
+const builder = @import("builder.zig");
 
 const cu = @import("cu.zig");
 const math = cu.math;
@@ -14,9 +15,6 @@ const MouseButton = cu.input.MouseButton;
 
 current_build_index: u64 = 0,
 build_atom_count: u64 = 0,
-
-frame_previous_time: std.time.Instant,
-dt_s: f32 = 0,
 
 animation_speed: f32 = 40,
 
@@ -30,8 +28,6 @@ atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
 atom_parent_stack: Stack(*Atom) = .empty, // arena
 atom_stale_list: std.ArrayListUnmanaged(Atom.Key), // gpa
-
-default_palette: Atom.pallete.Pallete = undefined,
 
 // scope_locals: std.StringArrayHashMapUnmanaged(*cu.ScopeLocalNode) = .empty,
 
@@ -64,7 +60,7 @@ graphics_info: GraphicsInfo,
 
 window_size: math.Size(f32) = .zero,
 pointer_pos: math.Point(f32) = .nan,
-pointer_kind: ?PointerKind = null,
+cursor_shape: ?CursorShape = null,
 pointer_pos_start_drag: math.Point(f32) = .nan,
 drag_data: []u8,
 
@@ -79,6 +75,9 @@ press_history_timestamp_us: std.EnumArray(
     cu.CircleBuffer(HistoySize, u64),
 ) = .initFill(.empty),
 
+root_palette: Atom.Palette,
+interaction_styles: builder.InteractionStyles,
+
 const HistoySize = 8;
 
 pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = true });
@@ -92,6 +91,9 @@ pub const AtomMap = std.ArrayHashMapUnmanaged(
 pub const InitParams = struct {
     callbacks: Callbacks,
     font_kind_map: FontKindMap,
+
+    interaction_styles: builder.InteractionStyles,
+    root_palette: Atom.Palette,
 };
 
 pub fn init(gpa: Allocator, params: InitParams) !*State {
@@ -100,9 +102,6 @@ pub fn init(gpa: Allocator, params: InitParams) !*State {
         .callbacks = params.callbacks,
 
         .font_kind_map = params.font_kind_map,
-
-        .frame_previous_time = std.time.Instant.now() catch
-            @panic("no std.time.Instant support"),
 
         .arena_allocator = std.heap.ArenaAllocator.init(gpa),
         .arena = undefined,
@@ -115,6 +114,9 @@ pub fn init(gpa: Allocator, params: InitParams) !*State {
         .graphics_info = undefined,
 
         .drag_data = undefined,
+
+        .interaction_styles = params.interaction_styles,
+        .root_palette = params.root_palette,
     };
     state.arena = state.arena_allocator.allocator();
 
@@ -140,6 +142,10 @@ pub fn deinit(state: *State) void {
     gpa.free(state.drag_data);
 
     gpa.destroy(state);
+}
+
+pub fn select(state: *State) void {
+    cu.state = state;
 }
 
 pub fn pushEvent(state: *State, kind: cu.input.EventKind) void {
@@ -241,11 +247,11 @@ pub const FontKind = enum {
 
 pub const FontKindMap = std.EnumArray(FontKind, FontHandle);
 
-pub const PointerKind = enum {
+pub const CursorShape = enum {
     default,
     context_menu,
     help,
-    clickable,
+    pointer,
     progress,
     wait,
     cell,

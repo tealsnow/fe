@@ -11,4 +11,3 @@ pub const CursorKind = @import("cursor_manager.zig").CursorKind;
 
 pub const Event = @import("events.zig").Event;
 pub const EventQueue = @import("events.zig").EventQueue;
-pub const EventQueueCircleBuffer = @import("events.zig").EventQueueCircleBuffer;

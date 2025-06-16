@@ -1,138 +1,146 @@
 const TestWindow = @This();
 
-const AppState = @import("State.zig");
-const Window = AppState.Window;
-const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
-const titlebar = @import("titlebar.zig");
+const App = @import("App.zig");
 
 const cu = @import("cu");
 const b = cu.builder;
 
-app: *AppState,
+app: *App,
+window: *App.BackendWindow,
+cu_state: *cu.State,
 
 test_toggle: bool = false,
 test_scroll_offset: f32 = 0,
 
-window: *Window = undefined,
+pub fn init(app: *App) !*TestWindow {
+    const window = try app.newWindow("Test");
+    const cu_state = try cu.State.init(app.gpa, .{
+        .callbacks = window.callbacks(),
+        .font_kind_map = window.font_kind_map,
+        .interaction_styles = app.interaction_styles,
+        .root_palette = app.root_palette,
+    });
 
-pub fn windowInterface(self: *TestWindow) Window.Interface {
+    const self = try app.gpa.create(TestWindow);
+    self.* =
+        .{
+            .app = app,
+            .window = window,
+            .cu_state = cu_state,
+        };
+    return self;
+}
+
+pub fn deinit(self: *TestWindow) void {
+    self.cu_state.deinit();
+
+    const gpa = self.app.gpa;
+    gpa.destroy(self);
+}
+
+pub fn appWindow(self: *TestWindow) App.AppWindow {
     return .{
-        .context = @ptrCast(self),
+        .id = self.window.getId(),
+        .context = self,
         .vtable = &.{
-            .build = vtable.build,
-            .close = vtable.close,
+            .deinit = &vtable.deinit,
+            .getWindow = &vtable.getWindow,
+            .getCuState = &vtable.getCuState,
+            .buildUI = &vtable.buildUI,
         },
     };
 }
 
 pub const vtable = struct {
-    fn build(ctx: *anyopaque, window: *Window) void {
-        const state: *TestWindow = @ptrCast(@alignCast(ctx));
-        state.window = window;
-        state.build();
+    fn deinit(ctx: *anyopaque) void {
+        const self: *TestWindow = @ptrCast(@alignCast(ctx));
+        self.deinit();
     }
-
-    fn close(ctx: *anyopaque, window: *Window) void {
-        _ = ctx;
-        _ = window;
+    fn getWindow(ctx: *anyopaque) *App.BackendWindow {
+        const self: *TestWindow = @ptrCast(@alignCast(ctx));
+        return self.window;
+    }
+    fn getCuState(ctx: *anyopaque) *cu.State {
+        const self: *TestWindow = @ptrCast(@alignCast(ctx));
+        return self.cu_state;
+    }
+    fn buildUI(ctx: *anyopaque) void {
+        const self: *TestWindow = @ptrCast(@alignCast(ctx));
+        self.buildUI();
     }
 };
 
-fn build(state: *TestWindow) void {
-    const window_rounding = state.app.window_rounding;
+fn buildUI(self: *TestWindow) void {
+    self.cu_state.select();
 
-    const tiling = state.window.wl_window.tiling;
-    b.stacks.flags.push(flags: {
-        var flags = cu.AtomFlags.draw_background;
+    b.startBuild(@intFromPtr(self.window));
+    defer b.endBuild();
 
-        if (!tiling.isTiled()) {
-            flags.insert(.draw_border);
-            b.stacks.corner_radius.push(window_rounding);
-        } else {
-            flags.setPresent(.draw_side_top, !tiling.tiled_top);
-            flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
-            flags.setPresent(.draw_side_left, !tiling.tiled_left);
-            flags.setPresent(.draw_side_right, !tiling.tiled_right);
-        }
+    self.window.startBuild(menu_bar.menuBar(self));
+    defer self.window.endBuild();
 
-        break :flags flags;
-    });
-    b.stacks.layout_axis.push(.y);
-    const window_inset_wrapper =
-        WindowInsetWrapper.begin(state.window.wl_window);
-    defer window_inset_wrapper.end();
-
-    const menu_bar = titlebar_buttons.menuBar(state);
-
-    titlebar.buildTitlebar(
-        state.window.wl_window,
-        state.app.window_rounding,
-        *TestWindow,
-        menu_bar,
-    );
-
-    state.buildMainUI();
+    self.buildMainUI();
 }
 
-const titlebar_buttons = struct {
-    const MenuBar = titlebar.TitlebarButtons(*TestWindow);
+const menu_bar = struct {
+    const MenuBar = App.MenuBar;
 
-    pub fn menuBar(state: *TestWindow) MenuBar {
+    pub fn menuBar(self: *TestWindow) MenuBar {
         return .{
-            .context = state,
-            .buttons = &buttons,
+            .context = self,
+            .root = &.{
+                test_.button,
+                edit.button,
+                help.button,
+            },
         };
     }
 
-    pub const buttons = [_]MenuBar.Button{
-        test_.button,
-        edit.button,
-        help.button,
-    };
-
     pub const test_ = struct {
-        pub const button = MenuBar.Button{
+        pub const button = MenuBar.MenuList{
             .name = "Test",
             .items = &.{
-                .{ .name = "close", .action = close },
-                .{ .name = "quit", .action = quit },
+                .{ .button = .{ .name = "close", .action = close } },
+                .{ .button = .{ .name = "quit", .action = quit } },
             },
         };
 
-        pub fn close(state: *TestWindow) void {
-            state.app.action_queue.queue(.{
-                .close_window = state.window.wl_window.id,
+        pub fn close(ctx: *anyopaque) void {
+            const self: *TestWindow = @ptrCast(@alignCast(ctx));
+            self.app.action_queue.queue(.{
+                .close_window = self.window.getId(),
             });
         }
 
-        pub fn quit(state: *TestWindow) void {
-            state.app.action_queue.queue(.quit);
+        pub fn quit(ctx: *anyopaque) void {
+            const self: *TestWindow = @ptrCast(@alignCast(ctx));
+            self.app.action_queue.queue(.quit);
         }
     };
 
     pub const edit = struct {
-        pub const button = MenuBar.Button{
+        pub const button = MenuBar.MenuList{
             .name = "Edit",
             .items = &.{
-                .{ .name = "open file", .action = noop },
-                .{ .name = "close file", .action = noop },
+                .{ .button = .{ .name = "open file", .action = noop } },
+                .{ .button = .{ .name = "close file", .action = noop } },
             },
         };
     };
 
     pub const help = struct {
-        pub const button = MenuBar.Button{
+        pub const button = MenuBar.MenuList{
             .name = "Help",
             .items = &.{
-                .{ .name = "foo", .action = noop },
-                .{ .name = "bar", .action = noop },
-                .{ .name = "baz", .action = noop },
+                .{ .button = .{ .name = "foo", .action = noop } },
+                .{ .button = .{ .name = "bar", .action = noop } },
+                .{ .button = .{ .name = "baz", .action = noop } },
             },
         };
     };
 
-    pub fn noop(state: *TestWindow) void {
-        _ = state;
+    pub fn noop(ctx: *anyopaque) void {
+        _ = ctx;
     }
 };
 
@@ -229,7 +237,6 @@ fn buildLeftPane() void {
         _ = b.label("active atom: none");
 
     const hot = cu.state.atom_map.get(cu.state.hot_atom_key);
-    b.stacks.flags.push(.draw_text_weak);
     _ = b.labelf("hot atom: {?}", .{hot});
 
     _ = b.lineSpacer();
@@ -251,7 +258,7 @@ fn buildRightPane(state: *TestWindow) void {
         b.stacks.text_align.push(.square(.center));
         b.stacks.pref_size.push(.size(.grow, .text));
         b.stacks.font.push(.label);
-        b.stacks.hover_pointer.push(.context_menu);
+        b.stacks.hover_cursor_shape.push(.context_menu);
         const header = b.open("Right Header");
         defer b.close(header);
 
@@ -395,7 +402,7 @@ fn buildRightBar() void {
             for (0..5) |i| {
                 b.stacks.flags.push(.init(&.{ .draw_border, .clickable }));
                 b.stacks.pref_size.push(.square(.px(24)));
-                b.stacks.hover_pointer.push(.clickable);
+                b.stacks.hover_cursor_shape.push(.pointer);
                 const icon = b.buildf("###right bar icon {d}", .{i});
 
                 const inter = icon.interaction();

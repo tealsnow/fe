@@ -5,7 +5,7 @@
 // @TODO: use cu mouse cursor api when implemented
 const WindowInsetWrapper = @This();
 
-const wl = @import("../platform/linux/wayland/wayland.zig");
+const wl = @import("wayland/wayland.zig");
 
 const cu = @import("cu");
 const b = cu.builder;
@@ -24,6 +24,7 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
     // any properties on the stacks.
     cu.state.next_atom_orphan = true;
     const hori_body = b.build("###hori inset body");
+    hori_body.hover_cursor_shape = .default;
 
     if (!tiling.tiled_top) {
         b.stacks.pref_size.push(.size(.fill, .px(inset)));
@@ -35,15 +36,15 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        b.stacks.hover_pointer.push(.resize_nwse);
+        b.stacks.hover_cursor_shape.push(.resize_nwse);
         const top_left = b.build("###top-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
-        b.stacks.hover_pointer.push(.resize_ns);
+        b.stacks.hover_cursor_shape.push(.resize_ns);
         const top_middle = b.build("###top-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        b.stacks.hover_pointer.push(.resize_nesw);
+        b.stacks.hover_cursor_shape.push(.resize_nesw);
         const top_right = b.build("###top-right inset").interaction();
 
         if (top_left.pressed())
@@ -63,7 +64,7 @@ pub fn begin(window: *const wl.Window) WindowInsetWrapper {
     if (!tiling.tiled_left) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
-        b.stacks.hover_pointer.push(.resize_ew);
+        b.stacks.hover_cursor_shape.push(.resize_ew);
         const left = b.build("###left inset").interaction();
 
         if (left.pressed())
@@ -94,7 +95,7 @@ pub fn end(win_inset: WindowInsetWrapper) void {
     if (!tiling.tiled_right) {
         b.stacks.pref_size.push(.size(.px(inset), .fill));
         b.stacks.flags.push(.clickable);
-        b.stacks.hover_pointer.push(.resize_ew);
+        b.stacks.hover_cursor_shape.push(.resize_ew);
         const right = b.build("###right inset").interaction();
 
         if (right.pressed())
@@ -113,15 +114,15 @@ pub fn end(win_inset: WindowInsetWrapper) void {
         defer _ = b.stacks.flags.pop();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        b.stacks.hover_pointer.push(.resize_nesw);
+        b.stacks.hover_cursor_shape.push(.resize_nesw);
         const bottom_left = b.build("###bottom-left inset").interaction();
 
         b.stacks.pref_size.push(.square(.grow));
-        b.stacks.hover_pointer.push(.resize_ns);
+        b.stacks.hover_cursor_shape.push(.resize_ns);
         const bottom_middle = b.build("###bottom-middle inset").interaction();
 
         b.stacks.pref_size.push(.square(.px(inset)));
-        b.stacks.hover_pointer.push(.resize_nwse);
+        b.stacks.hover_cursor_shape.push(.resize_nwse);
         const bottom_right = b.build("###bottom-right inset").interaction();
 
         if (bottom_left.pressed())

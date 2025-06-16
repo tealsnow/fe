@@ -49,7 +49,8 @@ cursor_manager: CursorManager,
 
 xdg_wm_base: *xdg.WmBase,
 
-window_list: std.ArrayListUnmanaged(*Window) = .empty,
+next_window_id: WindowId = @enumFromInt(1),
+windows: std.AutoArrayHashMapUnmanaged(WindowId, *Window) = .empty,
 surface_to_window_map: *std.AutoArrayHashMapUnmanaged(*wl.Surface, *Window),
 
 hdpi: f32,
@@ -329,7 +330,9 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
 
     defer conn.xdg_wm_base.destroy();
 
-    defer conn.window_list.deinit(gpa);
+    defer conn.windows.deinit(gpa);
+    defer for (conn.windows.values()) |window| window.deinit(gpa);
+
     defer gpa.destroy(conn.surface_to_window_map);
     defer conn.surface_to_window_map.deinit(gpa);
 }
@@ -365,7 +368,7 @@ pub fn setCursor(conn: Connection, kind: CursorKind) !void {
 }
 
 pub fn getWindow(conn: Connection, id: WindowId) *Window {
-    return conn.window_list.items[@intFromEnum(id)];
+    return conn.windows.get(id);
 }
 
 pub const GetEnvVarOwnedError = error{

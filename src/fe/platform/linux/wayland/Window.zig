@@ -44,8 +44,12 @@ pub fn init(
 
     const window = try gpa.create(Window);
 
-    const id: WindowId = @enumFromInt(conn.window_list.items.len);
-    try conn.window_list.append(gpa, window);
+    const id = blk: {
+        const id = conn.next_window_id;
+        conn.next_window_id = @enumFromInt(@intFromEnum(id) + 1);
+        break :blk id;
+    };
+    try conn.windows.put(gpa, id, window);
     try conn.surface_to_window_map.put(gpa, wl_surface, window);
 
     window.* = .{
@@ -93,10 +97,12 @@ pub fn init(
 }
 
 pub fn deinit(window: *Window, gpa: Allocator) void {
-    defer gpa.destroy(window);
-    defer window.wl_surface.destroy();
-    defer window.xdg_surface.destroy();
-    defer window.xdg_toplevel.destroy();
+    window.xdg_toplevel.destroy();
+    window.xdg_surface.destroy();
+    window.wl_surface.destroy();
+    gpa.destroy(window);
+
+    std.debug.assert(window.conn.windows.swapRemove(window.id));
 }
 
 pub fn setTitle(window: Window, title: [*:0]const u8) void {

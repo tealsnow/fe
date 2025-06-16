@@ -724,6 +724,7 @@ pub fn render(
     renderer: *Renderer,
     arena: Allocator,
     font_manager: *const FontManager,
+    cu_state: *cu.State,
 ) !void {
     const trace =
         tracy.beginZone(@src(), .{ .name = "WgpuRenderer.render" });
@@ -732,6 +733,7 @@ pub fn render(
     const batch_data = try renderer.batch_processor.process(
         arena,
         renderer.surface_size,
+        cu_state,
     );
 
     var render_pass_data =

@@ -117,16 +117,17 @@ fn buildDebugUITree(state: *DebugUIState, cu_state: *cu.State) void {
                     .px(scroll_handle.view.fixed_size.width),
                     .px(item_height),
                 ));
-                b.stacks.hover_pointer.push(.clickable);
+                b.stacks.hover_cursor_shape.push(.pointer);
                 const row = b.openf("###dbg item {d}", .{i});
                 defer b.close(row);
 
                 const inter = row.interaction();
 
                 if (inter.hovering())
-                    row.palette.set(.background, row.palette.get(.hot));
-                if (inter.dragging())
-                    row.palette.set(.background, row.palette.get(.active));
+                    // row.palette.set(.background, row.palette.get(.hot));
+                    row.flags.insert(.draw_border);
+                // if (inter.dragging())
+                //     row.palette.set(.background, row.palette.get(.active));
                 if (inter.clicked())
                     state.selected_atom = atom;
 
@@ -340,7 +341,7 @@ fn buildDebugUIDetails(state: *DebugUIState, arena: Allocator) void {
     b.stacks.flags.push(.init(&.{.draw_text}));
     _ = b.buildf(
         "hover_pointer: {s}",
-        .{if (atom.hover_pointer) |kind| @tagName(kind) else "null"},
+        .{if (atom.hover_cursor_shape) |shape| @tagName(shape) else "null"},
     );
 
     //- text align

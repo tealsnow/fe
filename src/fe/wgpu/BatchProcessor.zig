@@ -57,6 +57,7 @@ pub fn process(
     self: *BatchProcessor,
     arena: Allocator,
     surface_size: mt.Size(u32),
+    cu_state: *cu.State,
 ) ![]const BatchData {
     if (!cu.state.ui_built) return &[_]BatchData{};
 
@@ -64,9 +65,9 @@ pub fn process(
     self.batches = .empty;
     self.reset();
 
-    try self.processRoot(arena, cu.state.ui_root);
-    try self.processRoot(arena, cu.state.ui_ctx_menu_root);
-    try self.processRoot(arena, cu.state.ui_tooltip_root);
+    try self.processRoot(arena, cu_state.ui_root);
+    try self.processRoot(arena, cu_state.ui_ctx_menu_root);
+    try self.processRoot(arena, cu_state.ui_tooltip_root);
 
     return self.batches.items;
 }
@@ -220,9 +221,7 @@ fn processAtom(
         });
     }
 
-    if (atom.flags.contains(.draw_text) or
-        atom.flags.contains(.draw_text_weak))
-    {
+    if (atom.flags.contains(.draw_text)) {
         const font_face: *const FontFace = @ptrCast(@alignCast(atom.font));
 
         const entry =
@@ -233,12 +232,7 @@ fn processAtom(
         const shaped_text = try self.shaper
             .shape(font_face, font_atlas, atom.display_string);
 
-        const color = if (atom.flags.contains(.draw_text_weak))
-            atom.palette.get(.text_weak).toRgbaF32()
-        else if (atom.flags.contains(.draw_text))
-            atom.palette.get(.text).toRgbaF32()
-        else
-            unreachable;
+        const color = atom.palette.get(.text).toRgbaF32();
 
         try shaped_text.generateRects(
             arena,

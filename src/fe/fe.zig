@@ -10,6 +10,8 @@ const tracy = @import("tracy");
 
 const logFn = @import("logFn.zig");
 
+const entryPoint = @import("entry_point.zig").entryPoint;
+
 pub const std_options = std.Options{
     .logFn = logFn.logFn,
     .log_level = @enumFromInt(@intFromEnum(build_options.log_level)),
@@ -74,11 +76,6 @@ pub fn main() !void {
     const gpa = tracing_allocator.allocator();
     // const gpa = root_allocator;
 
-    //- entry point
-    const entry = switch (build_options.entry_point) {
-        .sdl => @import("sdl_entry.zig").entry,
-        .wayland => @import("wayland_entry.zig").entryPoint,
-    };
-
-    try entry(gpa);
+    //- entry_point
+    return entryPoint(gpa);
 }

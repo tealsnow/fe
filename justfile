@@ -11,19 +11,19 @@ alias r := run
 alias c := check
 
 build:
-    zig build -Duse_llvm=true
+    zig build
 
 run:
-    zig build -Duse_llvm=true run
+    zig build run
 
 profile:
     pidof tracy-profiler || tracy -a localhost &
-    zig build -fincremental -Dprofile run
+    zig build -Dprofile=true run
 
 debug: build
     gf2 ./zig-out/bin/fe
 
 nproc := `nproc --all`
 check:
-    zig build -fincremental --prominent-compile-errors  \
-        -j`expr {{nproc}} - 1` check --watch
+    zig build --prominent-compile-errors -fincremental \
+        -j`expr {{nproc}} - 1` -Dno_bin=true -Duse_llvm=false --watch

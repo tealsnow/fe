@@ -1,34 +1,15 @@
 const log = @import("std").log.scoped(.@"fe.app.titlebar");
 
-pub const wl = @import("../platform/linux/wayland/wayland.zig");
+const wl = @import("wayland/wayland.zig");
+const MenuBar = @import("../MenuBar.zig");
 
 const cu = @import("cu");
 const b = cu.builder;
 
-pub fn TitlebarButtons(comptime Context: type) type {
-    return struct {
-        context: Context,
-        buttons: []const Button,
-
-        pub const Button = struct {
-            name: []const u8,
-            items: []const Item,
-            // binding
-        };
-
-        pub const Item = struct {
-            name: []const u8,
-            action: *const fn (Context) void,
-            // binding
-        };
-    };
-}
-
 pub fn buildTitlebar(
     window: *wl.Window,
     rounding: f32,
-    comptime MenuContext: type,
-    menu_buttons: TitlebarButtons(MenuContext),
+    menu_bar: MenuBar,
 ) void {
     const tiling = window.tiling;
 
@@ -49,11 +30,11 @@ pub fn buildTitlebar(
         _ = b.spacer();
     }
 
-    for (menu_buttons.buttons) |menu_button| {
+    for (menu_bar.root) |menu_button| {
         b.stacks.flags
             .push(.init(&.{ .clickable, .draw_text }));
         b.stacks.pref_size.push(.size(.text_pad(8), .px_strict(height)));
-        b.stacks.hover_pointer.push(.clickable);
+        b.stacks.hover_cursor_shape.push(.pointer);
         const item = b.build(menu_button.name);
 
         const inter = item.interaction();
@@ -82,9 +63,16 @@ pub fn buildTitlebar(
             defer _ = b.stacks.pref_size.pop();
 
             for (menu_button.items) |menu_item| {
-                if (b.button(menu_item.name).clicked()) {
-                    menu_item.action(menu_buttons.context);
-                    b.ctx_menu.closeMenu();
+                switch (menu_item) {
+                    .button => |btn| {
+                        if (b.button(btn.name).clicked()) {
+                            btn.action(menu_bar.context);
+                            b.ctx_menu.closeMenu();
+                        }
+                    },
+                    .list => {
+                        _ = b.button("todo: list");
+                    },
                 }
             }
         }
@@ -125,7 +113,7 @@ pub fn buildTitlebar(
     for (0..3) |i| {
         b.stacks.flags.push(.init(&.{ .clickable, .draw_border }));
         b.stacks.pref_size.push(.square(.px_strict(height)));
-        b.stacks.hover_pointer.push(.clickable);
+        b.stacks.hover_cursor_shape.push(.pointer);
         const button = b.openf("###top bar button {d}", .{i});
         defer b.close(button);
 

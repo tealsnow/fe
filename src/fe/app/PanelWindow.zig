@@ -5,26 +5,32 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.@"fe.app.PanelWindow");
 const assert = std.debug.assert;
 
-const AppState = @import("State.zig");
-const Window = AppState.Window;
-const titlebar = @import("titlebar.zig");
-const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
+const App = @import("App.zig");
 
 const cu = @import("cu");
 const mt = cu.math;
 const b = cu.builder;
 const TreeMixin = cu.TreeMixin;
 
-app: *AppState,
-window: *Window = undefined,
+app: *App,
+window: *App.BackendWindow,
+cu_state: *cu.State,
 
 panel_pool: PanelPool,
 root_panel: *Panel,
 
 const PanelPool = std.heap.MemoryPoolExtra(Panel, .{ .growable = true });
 
-pub fn init(app: *AppState) !*PanelWindow {
-    const win = try app.gpa.create(PanelWindow);
+pub fn init(app: *App) !*PanelWindow {
+    const window = try app.newWindow("Panel");
+    const cu_state = try cu.State.init(app.gpa, .{
+        .callbacks = window.callbacks(),
+        .font_kind_map = window.font_kind_map,
+        .interaction_styles = app.interaction_styles,
+        .root_palette = app.root_palette,
+    });
+
+    const self = try app.gpa.create(PanelWindow);
     var pool = PanelPool.init(app.gpa);
 
     const root_panel = tree: {
@@ -61,122 +67,111 @@ pub fn init(app: *AppState) !*PanelWindow {
         break :tree p0;
     };
 
-    win.* = .{
+    self.* = .{
         .app = app,
+        .window = window,
+        .cu_state = cu_state,
+
         .panel_pool = pool,
         .root_panel = root_panel,
     };
-    return win;
+    return self;
 }
 
-fn onClose(state: *PanelWindow) void {
-    state.panel_pool.deinit();
-    state.app.gpa.destroy(state);
+pub fn deinit(self: *PanelWindow) void {
+    self.cu_state.deinit();
+
+    self.panel_pool.deinit();
+
+    const gpa = self.app.gpa;
+    gpa.destroy(self);
 }
 
-pub fn windowInterface(self: *PanelWindow) Window.Interface {
+pub fn appWindow(self: *PanelWindow) App.AppWindow {
     return .{
+        .id = self.window.getId(),
         .context = @ptrCast(self),
         .vtable = &.{
-            .build = vtable.build,
-            .close = vtable.close,
+            .deinit = &vtable.deinit,
+            .getWindow = &vtable.getWindow,
+            .getCuState = &vtable.getCuState,
+            .buildUI = &vtable.buildUI,
         },
     };
 }
 
 pub const vtable = struct {
-    fn build(ctx: *anyopaque, window: *Window) void {
-        const state: *PanelWindow = @ptrCast(@alignCast(ctx));
-        state.window = window;
-        state.build();
+    fn deinit(ctx: *anyopaque) void {
+        const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+        self.deinit();
     }
-
-    fn close(ctx: *anyopaque, window: *Window) void {
-        _ = window;
-        const state: *PanelWindow = @ptrCast(@alignCast(ctx));
-        state.onClose();
+    fn getWindow(ctx: *anyopaque) *App.BackendWindow {
+        const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+        return self.window;
+    }
+    fn getCuState(ctx: *anyopaque) *cu.State {
+        const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+        return self.cu_state;
+    }
+    fn buildUI(ctx: *anyopaque) void {
+        const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+        self.buildUI();
     }
 };
 
-const titlebar_buttons = struct {
-    const MenuBar = titlebar.TitlebarButtons(*PanelWindow);
+const menu_bar = struct {
+    const MenuBar = App.MenuBar;
 
     pub fn menuBar(state: *PanelWindow) MenuBar {
         return .{
             .context = state,
-            .buttons = &buttons,
+            .root = &.{
+                panel.button,
+            },
         };
     }
 
-    pub const buttons = [_]MenuBar.Button{
-        panel.button,
-    };
-
     pub const panel = struct {
-        pub const button = MenuBar.Button{
+        pub const button = MenuBar.MenuList{
             .name = "Panel",
             .items = &.{
-                .{ .name = "new window", .action = newWindow },
-                .{ .name = "close", .action = close },
-                .{ .name = "quit", .action = quit },
+                .{ .button = .{ .name = "new window", .action = newWindow } },
+                .{ .button = .{ .name = "close", .action = close } },
+                .{ .button = .{ .name = "quit", .action = quit } },
             },
         };
 
-        pub fn newWindow(state: *PanelWindow) void {
-            const panel_window_state = PanelWindow.init(state.app) catch
-                @panic("oom");
+        pub fn newWindow(ctx: *anyopaque) void {
+            const self: *PanelWindow = @ptrCast(@alignCast(ctx));
 
-            _ = state.app.newWindow(.{
-                .title = "Panel",
-                .initial_size = .size(800, 600),
-                .interface = panel_window_state.windowInterface(),
-            }) catch |err| {
-                log.err("failed to create new panel window: {}", .{err});
-                return;
-            };
+            const new_win = PanelWindow.init(self.app) catch
+                @panic("failed to create new panel window");
+            self.app.addAppWindow(new_win.appWindow()) catch
+                @panic("failed to add new panel window");
         }
 
-        pub fn close(state: *PanelWindow) void {
-            state.app.action_queue.queue(.{
-                .close_window = state.window.wl_window.id,
+        pub fn close(ctx: *anyopaque) void {
+            const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+            self.app.action_queue.queue(.{
+                .close_window = self.window.getId(),
             });
         }
 
-        pub fn quit(state: *PanelWindow) void {
-            state.app.action_queue.queue(.quit);
+        pub fn quit(ctx: *anyopaque) void {
+            const self: *PanelWindow = @ptrCast(@alignCast(ctx));
+            self.app.action_queue.queue(.quit);
         }
     };
 };
 
-fn build(state: *PanelWindow) void {
-    const tiling = state.window.wl_window.tiling;
-    b.stacks.flags.push(flags: {
-        var flags = cu.AtomFlags.draw_background;
+fn buildUI(self: *PanelWindow) void {
+    self.cu_state.select();
 
-        if (!tiling.isTiled()) {
-            flags.insert(.draw_border);
-            b.stacks.corner_radius.push(state.app.window_rounding);
-        } else {
-            flags.setPresent(.draw_side_top, !tiling.tiled_top);
-            flags.setPresent(.draw_side_bottom, !tiling.tiled_bottom);
-            flags.setPresent(.draw_side_left, !tiling.tiled_left);
-            flags.setPresent(.draw_side_right, !tiling.tiled_right);
-        }
+    b.startBuild(@intFromPtr(self.window));
+    defer b.endBuild();
 
-        break :flags flags;
-    });
-    b.stacks.layout_axis.push(.y);
-    const window_inset_wrapper =
-        WindowInsetWrapper.begin(state.window.wl_window);
-    defer window_inset_wrapper.end();
-
-    const menu_bar_buttons = titlebar_buttons.menuBar(state);
-    titlebar.buildTitlebar(
-        state.window.wl_window,
-        state.app.window_rounding,
-        *PanelWindow,
-        menu_bar_buttons,
-    );
+    self.window.startBuild(menu_bar.menuBar(self));
+    defer self.window.endBuild();
 
     //- panel ui
     {
@@ -194,7 +189,7 @@ fn build(state: *PanelWindow) void {
         const root_rect = root_container.rect;
 
         //- build non-leaf panel ui
-        var iter = state.root_panel.tree.depthFirstPreOrderIterator();
+        var iter = self.root_panel.tree.depthFirstPreOrderIterator();
         while (iter.next()) |panel| {
             if (panel.tree.children.len == 0) continue;
 
@@ -203,7 +198,7 @@ fn build(state: *PanelWindow) void {
 
             //- calculate rect
             const panel_rect =
-                panel.rectFromPanel(state.app.arena, root_rect);
+                panel.rectFromPanel(self.app.arena, root_rect);
             const panel_rect_size = panel_rect.size();
 
             //- build drag boundraies
@@ -219,7 +214,7 @@ fn build(state: *PanelWindow) void {
 
                 b.stacks.pref_size.push(.square(.none));
                 b.stacks.flags.push(.init(&.{ .clickable, .floating }));
-                b.stacks.hover_pointer.push(
+                b.stacks.hover_cursor_shape.push(
                     if (panel.split_axis == .x) .resize_ew else .resize_ns,
                 );
                 const boundry = b.buildf("###panel_boundry [{*}]", .{child});
@@ -295,7 +290,7 @@ fn build(state: *PanelWindow) void {
 
             //- calculate rect
             const rect = panel
-                .rectFromPanel(state.app.arena, root_rect)
+                .rectFromPanel(self.app.arena, root_rect)
                 .innerRect(.splat(inset_size));
             atom.rel_position = rect.origin().sub(root_rect.origin());
             atom.fixed_size = rect.size();
