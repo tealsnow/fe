@@ -105,7 +105,7 @@ const menu_bar = struct {
         pub fn close(ctx: *anyopaque) void {
             const self: *Self = @ptrCast(@alignCast(ctx));
             self.app.action_queue.queue(.{
-                .close_window = self.window.wl_window.id,
+                .close_window = self.window.getId(),
             });
         }
 

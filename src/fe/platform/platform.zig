@@ -6,7 +6,7 @@ const mt = cu.math;
 
 pub const MenuBar = @import("MenuBar.zig");
 
-const noop = false; // just for testing the api
+const noop = true; // just for testing the api
 
 pub const BackendType = enum {
     noop,

@@ -55,7 +55,7 @@ pub const NoopBackend = struct {
     ) ![]const BackendEvent {
         _ = self;
         _ = arena;
-        return .{};
+        return &.{};
     }
 };
 
@@ -86,7 +86,7 @@ pub const NoopWindow = struct {
         _ = self;
     }
 
-    pub fn present(self: *NoopWindow, arena: Allocator, cu_state: cu.State) !void {
+    pub fn present(self: *NoopWindow, arena: Allocator, cu_state: *cu.State) !void {
         _ = self;
         _ = arena;
         _ = cu_state;
