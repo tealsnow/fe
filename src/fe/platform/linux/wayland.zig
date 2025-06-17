@@ -12,6 +12,8 @@ const mt = cu.math;
 const platform = @import("../platform.zig");
 
 pub const WaylandBackend = struct {
+    const log = std.log.scoped(.@"platform.WaylandBackend");
+
     pub const Window = WaylandWindow;
     pub const WindowId = wl.WindowId;
 
@@ -36,12 +38,8 @@ pub const WaylandBackend = struct {
         const mono_font_path = try getFontFromFamilyName(gpa, "mono");
         defer gpa.free(mono_font_path);
 
-        const dpi = mt.Size(u16).size(
-            // @intFromFloat(@round(conn.hdpi)),
-            // @intFromFloat(@round(conn.vdpi)),
-            96,
-            96,
-        );
+        // @TODO: set based on current output
+        const dpi = mt.Size(u16).size(96, 96);
 
         const font_face_map = try font_manager.makeFontFaceMap(
             gpa,
@@ -88,7 +86,7 @@ pub const WaylandBackend = struct {
         );
         wl_window.setTitle(params.title);
         if (params.app_id) |id| wl_window.setAppId(id);
-        wl_window.setMinSize(if (params.min_size) |s| s else .square(0));
+        if (params.min_size) |s| wl_window.setMinSize(s);
         wl_window.inset = self.window_inset;
 
         //- renderer
@@ -163,11 +161,19 @@ pub const WaylandBackend = struct {
         self: *WaylandBackend,
         arena: Allocator,
     ) ![]const platform.BackendEvent {
-        try self.conn.dispatch();
+        try self.conn.roundtrip();
 
         var events = std.ArrayList(platform.BackendEvent).init(arena);
 
         while (self.conn.event_queue.dequeue()) |event| switch (event.kind) {
+            .output_available => |id| blk: {
+                const output = self.conn.getOutput(id) orelse break :blk;
+                log.debug("output available: {d}-{d} '{?s}'", .{ id.name, id.id, output.description });
+            },
+            .output_unavailable => |id| {
+                log.debug("output unavailable: {d}-{d}", .{ id.name, id.id });
+            },
+
             .surface_configure => |configure| conf: {
                 const win =
                     self.windows.get(configure.window_id) orelse break :conf;
@@ -195,6 +201,21 @@ pub const WaylandBackend = struct {
             .toplevel_close => |close| {
                 try events.append(.{ .window_close = close.window_id });
             },
+
+            .toplevel_output_change => |change| change: {
+                const output = self.conn.getOutput(change.output_id) orelse
+                    break :change;
+                log.debug(
+                    "surface output change: {s} {d}-{d} '{?s}'",
+                    .{
+                        @tagName(change.focus),
+                        change.output_id.name,
+                        change.output_id.id,
+                        output.description,
+                    },
+                );
+            },
+
             .frame => {},
 
             .keyboard_focus => |focus| {
@@ -289,7 +310,7 @@ pub const WaylandBackend = struct {
 
 pub const WaylandWindow = struct {
     const WindowInsetWrapper = @import("WindowInsetWrapper.zig");
-    const titlbar = @import("wayland_titlebar.zig");
+    const titlebar = @import("wayland_titlebar.zig");
 
     title: [:0]const u8,
     backend: *WaylandBackend,
@@ -339,7 +360,7 @@ pub const WaylandWindow = struct {
         b.stacks.layout_axis.push(.y);
         const window_inset = WindowInsetWrapper.begin(self.wl_window);
 
-        titlbar.buildTitlebar(
+        titlebar.buildTitlebar(
             self.wl_window,
             self.backend.window_rounding orelse 0,
             menu_bar,

@@ -6,6 +6,7 @@ const xkb = @import("xkbcommon");
 
 const Window = @import("Window.zig");
 const WindowId = Window.WindowId;
+const OutputId = @import("Connection.zig").OutputId;
 
 const mt = @import("cu").math;
 const EventQueueCircleBuffer =
@@ -18,10 +19,15 @@ pub const Event = struct {
     time: ?u32 = null, // ms
 
     pub const Kind = union(enum) {
+        output_available: OutputId,
+        output_unavailable: OutputId,
+
         surface_configure: SurfaceConfigure,
 
         toplevel_configure: ToplevelConfigure,
         toplevel_close: ToplevelClose,
+
+        toplevel_output_change: ToplevelOutputChange,
 
         // popup_configure: PopupConfigure,
         // popup_done: PopupDone,
@@ -93,6 +99,13 @@ pub const Event = struct {
 
     pub const ToplevelClose = struct {
         window_id: WindowId,
+    };
+
+    /// NOTE: a toplevel can be within multiple outputs at one time
+    pub const ToplevelOutputChange = struct {
+        window_id: WindowId,
+        output_id: OutputId,
+        focus: FocusState,
     };
 
     // pub const PopupConfigure = struct {

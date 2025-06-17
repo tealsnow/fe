@@ -18,6 +18,7 @@ conn: *Connection,
 id: WindowId,
 
 wl_surface: *wl.Surface,
+wl_surface_listener: listeners.WlSurfaceListener,
 wl_frame_callback_listener_data: listeners.WlFrameCallbackListenerData,
 
 xdg_surface_listener_data: listeners.XdgSurfaceListenerData,
@@ -57,6 +58,7 @@ pub fn init(
         .id = id,
 
         .wl_surface = wl_surface,
+        .wl_surface_listener = .{ .conn = conn, .window_id = id },
         .wl_frame_callback_listener_data = .{
             .event_queue = conn.event_queue,
             .window = window,
@@ -76,6 +78,8 @@ pub fn init(
 
         .size = size,
     };
+
+    window.wl_surface_listener.setup(window.wl_surface);
 
     xdg_surface.setListener(
         *listeners.XdgSurfaceListenerData,

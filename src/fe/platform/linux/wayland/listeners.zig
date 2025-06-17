@@ -1,7 +1,11 @@
+// @TODO: I wonder if it would be beneficial to just provide the connection
+//   as the listener data to all of this and simplify it that way?
+
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 const log = std.log.scoped(.@"wayland.listeners");
+const Allocator = mem.Allocator;
 
 const wl = @import("wayland").client.wl;
 const xdg = @import("wayland").client.xdg;
@@ -13,9 +17,11 @@ const xkb = @import("xkbcommon");
 const Size = @import("cu").math.Size;
 
 const Connection = @import("Connection.zig");
+const OutputId = Connection.OutputId;
 
-const EventQueue = @import("events.zig").EventQueue;
-const Event = @import("events.zig").Event;
+const events = @import("events.zig");
+const EventQueue = events.EventQueue;
+const Event = events.Event;
 
 const Window = @import("Window.zig");
 const WindowId = Window.WindowId;
@@ -23,23 +29,17 @@ const WindowId = Window.WindowId;
 //= wl registry
 
 pub const WlRegistryListenerData = struct {
-    wl_compositor: ?*wl.Compositor,
-    wl_shared_memory: ?*wl.Shm,
-    wl_output: ?*wl.Output,
-    wl_seat: ?*wl.Seat,
-    xdg_wm_base: ?*xdg.WmBase,
-    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1,
-    zwp_pointer_gestures: ?*zwp.PointerGesturesV1,
+    gpa: Allocator,
+    event_queue: *EventQueue,
 
-    pub const empty = WlRegistryListenerData{
-        .wl_compositor = null,
-        .wl_shared_memory = null,
-        .wl_output = null,
-        .wl_seat = null,
-        .xdg_wm_base = null,
-        .wp_cursor_shape_manager = null,
-        .zwp_pointer_gestures = null,
-    };
+    wl_compositor: ?*wl.Compositor = null,
+    wl_shared_memory: ?*wl.Shm = null,
+    wl_seat: ?*wl.Seat = null,
+    xdg_wm_base: ?*xdg.WmBase = null,
+    wp_cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
+    zwp_pointer_gestures: ?*zwp.PointerGesturesV1 = null,
+
+    outputs: std.AutoArrayHashMapUnmanaged(OutputId, OutputHandle) = .empty,
 };
 
 pub fn wlRegistryListener(
@@ -50,7 +50,32 @@ pub fn wlRegistryListener(
     const global = switch (event) {
         .global => |global| global,
         .global_remove => |remove| {
-            log.warn("got registry remove event for: {d}", .{remove.name});
+            log.debug("got registry remove event for: {d}", .{remove.name});
+
+            var removed = false;
+
+            const maybe_ouput_id: ?OutputId =
+                for (data.outputs.keys()) |key| {
+                    if (key.name == remove.name)
+                        break key;
+                } else null;
+
+            if (maybe_ouput_id) |id| {
+                const output = data.outputs.fetchSwapRemove(id).?.value;
+                output.deinit(data.gpa);
+
+                data.event_queue.queue(.{ .kind = .{
+                    .output_unavailable = id,
+                } });
+
+                removed = true;
+            }
+
+            if (removed)
+                log.debug("global removed: {d}", .{remove.name})
+            else
+                log.debug("ignored global remove: {d}", .{remove.name});
+
             return;
         },
     };
@@ -96,11 +121,26 @@ pub fn wlRegistryListener(
         global.interface,
         wl.Output.interface.name,
     ) == .eq) {
-        data.wl_output = registry.bind(
+        const wl_output = registry.bind(
             global.name,
             wl.Output,
             4,
         ) catch @panic("could not bind wayland output");
+
+        const id = OutputId{
+            .name = global.name,
+            .id = wl_output.getId(),
+        };
+
+        const info = OutputHandle.init(
+            data.gpa,
+            wl_output,
+            id,
+            data.event_queue,
+        ) catch @panic("oom");
+
+        data.outputs.put(data.gpa, id, info) catch
+            @panic("oom");
 
         bound = true;
     }
@@ -142,7 +182,7 @@ pub fn wlRegistryListener(
             global.name,
             wp.CursorShapeManagerV1,
             1,
-        ) catch @panic("could not bind wp cursor_shape_manager");
+        ) catch @panic("could not bind wp cursor_shape_manager_v1");
 
         bound = true;
     }
@@ -156,25 +196,85 @@ pub fn wlRegistryListener(
             global.name,
             zwp.PointerGesturesV1,
             3,
-        ) catch @panic("cound not bind zwp pointer_gestures");
+        ) catch @panic("cound not bind zwp pointer_gestures_v1");
 
         bound = true;
     }
 
     if (bound)
-        log.debug("bound interface: '{s}'", .{global.interface});
+        log.debug("bound global interface: '{s}'", .{global.interface});
 }
 
 //= wl output
 
-pub const WlOutputListenerData = struct {
-    width: i32,
-    height: i32,
-    physical_width_mm: i32,
-    physical_height_mm: i32,
-    scale: i32,
+pub const OutputHandle = struct {
+    wl_output: *wl.Output,
+    listener_data: *WlOutputListenerData,
 
-    pub const empty = std.mem.zeroes(WlOutputListenerData);
+    pub fn init(
+        gpa: Allocator,
+        wl_output: *wl.Output,
+        id: OutputId,
+        event_queue: *EventQueue,
+    ) !OutputHandle {
+        const listener_data = try gpa.create(WlOutputListenerData);
+        listener_data.* = .{
+            .gpa = gpa,
+            .event_queue = event_queue,
+            .id = id,
+        };
+
+        wl_output.setListener(
+            *WlOutputListenerData,
+            wlOutputListener,
+            listener_data,
+        );
+
+        return .{
+            .wl_output = wl_output,
+            .listener_data = listener_data,
+        };
+    }
+
+    pub fn deinit(self: OutputHandle, gpa: Allocator) void {
+        self.wl_output.destroy();
+        self.listener_data.deinit();
+        gpa.destroy(self.listener_data);
+    }
+};
+
+pub const WlOutputListenerData = struct {
+    gpa: Allocator,
+    event_queue: *EventQueue,
+    id: OutputId,
+
+    dirty: bool = true,
+    info: Connection.OutputInfo = .{
+        .name = null,
+        .description = null,
+        .geometry = null,
+        .modes = &.{},
+        .current_mode_idx = null,
+        .preferred_mode_idx = null,
+        .scale = null,
+    },
+
+    modes: std.ArrayListUnmanaged(Connection.OutputInfo.Mode) = .empty,
+
+    pub fn deinit(self: *WlOutputListenerData) void {
+        const gpa = self.gpa;
+
+        if (self.info.name) |name| gpa.free(name);
+        if (self.info.description) |desc| gpa.free(desc);
+
+        if (self.info.geometry) |geom| {
+            gpa.free(geom.make);
+            gpa.free(geom.model);
+        }
+
+        gpa.free(self.info.modes);
+        self.modes.deinit(gpa);
+    }
 };
 
 pub fn wlOutputListener(
@@ -185,6 +285,30 @@ pub fn wlOutputListener(
     _ = wl_output;
 
     switch (event) {
+        .name => |name| {
+            log.debug("wl_output name: '{s}'", .{name.name});
+
+            if (data.info.name) |str| data.gpa.free(str);
+
+            const slice = std.mem.sliceTo(name.name, 0);
+            data.info.name = data.gpa.dupeZ(u8, slice) catch @panic("oom");
+
+            data.dirty = true;
+        },
+        .description => |description| {
+            log.debug(
+                "wl_output description: '{s}'",
+                .{description.description},
+            );
+
+            if (data.info.description) |str| data.gpa.free(str);
+
+            const slice = std.mem.sliceTo(description.description, 0);
+            data.info.description =
+                data.gpa.dupeZ(u8, slice) catch @panic("oom");
+
+            data.dirty = true;
+        },
         .geometry => |geometry| {
             log.debug(
                 "wl_output geometry: x: {d}, y: {d}, " ++
@@ -202,8 +326,29 @@ pub fn wlOutputListener(
                 },
             );
 
-            data.physical_width_mm = geometry.physical_width;
-            data.physical_height_mm = geometry.physical_height;
+            if (data.info.geometry) |geom| {
+                data.gpa.free(geom.make);
+                data.gpa.free(geom.model);
+            }
+            const make =
+                data.gpa.dupeZ(u8, std.mem.sliceTo(geometry.make, 0)) catch
+                    @panic("oom");
+            const model =
+                data.gpa.dupeZ(u8, std.mem.sliceTo(geometry.model, 0)) catch
+                    @panic("oom");
+
+            data.info.geometry = .{
+                .x = geometry.x,
+                .y = geometry.y,
+                .physical_width_mm = geometry.physical_width,
+                .physical_height_mm = geometry.physical_height,
+                .subpixel = geometry.subpixel,
+                .make = make,
+                .model = model,
+                .transform = geometry.transform,
+            };
+
+            data.dirty = true;
         },
         .mode => |mode| {
             log.debug(
@@ -218,28 +363,85 @@ pub fn wlOutputListener(
                 },
             );
 
-            data.width = mode.width;
-            data.height = mode.height;
-        },
-        .done => {
-            log.debug("wl_output done", .{});
+            const idx = data.modes.items.len;
+            data.modes.append(data.gpa, .{
+                .width = mode.width,
+                .height = mode.height,
+                .refresh = mode.refresh,
+            }) catch @panic("oom");
+            if (mode.flags.current)
+                data.info.current_mode_idx = idx;
+            if (mode.flags.preferred)
+                data.info.preferred_mode_idx = idx;
+
+            data.dirty = true;
         },
         .scale => |scale| {
             log.debug("wl_output scale: {d}", .{scale.factor});
 
-            data.scale = scale.factor;
+            data.info.scale = scale.factor;
+
+            data.dirty = true;
         },
-        .name => |name| {
-            log.debug("wl_output name: '{s}'", .{name.name});
-        },
-        .description => |description| {
-            log.debug(
-                "wl_output description: '{s}'",
-                .{description.description},
-            );
+        .done => {
+            log.debug("wl_output done", .{});
+
+            if (data.dirty) {
+                data.gpa.free(data.info.modes);
+                data.info.modes = data.modes.toOwnedSlice(data.gpa) catch
+                    @panic("oom");
+
+                data.event_queue.queue(.{ .kind = .{
+                    .output_available = data.id,
+                } });
+
+                data.dirty = false;
+            }
         },
     }
 }
+
+//= wl surface
+
+pub const WlSurfaceListener = struct {
+    conn: *Connection,
+    window_id: WindowId,
+
+    pub fn setup(self: *WlSurfaceListener, wl_surface: *wl.Surface) void {
+        wl_surface.setListener(*WlSurfaceListener, listener, self);
+    }
+
+    pub fn listener(
+        wl_surface: *wl.Surface,
+        event: wl.Surface.Event,
+        self: *WlSurfaceListener,
+    ) void {
+        _ = wl_surface;
+
+        const output, const focus_state: Event.FocusState = ev: switch (event) {
+            .enter => |enter| {
+                const output = enter.output orelse return;
+                break :ev .{ output, .enter };
+            },
+            .leave => |leave| {
+                const output = leave.output orelse return;
+                break :ev .{ output, .leave };
+            },
+        };
+
+        const output_id = output.getId();
+        const id =
+            for (self.conn.wl_registry_listener_data.outputs.keys()) |key| {
+                if (key.id == output_id) break key;
+            } else return;
+
+        self.conn.event_queue.queue(.{ .kind = .{ .toplevel_output_change = .{
+            .window_id = self.window_id,
+            .output_id = id,
+            .focus = focus_state,
+        } } });
+    }
+};
 
 //= xdg wm base
 

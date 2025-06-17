@@ -31,7 +31,6 @@ wl_registry: *wl.Registry,
 wl_compositor: *wl.Compositor,
 wl_shm: *wl.Shm,
 wl_seat: *wl.Seat,
-wl_output: *wl.Output,
 
 pointer_gestures: PointerGestures,
 
@@ -53,9 +52,6 @@ next_window_id: WindowId = @enumFromInt(1),
 windows: std.AutoArrayHashMapUnmanaged(WindowId, *Window) = .empty,
 surface_to_window_map: *std.AutoArrayHashMapUnmanaged(*wl.Surface, *Window),
 
-hdpi: f32,
-vdpi: f32,
-
 cursor_size: i32,
 
 last_pointer_button_serial: u32 = 0,
@@ -71,15 +67,22 @@ pub fn init(gpa: Allocator) !*Connection {
         } else null;
     defer if (wl_display_name) |name| gpa.free(name);
 
-    // the `orelse null` is nessesary for the type coercion
+    // the `orelse null` is necessary for the type coercion
     const wl_display = try wl.Display.connect(wl_display_name orelse null);
+
+    const event_queue = try gpa.create(events.EventQueue);
+    errdefer gpa.destroy(event_queue);
+    event_queue.* = .empty;
 
     const wl_registry = try wl_display.getRegistry();
 
     const wl_registry_listener_data =
         try gpa.create(listeners.WlRegistryListenerData);
     errdefer gpa.destroy(wl_registry_listener_data);
-    wl_registry_listener_data.* = .empty;
+    wl_registry_listener_data.* = .{
+        .gpa = gpa,
+        .event_queue = event_queue,
+    };
     wl_registry.setListener(
         *listeners.WlRegistryListenerData,
         listeners.wlRegistryListener,
@@ -104,32 +107,15 @@ pub fn init(gpa: Allocator) !*Connection {
         return error.wl;
     };
 
-    const wl_output = wl_registry_listener_data.wl_output orelse {
-        log.err("failed to get wl_output", .{});
-        return error.wl;
-    };
-
     const zwp_pointer_gestures =
         wl_registry_listener_data.zwp_pointer_gestures orelse {
             log.err("failed to get zwp_pointer_gestures", .{});
             return error.wl;
         };
 
-    //- output
-    var wl_output_listener_data = listeners.WlOutputListenerData.empty;
-    wl_output.setListener(
-        *listeners.WlOutputListenerData,
-        listeners.wlOutputListener,
-        &wl_output_listener_data,
-    );
-
     //- wl_seat setup
 
     const xkb_context = xkb.Context.new(.no_flags) orelse return error.xkb;
-
-    const event_queue = try gpa.create(events.EventQueue);
-    errdefer gpa.destroy(event_queue);
-    event_queue.* = .empty;
 
     var wl_seat_listener_data = listeners.WlSeatListenerData.empty;
     wl_seat.setListener(
@@ -140,25 +126,6 @@ pub fn init(gpa: Allocator) !*Connection {
 
     //- gather wl_seat and wl_output data
     if (wl_display.roundtrip() != .SUCCESS) return error.wl;
-
-    //- output calculations
-    const hdpi, const vdpi = dpi: {
-        const width: f32 = @floatFromInt(wl_output_listener_data.width);
-        const height: f32 = @floatFromInt(wl_output_listener_data.height);
-
-        const physical_width_mm: f32 =
-            @floatFromInt(wl_output_listener_data.physical_width_mm);
-        const physical_height_mm: f32 =
-            @floatFromInt(wl_output_listener_data.physical_height_mm);
-
-        const physical_width_inch = physical_width_mm / 25.4;
-        const physical_height_inch = physical_height_mm / 25.4;
-
-        const hdpi = width / physical_width_inch;
-        const vdpi = height / physical_height_inch;
-
-        break :dpi .{ hdpi, vdpi };
-    };
 
     //- input setup
 
@@ -270,7 +237,6 @@ pub fn init(gpa: Allocator) !*Connection {
         .wl_compositor = wl_compositor,
         .wl_shm = wl_shm,
         .wl_seat = wl_seat,
-        .wl_output = wl_output,
 
         .pointer_gestures = pointer_gestures,
 
@@ -290,9 +256,6 @@ pub fn init(gpa: Allocator) !*Connection {
 
         .surface_to_window_map = surface_to_window_map,
 
-        .hdpi = hdpi,
-        .vdpi = vdpi,
-
         .cursor_size = cursor_size,
     };
     return conn;
@@ -304,12 +267,16 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
     defer conn.wl_display.disconnect();
 
     defer gpa.destroy(conn.wl_registry_listener_data);
+    defer {
+        for (conn.wl_registry_listener_data.outputs.values()) |output|
+            output.deinit(gpa);
+        conn.wl_registry_listener_data.outputs.deinit(gpa);
+    }
     defer conn.wl_registry.destroy();
 
     defer conn.wl_compositor.destroy();
     defer conn.wl_shm.destroy();
     defer conn.wl_seat.destroy();
-    defer conn.wl_output.destroy();
 
     defer conn.pointer_gestures.deinit(gpa);
 
@@ -337,12 +304,25 @@ pub fn deinit(conn: *Connection, gpa: Allocator) void {
     defer conn.surface_to_window_map.deinit(gpa);
 }
 
+/// blocks on events
 pub fn dispatch(conn: *Connection) !void {
     if (conn.wl_display.dispatch() != .SUCCESS) {
         log.err("wl_display.dispatch() failed", .{});
         return error.wl;
     }
+    conn.handleEventsInternal();
+}
 
+/// does not block on events
+pub fn roundtrip(conn: *Connection) !void {
+    if (conn.wl_display.roundtrip() != .SUCCESS) {
+        log.err("wl_display.roundtrip() failed", .{});
+        return error.wl;
+    }
+    conn.handleEventsInternal();
+}
+
+fn handleEventsInternal(conn: *Connection) void {
     var i: usize = 0;
     while (conn.event_queue.indexBack(i)) |event| : (i += 1) {
         switch (event.kind) {
@@ -371,6 +351,11 @@ pub fn getWindow(conn: Connection, id: WindowId) *Window {
     return conn.windows.get(id);
 }
 
+pub fn getOutput(conn: Connection, id: OutputId) ?OutputInfo {
+    const handle = conn.wl_registry_listener_data.outputs.get(id) orelse return null;
+    return handle.listener_data.info;
+}
+
 pub const GetEnvVarOwnedError = error{
     OutOfMemory,
 
@@ -379,7 +364,7 @@ pub const GetEnvVarOwnedError = error{
     InvalidWtf8,
 };
 
-/// Wrapper arround std.process.getEnvVarOwned returning a ?[]u8
+/// Wrapper around std.process.getEnvVarOwned returning a ?[]u8
 /// for more ergonomic usage when handling not found variables
 pub fn getEnvVarOwned(allocator: Allocator, key: []const u8) GetEnvVarOwnedError!?[]u8 {
     return std.process.getEnvVarOwned(allocator, key) catch |err|
@@ -445,5 +430,76 @@ pub const PointerGestures = struct {
         defer self.hold.destroy();
         defer gpa.destroy(self.listener_data);
         defer self.zwp_pointer_gestures.destroy();
+    }
+};
+
+pub const OutputId = struct {
+    name: u32, // registry name
+    id: u32, // output id
+    // either one of these are valid to id an output,
+    // the name comes from a registry event,
+    // and the id is the it of the output itself `wl_output.getId()` allowing
+    // to go from an wl_output object to its handle in the map
+};
+
+pub const OutputInfo = struct {
+    name: ?[:0]const u8,
+    description: ?[:0]const u8,
+    geometry: ?Geometry,
+    modes: []Mode,
+    current_mode_idx: ?usize,
+    preferred_mode_idx: ?usize,
+    scale: ?i32,
+
+    pub const Geometry = struct {
+        x: i32,
+        y: i32,
+        physical_width_mm: i32,
+        physical_height_mm: i32,
+        subpixel: wl.Output.Subpixel,
+        make: [:0]const u8,
+        model: [:0]const u8,
+        transform: wl.Output.Transform,
+    };
+
+    pub const Mode = struct {
+        width: i32,
+        height: i32,
+        refresh: i32,
+    };
+
+    pub fn currentMode(self: OutputInfo) ?Mode {
+        const idx = self.current_mode_idx orelse return null;
+        return self.modes[idx];
+    }
+
+    pub fn preferredMode(self: OutputInfo) ?Mode {
+        const idx = self.preferred_mode_idx orelse return null;
+        return self.modes[idx];
+    }
+
+    pub const Dpi = struct {
+        horizontal: f32,
+        vertical: f32,
+    };
+
+    // (horizontal dpi, vertical dpi)
+    pub fn calculateDpi(self: OutputInfo) ?Dpi {
+        const current_mode = self.currentMode() orelse return null;
+        const geom = self.geometry orelse return null;
+
+        const width_px: f32 = @floatFromInt(current_mode.width);
+        const height_px: f32 = @floatFromInt(current_mode.height);
+
+        const physical_width_mm: f32 = @floatFromInt(geom.physical_width_mm);
+        const physical_height_mm: f32 = @floatFromInt(geom.physical_height_mm);
+
+        const physical_width_inch = physical_width_mm / 25.4;
+        const physical_height_inch = physical_height_mm / 25.4;
+
+        const hdpi = width_px / physical_width_inch;
+        const vdpi = height_px / physical_height_inch;
+
+        return .{ .horizontal = hdpi, .vertical = vdpi };
     }
 };
