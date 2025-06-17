@@ -220,7 +220,7 @@ pub const Config = opaque {
     }
 };
 
-pub fn defaultSubsitute(pattern: *Pattern) void {
+pub fn defaultSubstitute(pattern: *Pattern) void {
     c.FcDefaultSubstitute(@ptrCast(pattern));
 }
 

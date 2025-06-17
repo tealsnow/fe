@@ -386,7 +386,7 @@ fn getFontFromFamilyName(
 
     const config = try fc.Config.getCurrent();
     try config.substitute(pattern, .pattern);
-    fc.defaultSubsitute(pattern);
+    fc.defaultSubstitute(pattern);
 
     const match = try fc.fontMatch(config, pattern);
     defer match.destroy();
