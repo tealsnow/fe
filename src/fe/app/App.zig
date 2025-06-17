@@ -12,6 +12,8 @@ pub const BackendWindow = Backend.Window;
 pub const WindowId = Backend.WindowId;
 pub const MenuBar = platform.MenuBar;
 
+pub const APP_ID = "me.ketanr.fe";
+
 const EventQueueCircleBuffer =
     @import("../misc/event_queue_circle_buffer.zig")
         .EventQueueCircleBuffer;
@@ -35,7 +37,7 @@ action_queue: ActionQueue = .empty,
 windows: std.AutoArrayHashMapUnmanaged(WindowId, AppWindow) = .empty,
 
 keyboard_focus: ?WindowId = null,
-poiner_focus: ?WindowId = null,
+pointer_focus: ?WindowId = null,
 
 interaction_styles: cu.builder.InteractionStyles,
 root_palette: cu.Atom.Palette,
@@ -44,15 +46,15 @@ pub fn init(gpa: Allocator) !*App {
     const backend = try Backend.init(gpa);
     errdefer backend.deinit();
 
-    const base_interation_style = cu.builder.InteractionStyle{
+    const base_interaction_style = cu.builder.InteractionStyle{
         .target = .border,
-        .hot = .hexRgb(0x665c54), // grovbox bg3
-        .active = .hexRgb(0xfbf1c7), // grovbox fg0
+        .hot = .hexRgb(0x665c54), // gruvbox bg3
+        .active = .hexRgb(0xfbf1c7), // gruvbox fg0
     };
 
     const interaction_styles = cu.builder.InteractionStyles{
-        .button = base_interation_style,
-        .toggle_switch = base_interation_style,
+        .button = base_interaction_style,
+        .toggle_switch = base_interaction_style,
     };
 
     const root_palette = cu.Atom.Palette.init(.{
@@ -97,7 +99,7 @@ pub fn deinit(self: *App) void {
 pub fn newWindow(self: *App, title: [:0]const u8) !*BackendWindow {
     return self.backend.createWindow(.{
         .title = title,
-        .app_id = "me.ketanr.fe",
+        .app_id = APP_ID,
     });
 }
 
@@ -158,10 +160,10 @@ pub inline fn updateAndRender(self: *App) !void {
         },
 
         .pointer_focus => |focus| blk: {
-            self.poiner_focus =
+            self.pointer_focus =
                 if (focus.focused) focus.window else pointer_focus: {
                     const win = self.windows.get(
-                        self.poiner_focus orelse break :blk,
+                        self.pointer_focus orelse break :blk,
                     ) orelse break :blk;
                     win.getCuState().pushEvent(.{ .mouse_move = .inf });
                     break :pointer_focus null;
@@ -169,19 +171,19 @@ pub inline fn updateAndRender(self: *App) !void {
         },
         .pointer_move => |pos| blk: {
             const win = self.windows.get(
-                self.poiner_focus orelse break :blk,
+                self.pointer_focus orelse break :blk,
             ) orelse break :blk;
             win.getCuState().pushEvent(.{ .mouse_move = pos });
         },
         .pointer_button => |button| blk: {
             const win = self.windows.get(
-                self.poiner_focus orelse break :blk,
+                self.pointer_focus orelse break :blk,
             ) orelse break :blk;
             win.getCuState().pushEvent(.{ .mouse_button = button });
         },
         .pointer_scroll => |scroll| blk: {
             const win = self.windows.get(
-                self.poiner_focus orelse break :blk,
+                self.pointer_focus orelse break :blk,
             ) orelse break :blk;
             win.getCuState().pushEvent(.{ .scroll = scroll });
         },

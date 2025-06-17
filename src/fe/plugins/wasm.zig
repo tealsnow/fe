@@ -493,7 +493,7 @@ pub const Table = extern struct {
         //  from the enum order as opposed to the actual value for the enum.
         //  i.e. for funcref we get 5 instead of 129
         //
-        //  This is likekly a zig bug or could be an llvm bug
+        //  This is likely a zig bug or could be an llvm bug
         //
         // @TODO: Report above described bug
         if (builtin.mode == .Debug) {

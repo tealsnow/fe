@@ -216,14 +216,14 @@ pub fn handleSurfaceConfigureEvent(
 ) void {
     window.xdg_surface.ackConfigure(conf.serial);
 
-    // window gemetry excludes CSD
-    const gemoetry = window.innerBounds();
+    // window geometry excludes CSD
+    const geometry = window.innerBounds();
 
     window.xdg_surface.setWindowGeometry(
-        gemoetry.origin.x,
-        gemoetry.origin.y,
-        gemoetry.size.width,
-        gemoetry.size.height,
+        geometry.origin.x,
+        geometry.origin.y,
+        geometry.size.width,
+        geometry.size.height,
     );
 }
 
@@ -256,7 +256,7 @@ pub fn handleToplevelConfigureEvent(
 
 pub fn setupFrameCallback(window: *const Window) void {
     const cb = window.wl_surface.frame() catch
-        @panic("failed to contine frame callbacks");
+        @panic("failed to continue frame callbacks");
 
     cb.setListener(
         *const listeners.WlFrameCallbackListenerData,

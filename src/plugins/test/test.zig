@@ -60,7 +60,7 @@ export fn useString(string_packed: PackedSlice([]const u8)) void {
 }
 
 fn returnedFunc() callconv(.{ .wasm_mvp = .{} }) i32 {
-    std.log.debug("retuned func: wasm run function!", .{});
+    std.log.debug("returned func: wasm run function!", .{});
     return add(1, 2);
 }
 

@@ -200,7 +200,7 @@ pub const Event = struct {
         horizontal,
     };
 
-    /// A stop event is always garenteed for finger,
+    /// A stop event is always guaranteed for finger,
     /// but not for any other type
     pub const PointerScrollSource = enum {
         unknown,

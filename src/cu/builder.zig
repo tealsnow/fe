@@ -177,7 +177,7 @@ pub fn endBuild() void {
         cu.state.event_list.len = 0;
     }
 
-    //- work out the hover poiner shape
+    //- work out the hover cursor shape
     const cursor_shape: ?cu.CursorShape = blk: {
         var cursor_shape: ?cu.CursorShape = null;
 
@@ -276,7 +276,7 @@ pub fn buildFromKeyOrphan(key: Atom.Key) *Atom {
             partial = Atom.palettes.mergePartials(partial, next);
         }
         atom.palette = Atom.palettes.partialToFull(partial) orelse
-            @panic("could not contruct a full pallete from stack");
+            @panic("could not construct a full palette from stack");
     }
 
     return atom;
@@ -392,7 +392,7 @@ pub fn baseClickableInteractionStyles(
     inter: cu.Interaction,
     style: InteractionStyle,
 ) void {
-    // @FIXME: the tranitions to and from no interation and hovering work,
+    // @FIXME: the transitions to and from no interaction and hovering work,
     //  and from hovering to clicking, but not from clicking back to hovering
 
     const atom = inter.atom;
@@ -754,7 +754,7 @@ pub const Stacks = struct {
             }
 
             /// Push an item that can be read multiple times.
-            /// Reqires a pop to remove.
+            /// Requires a pop to remove.
             pub fn pushForMany(self: *Self, item: T) void {
                 self.pushRaw(.{ .item = item, .once = false });
             }

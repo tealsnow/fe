@@ -201,28 +201,28 @@ fn buildUI(self: *PanelWindow) void {
                 panel.rectFromPanel(self.app.arena, root_rect);
             const panel_rect_size = panel_rect.size();
 
-            //- build drag boundraies
+            //- build drag boundaries
             var child_iter = panel.tree.childIterator();
             while (child_iter.next()) |child| {
                 if (child.tree.siblings.next == null) break;
 
                 const child_rect = child.rectFromPanelChildRect(panel_rect);
-                var boundry_rect = child_rect;
-                boundry_rect.p0.arr()[axis_i] = boundry_rect.p1.arr()[axis_i];
-                boundry_rect.p0.arr()[axis_i] -= split_handle_size;
-                boundry_rect.p1.arr()[axis_i] += split_handle_size;
+                var boundary_rect = child_rect;
+                boundary_rect.p0.arr()[axis_i] = boundary_rect.p1.arr()[axis_i];
+                boundary_rect.p0.arr()[axis_i] -= split_handle_size;
+                boundary_rect.p1.arr()[axis_i] += split_handle_size;
 
                 b.stacks.pref_size.push(.square(.none));
                 b.stacks.flags.push(.init(&.{ .clickable, .floating }));
                 b.stacks.hover_cursor_shape.push(
                     if (panel.split_axis == .x) .resize_ew else .resize_ns,
                 );
-                const boundry = b.buildf("###panel_boundry [{*}]", .{child});
+                const boundary = b.buildf("###panel_boundary [{*}]", .{child});
 
-                boundry.rel_position = boundry_rect.origin().sub(root_rect.origin());
-                boundry.fixed_size = boundry_rect.size();
+                boundary.rel_position = boundary_rect.origin().sub(root_rect.origin());
+                boundary.fixed_size = boundary_rect.size();
 
-                const inter = boundry.interaction();
+                const inter = boundary.interaction();
                 if (inter.dragging()) {
                     const min_child = child;
                     const max_child = child.tree.siblings.next.?;

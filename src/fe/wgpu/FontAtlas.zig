@@ -1,6 +1,6 @@
 const FontAtlas = @This();
 
-// @PERF: simd might be usefull here
+// @PERF: simd might be useful here
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -39,7 +39,7 @@ pub const GlyphIndex = enum(u32) {
 pub const GlyphInfo = struct {
     /// top-left to bottom-right
     tex_coords: mt.Rect(u32),
-    /// Per character pos data to be used in conjuction with shaping
+    /// Per character pos data to be used in conjunction with shaping
     /// in 26.6 fixed point
     bearing: mt.Point(i64),
     /// physical size of glyph
@@ -241,7 +241,7 @@ pub fn writeToBmp(
     try w.writeInt(u32, width * height, .little); // size of pixel array
     try w.writeInt(i32, @intCast(width), .little); // horiz res px/m
     try w.writeInt(i32, @intCast(height), .little); // vert res px/m
-    try w.writeInt(u32, 0, .little); // num colors in pallete - 0 for default
+    try w.writeInt(u32, 0, .little); // num colors in palette - 0 for default
     try w.writeInt(u32, 0, .little); // num 'important' colors - 0 for all
 
     //- pixel array

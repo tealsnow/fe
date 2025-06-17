@@ -19,10 +19,10 @@ pub fn entryPoint(gpa: Allocator) !void {
     var deinit_trace: tracy.ZoneContext = undefined;
     defer deinit_trace.end();
 
-    tracy.printAppInfo("me.ketanr.fe", .{});
+    tracy.printAppInfo(App.APP_ID, .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
 
-    // @FIXME: keep getting error about improper instramentation in tracy:
+    // @FIXME: keep getting error about improper instrumentation in tracy:
     //   a free event without a matching allocation
     //   likely that the in wasm allocator is not being traced i.e.
     //   an allocation in guest that is then freed in the host

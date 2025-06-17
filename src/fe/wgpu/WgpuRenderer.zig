@@ -72,7 +72,7 @@ pub const InitParams = struct {
 };
 
 pub fn init(gpa: Allocator, params: InitParams) !*Renderer {
-    const adapter, const surface = try createAdapaterAndSurface(
+    const adapter, const surface = try createAdapterAndSurface(
         params.surface_descriptor,
         params.inspect.instance,
     );
@@ -265,7 +265,7 @@ pub fn deinit(renderer: *Renderer) void {
     }
 }
 
-fn createAdapaterAndSurface(
+fn createAdapterAndSurface(
     surface_descriptor: wgpu.SurfaceDescriptor,
     instance_report_alloc: ?Allocator,
 ) !struct { *wgpu.Adapter, *wgpu.Surface } {
@@ -553,7 +553,7 @@ fn createPipeline(
     };
 
     //- pipeline desc
-    const pipline_desc = wgpu.RenderPipelineDescriptor{
+    const pipeline_desc = wgpu.RenderPipelineDescriptor{
         .vertex = .{
             .module = shader_module,
             .entry_point = "vsMain",
@@ -577,7 +577,7 @@ fn createPipeline(
     };
 
     const pipeline =
-        device.createRenderPipeline(&pipline_desc) orelse {
+        device.createRenderPipeline(&pipeline_desc) orelse {
             log.debug("failed to create render pipeline", .{});
             return error.wgpu;
         };
@@ -1199,7 +1199,7 @@ pub fn batchToRenderPass(
 
         if (renderer.atlas_texture_cache.get(font_atlas)) |atlas_texture| {
             if (!font_atlas.modified) {
-                // best case senario
+                // best case scenario
                 // already have an atlas that does not need updating
                 break :atlas atlas_texture;
             } else {

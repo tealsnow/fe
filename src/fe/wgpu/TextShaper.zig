@@ -109,7 +109,7 @@ pub const ShapedText = struct {
         // @HACK:
         //  without this the right side does not have quite enough padding
         //  making it look off center in a rect
-        //  I don't particulary like this solution but it works good enough
+        //  I don't particularly like this solution but it works good enough
         //  for now
         total_width += last_advance - (last_bitmap_offset / 2.0);
 

@@ -54,13 +54,13 @@ pub fn wlRegistryListener(
 
             var removed = false;
 
-            const maybe_ouput_id: ?OutputId =
+            const maybe_output_id: ?OutputId =
                 for (data.outputs.keys()) |key| {
                     if (key.name == remove.name)
                         break key;
                 } else null;
 
-            if (maybe_ouput_id) |id| {
+            if (maybe_output_id) |id| {
                 const output = data.outputs.fetchSwapRemove(id).?.value;
                 output.deinit(data.gpa);
 
@@ -196,7 +196,7 @@ pub fn wlRegistryListener(
             global.name,
             zwp.PointerGesturesV1,
             3,
-        ) catch @panic("cound not bind zwp pointer_gestures_v1");
+        ) catch @panic("could not bind zwp pointer_gestures_v1");
 
         bound = true;
     }
@@ -1039,9 +1039,9 @@ pub fn wlPointerListener(
             //
             // e.g. value120 = 30
             //      30 / 120 = 0.25
-            // thus scroll by a quater of a logical step
+            // thus scroll by a quarter of a logical step
             //
-            // repleaces axis_descrete from version 8 of wl_pointer
+            // replaces axis_discrete from version 8 of wl_pointer
 
             data.scroll_axis = switch (axis_value120.axis) {
                 .vertical_scroll => .vertical,
@@ -1052,12 +1052,12 @@ pub fn wlPointerListener(
             // @NOTE:
             //  on my machine running gnome 47 I get (-)10 for axis events and
             //  (-)120 ((-)1 adjusted) for this with my mouse (my touchpad does
-            //  not emit this event) thus I have opted to mulitply this value
-            //  by ten. So that when it is prefferd during a frame event the
-            //  value matches what axis would have emited.
+            //  not emit this event) thus I have opted to multiply this value
+            //  by ten. So that when it is proffered during a frame event the
+            //  value matches what axis would have emitted.
             //
             //  Since the normal axis event emits 10, it seems to me that a
-            //  step is 10 and that my mouse emits a descrete scroll of 1 step
+            //  step is 10 and that my mouse emits a discrete scroll of 1 step
             //
             //  This may be a wrong interpretation
             const value_scaled =

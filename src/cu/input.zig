@@ -104,7 +104,7 @@ pub const InteractionFlag = enum(u8) {
         return @enumFromInt(inter_int);
     }
 
-    // must be kept up to date with InterationFlag
+    // must be kept up to date with InteractionFlag
     pub const MouseButtonKind = enum(u8) {
         pressed = 0,
         released,
@@ -112,8 +112,8 @@ pub const InteractionFlag = enum(u8) {
         dragging,
         double_clicked,
         double_dragging,
-        tripple_clicked,
-        tripple_dragging,
+        triple_clicked,
+        triple_dragging,
     };
 };
 
@@ -307,7 +307,7 @@ fn setButtonGeneric(
 pub fn interactionFromAtom(atom: *Atom) Interaction {
     var inter = Interaction{ .atom = atom };
 
-    // calculate possibly cliped rect
+    // calculate possibly clipped rect
     const rect = blk: {
         var rect = atom.rect;
         var iter = atom.tree.parentIterator();
@@ -329,7 +329,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
         } else false;
     };
 
-    // calculate blacklist rectagele
+    // calculate blacklist rectangle
     const blacklist_rect = if (!ctx_menu_is_ancestor and cu.state.ctx_menu_open)
         cu.state.ui_ctx_menu_root.rect
     else
@@ -392,7 +392,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
                         last_pressed_timestamp_us - last_last_pressed_timestamp_us <=
                             double_click_time_us)
                     {
-                        setButtonGeneric(&inter.f, .tripple_clicked, button.button);
+                        setButtonGeneric(&inter.f, .triple_clicked, button.button);
                     }
 
                     cu.state.press_history_timestamp_us
@@ -467,7 +467,7 @@ pub fn interactionFromAtom(atom: *Atom) Interaction {
             if (Atom.Key.eql(atom.key, cu.state.active_atom_key.get(button)) or
                 inter.buttonPressed(button))
             {
-                // @FIXME: although this now allows double clickes when only
+                // @FIXME: although this now allows double clicks when only
                 //  before the drag flag is flipped it breaks the panel window
                 //  resizing quite dramatically,
                 //  I think we need to re-think dragging:

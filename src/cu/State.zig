@@ -48,7 +48,7 @@ ctx_menu_key: Atom.Key = .nil,
 next_ctx_menu_anchor_key: Atom.Key = .nil,
 ctx_menu_anchor_offset: math.Point(f32) = .zero,
 
-// currenly over (event consuming) atom
+// currently over (event consuming) atom
 // (about to be interacting with this item)
 hot_atom_key: Atom.Key = .nil,
 // currently interacting atom for mouse button
@@ -68,17 +68,17 @@ font_kind_map: FontKindMap,
 
 press_history_key: std.EnumArray(
     MouseButton,
-    cu.CircleBuffer(HistoySize, Atom.Key),
+    cu.CircleBuffer(HistorySize, Atom.Key),
 ) = .initFill(.empty),
 press_history_timestamp_us: std.EnumArray(
     MouseButton,
-    cu.CircleBuffer(HistoySize, u64),
+    cu.CircleBuffer(HistorySize, u64),
 ) = .initFill(.empty),
 
 root_palette: Atom.Palette,
 interaction_styles: builder.InteractionStyles,
 
-const HistoySize = 8;
+const HistorySize = 8;
 
 pub const AtomPool = std.heap.MemoryPoolExtra(Atom, .{ .growable = true });
 pub const AtomMap = std.ArrayHashMapUnmanaged(

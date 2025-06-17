@@ -247,7 +247,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             }
 
             //- solve violations
-            // if there is a violation we need to subtact some amount from all children
+            // if there is a violation we need to subtract some amount from all children
             const violation = total_size - total_allowed_size;
             if (violation <= 0) break :blk;
 
@@ -287,7 +287,7 @@ fn solveViolations(root: *Atom, axis_kind: Axis2D) void {
             }
         }
 
-        //- fix upwards depentent sizes
+        //- fix upwards dependent sizes
         if (allow_overflow) {
             child_iter.reset();
             while (child_iter.next()) |child| {

@@ -20,7 +20,7 @@ layout_axis: LayoutAxis = .x,
 hover_cursor_shape: ?cu.CursorShape = null,
 // group_key
 text_align: math.Size(Alignment) = .square(.center),
-alignment: math.Size(Alignment) = .square(.start), // @FIXME: rename to children alignemnt
+alignment: math.Size(Alignment) = .square(.start), // @FIXME: rename to children alignment
 padding: Padding = .zero,
 
 palette: Palette = undefined,
@@ -32,14 +32,14 @@ corner_radius: f32 = 0, // draw_border, draw_background
 // custom_draw_func
 // custom_draw_data
 
-// build artifacts - persistant
+// build artifacts - persistent
 fixed_size: math.Size(f32) = .zero, // computed size
 rel_position: math.Point(f32) = .zero,
 rect: math.Rect(f32) = .zero,
 text_size: math.Size(f32) = .zero,
 text_rect: math.Rect(f32) = .zero,
 
-// persistant data
+// persistent data
 build_index_touched_first: u64,
 build_index_touched_last: u64,
 // build_index_first_disabled: u64,
@@ -144,7 +144,7 @@ pub const Key = enum(u32) {
 };
 
 pub const Flag = enum(u32) {
-    //- interation
+    //- interaction
     mouse_clickable,
     keyboard_clickable,
     // drop_site: bool = false,
@@ -177,7 +177,7 @@ pub const Flags = struct {
 
     pub const none = Flags{ .enum_set = .initEmpty() };
 
-    //- interation
+    //- interaction
     pub const mouse_clickable = initOne(.mouse_clickable);
     pub const keyboard_clickable = initOne(.keyboard_clickable);
     // drop_site: bool = false,
@@ -369,7 +369,7 @@ pub const PrefSize = extern struct {
     /// kind: px,
     /// value(px): value * top font size,
     /// strictness: 1,
-    /// NOTE: The calculation is defered to the layout phase,
+    /// NOTE: The calculation is deferred to the layout phase,
     ///       ensuring that the final attached font is used.
     ///       This the different from `builder.em` which returns
     ///       a px value from the top font at the time of call
@@ -465,7 +465,7 @@ pub const PalettePartial = struct {
 };
 
 pub const palettes = struct {
-    /// Merge the left with the right pallete, prioritizes the left one.
+    /// Merge the left with the right palette, prioritizes the left one.
     pub fn mergePartials(
         left: PalettePartial,
         right: PalettePartial,

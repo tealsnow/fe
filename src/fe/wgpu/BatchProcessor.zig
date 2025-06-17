@@ -134,7 +134,7 @@ fn processAtom(
     defer if (atom.flags.contains(.clip_rect)) {
         self.flushBatches(arena) catch {
             // @FIXME: maybe we should just put this at the end with a try?
-            log.err("failed to flush batches for cliped rect", .{});
+            log.err("failed to flush batches for clipped rect", .{});
         };
     };
 

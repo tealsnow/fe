@@ -32,7 +32,7 @@ pub fn PackedSlice(comptime T: type) type {
 
         const Self = @This();
 
-        /// Ensure that the passed slice is actualy in the wasm memory space
+        /// Ensure that the passed slice is actually in the wasm memory space
         pub fn fromSlice(slice: Slice) Self {
             return .{
                 .ptr = @intCast(@intFromPtr(slice.ptr)),
@@ -498,7 +498,7 @@ pub const PluginHost = struct {
 
             log.info("setting up plugin in dir: '{s}'", .{entry.name});
             const plugin = try Plugin.init(gpa, engine, context, plugin_dir);
-            log.info("finshed setting up plugin in dir: '{s}'", .{entry.name});
+            log.info("finished setting up plugin in dir: '{s}'", .{entry.name});
 
             try plugins.append(plugin);
         }
@@ -629,7 +629,7 @@ pub fn doTest(plugin: *Plugin) !void {
         };
 
         const func = func: {
-            log.debug("geting func from table", .{});
+            log.debug("getting func from table", .{});
             const val = plugin.function_table.get(plugin.context, @intCast(func_idx)) orelse return error.table_get;
             assert(val.kind == .funcref);
             break :func val.of.funcref;

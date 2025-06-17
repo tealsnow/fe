@@ -304,7 +304,7 @@ fn buildDebugUIDetails(state: *DebugUIState, arena: Allocator) void {
                 },
                 .children_sum => {
                     sb.print(
-                        "childrem_sum{{ child_spacing_px: {d}, strictness: {d} }}",
+                        "children_sum{{ child_spacing_px: {d}, strictness: {d} }}",
                         .{ pref_size.value, pref_size.strictness },
                     ) catch {};
                 },
@@ -378,7 +378,7 @@ fn buildDebugUIDetails(state: *DebugUIState, arena: Allocator) void {
             b.stacks.pref_size.push(.size(.grow, .fit));
             b.stacks.layout_axis.push(.x);
             const row = b.openf(
-                "###child_ailgnemtn row {s}",
+                "###child_alignment row {s}",
                 .{@tagName(axis)},
             );
             defer b.close(row);
