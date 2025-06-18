@@ -440,6 +440,20 @@ pub const OutputId = struct {
     // the name comes from a registry event,
     // and the id is the it of the output itself `wl_output.getId()` allowing
     // to go from an wl_output object to its handle in the map
+
+    pub fn format(
+        self: @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print(
+            "OutputId({d}-{d})",
+            .{ self.name, self.id },
+        );
+    }
 };
 
 pub const OutputInfo = struct {

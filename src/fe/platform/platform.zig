@@ -40,6 +40,7 @@ pub const WindowInitParams = struct {
 };
 
 pub const BackendEvent = union(enum) {
+    window_present: Backend.WindowId,
     window_close: Backend.WindowId,
     window_resize: struct {
         window: Backend.WindowId,

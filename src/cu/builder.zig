@@ -16,23 +16,6 @@ var trace_build: tracy.ZoneContext = undefined;
 
 const b = @This();
 
-var frame_previous_time: std.time.Instant = std.mem.zeroes(std.time.Instant);
-pub var dt_s: f32 = 0;
-
-pub fn startFrame() void {
-    const current_time = std.time.Instant.now() catch
-        @panic("no std.time.Instant support");
-
-    const dt_ns = current_time.since(frame_previous_time);
-    frame_previous_time = current_time;
-
-    dt_s = @as(f32, @floatFromInt(dt_ns)) / @as(f32, std.time.ns_per_s);
-}
-
-pub fn endFrame() void {
-    //
-}
-
 pub const InteractionStyle = struct {
     target: Atom.PaletteColor = .border,
     hot: math.RgbaU8,
@@ -48,6 +31,14 @@ pub fn startBuild(window_id: usize) void {
     trace_build = tracy.beginZone(@src(), .{ .name = "ui build" });
     const trace_start = tracy.beginZone(@src(), .{ .name = "ui build setup" });
     defer trace_start.end();
+
+    const current_time = std.time.Instant.now() catch
+        @panic("no std.time.Instant support");
+
+    const dt_ns = current_time.since(cu.state.frame_previous_time);
+    cu.state.frame_previous_time = current_time;
+
+    cu.state.dt_s = @as(f32, @floatFromInt(dt_ns)) / @as(f32, std.time.ns_per_s);
 
     // reset arena
     // _ = cu.state.arena_allocator.reset(.free_all);

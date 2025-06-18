@@ -38,9 +38,6 @@ pub const WaylandBackend = struct {
         const mono_font_path = try getFontFromFamilyName(gpa, "mono");
         defer gpa.free(mono_font_path);
 
-        // @TODO: set based on current output
-        const dpi = mt.Size(u16).size(96, 96);
-
         const font_face_map = try font_manager.makeFontFaceMap(
             gpa,
             .init(.{
@@ -49,7 +46,7 @@ pub const WaylandBackend = struct {
                 .button = .{ .path = def_font_path, .pt = 10 },
                 .mono = .{ .path = mono_font_path, .pt = 10 },
             }),
-            dpi,
+            .square(96),
         );
 
         const plat = try gpa.create(WaylandBackend);
@@ -65,13 +62,16 @@ pub const WaylandBackend = struct {
     }
 
     pub fn deinit(self: *WaylandBackend) void {
-        for (self.windows.values()) |window| self.closeWindow(window.wl_window.id);
-        self.windows.deinit(self.gpa);
+        const gpa = self.gpa;
 
-        self.font_manager.deinit(self.gpa);
-        self.conn.deinit(self.gpa);
+        for (self.windows.values()) |window|
+            self.closeWindow(window.wl_window.id);
+        self.windows.deinit(gpa);
 
-        self.gpa.destroy(self);
+        self.font_manager.deinit(gpa);
+        self.conn.deinit(gpa);
+
+        gpa.destroy(self);
     }
 
     pub fn createWindow(
@@ -161,25 +161,20 @@ pub const WaylandBackend = struct {
         self: *WaylandBackend,
         arena: Allocator,
     ) ![]const platform.BackendEvent {
-        try self.conn.roundtrip();
+        try self.conn.dispatch();
 
         var events = std.ArrayList(platform.BackendEvent).init(arena);
 
         while (self.conn.event_queue.dequeue()) |event| switch (event.kind) {
-            .output_available => |id| blk: {
-                const output = self.conn.getOutput(id) orelse break :blk;
-                log.debug("output available: {d}-{d} '{?s}'", .{ id.name, id.id, output.description });
-            },
-            .output_unavailable => |id| {
-                log.debug("output unavailable: {d}-{d}", .{ id.name, id.id });
-            },
+            .output_available => {},
+            .output_unavailable => {},
 
             .surface_configure => |configure| conf: {
                 const win =
                     self.windows.get(configure.window_id) orelse break :conf;
                 win.wl_window.handleSurfaceConfigureEvent(configure);
 
-                // win.present_frame = true;
+                // events.append(.{ .window_present = configure.window_id });
             },
             .toplevel_configure => |conf| conf: {
                 const win = self.windows.get(conf.window_id) orelse
@@ -196,27 +191,21 @@ pub const WaylandBackend = struct {
                     .size = size,
                 } });
 
-                // win.present_frame = true;
+                // events.append(.{ .window_present = conf.window_id });
             },
             .toplevel_close => |close| {
                 try events.append(.{ .window_close = close.window_id });
             },
 
-            .toplevel_output_change => |change| change: {
-                const output = self.conn.getOutput(change.output_id) orelse
-                    break :change;
-                log.debug(
-                    "surface output change: {s} {d}-{d} '{?s}'",
-                    .{
-                        @tagName(change.focus),
-                        change.output_id.name,
-                        change.output_id.id,
-                        output.description,
-                    },
-                );
-            },
+            .toplevel_output_change => {},
 
-            .frame => {},
+            .frame => |frame| frame: {
+                const window = self.windows.get(frame.window_id) orelse
+                    break :frame;
+                window.wl_window.setupFrameCallback();
+
+                try events.append(.{ .window_present = frame.window_id });
+            },
 
             .keyboard_focus => |focus| {
                 try events.append(.{ .keyboard_focus = .{

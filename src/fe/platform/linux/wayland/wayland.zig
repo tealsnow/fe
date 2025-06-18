@@ -6,6 +6,8 @@
 pub const Connection = @import("Connection.zig");
 pub const Window = @import("Window.zig");
 pub const WindowId = Window.WindowId;
+pub const OutputInfo = Connection.OutputInfo;
+pub const OutputId = Connection.OutputId;
 
 pub const CursorKind = @import("cursor_manager.zig").CursorKind;
 

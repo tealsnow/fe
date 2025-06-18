@@ -126,19 +126,21 @@ pub inline fn run(self: *App) !void {
 }
 
 pub inline fn updateAndRender(self: *App) !void {
-    b.startFrame();
-    defer b.endFrame();
-
     const events = try self.backend.getEvents(self.arena);
 
     for (events) |event| switch (event) {
+        .window_present => |id| present: {
+            const win = self.windows.getPtr(id) orelse break :present;
+            win.should_draw = true;
+        },
+
         .window_close => |id| {
             // @TODO: pass event to window to intercept
             self.action_queue.queue(.{ .close_window = id });
         },
 
-        .window_resize => |resize| blk: {
-            const win = self.windows.get(resize.window) orelse break :blk;
+        .window_resize => |resize| resize: {
+            const win = self.windows.get(resize.window) orelse break :resize;
             win.getCuState().window_size = resize.size.floatFromInt(f32);
         },
 
@@ -146,51 +148,54 @@ pub inline fn updateAndRender(self: *App) !void {
             self.keyboard_focus =
                 if (focus.focused) focus.window else null;
         },
-        .key => |key| blk: {
+        .key => |key| key: {
             const win = self.windows.get(
-                self.keyboard_focus orelse break :blk,
-            ) orelse break :blk;
+                self.keyboard_focus orelse break :key,
+            ) orelse break :key;
             win.getCuState().pushEvent(.{ .key = key });
         },
-        .text => |text| blk: {
+        .text => |text| text: {
             const win = self.windows.get(
-                self.keyboard_focus orelse break :blk,
-            ) orelse break :blk;
+                self.keyboard_focus orelse break :text,
+            ) orelse break :text;
             win.getCuState().pushEvent(.{ .text = text });
         },
 
-        .pointer_focus => |focus| blk: {
+        .pointer_focus => |focus| focus: {
             self.pointer_focus =
                 if (focus.focused) focus.window else pointer_focus: {
                     const win = self.windows.get(
-                        self.pointer_focus orelse break :blk,
-                    ) orelse break :blk;
+                        self.pointer_focus orelse break :focus,
+                    ) orelse break :focus;
                     win.getCuState().pushEvent(.{ .mouse_move = .inf });
                     break :pointer_focus null;
                 };
         },
-        .pointer_move => |pos| blk: {
+        .pointer_move => |pos| move: {
             const win = self.windows.get(
-                self.pointer_focus orelse break :blk,
-            ) orelse break :blk;
+                self.pointer_focus orelse break :move,
+            ) orelse break :move;
             win.getCuState().pushEvent(.{ .mouse_move = pos });
         },
-        .pointer_button => |button| blk: {
+        .pointer_button => |button| button: {
             const win = self.windows.get(
-                self.pointer_focus orelse break :blk,
-            ) orelse break :blk;
+                self.pointer_focus orelse break :button,
+            ) orelse break :button;
             win.getCuState().pushEvent(.{ .mouse_button = button });
         },
-        .pointer_scroll => |scroll| blk: {
+        .pointer_scroll => |scroll| scroll: {
             const win = self.windows.get(
-                self.pointer_focus orelse break :blk,
-            ) orelse break :blk;
+                self.pointer_focus orelse break :scroll,
+            ) orelse break :scroll;
             win.getCuState().pushEvent(.{ .scroll = scroll });
         },
     };
 
     //- build ui and present
-    for (self.windows.values()) |app_win| {
+    for (self.windows.values()) |*app_win| {
+        if (!app_win.should_draw) continue;
+        app_win.should_draw = false;
+
         app_win.buildUI();
 
         const win = app_win.getWindow();
@@ -198,9 +203,6 @@ pub inline fn updateAndRender(self: *App) !void {
 
         try win.present(self.arena, cu_state);
     }
-
-    if (self.windows.count() == 0)
-        self.action_queue.queue(.quit);
 
     //- handle actions
     while (self.action_queue.dequeue()) |action| switch (action) {
@@ -213,6 +215,9 @@ pub inline fn updateAndRender(self: *App) !void {
 
         .close_window => |id| {
             self.closeWindow(id);
+
+            if (self.windows.count() == 0)
+                self.action_queue.queue(.quit);
         },
     };
 
@@ -240,6 +245,8 @@ pub const ActionQueue = EventQueueCircleBuffer(16, Action);
 
 pub const AppWindow = struct {
     id: WindowId,
+    should_draw: bool = true,
+
     context: *anyopaque,
     vtable: *const VTable,
 

@@ -24,6 +24,9 @@ arena_allocator: std.heap.ArenaAllocator,
 arena: Allocator,
 gpa: Allocator,
 
+frame_previous_time: std.time.Instant,
+dt_s: f32 = 0,
+
 atom_pool: AtomPool,
 atom_map: AtomMap = .empty,
 atom_parent_stack: Stack(*Atom) = .empty, // arena
@@ -99,6 +102,9 @@ pub const InitParams = struct {
 pub fn init(gpa: Allocator, params: InitParams) !*State {
     const state = try gpa.create(State);
     state.* = .{
+        .frame_previous_time = std.time.Instant.now() catch
+            @panic("no instant support"),
+
         .callbacks = params.callbacks,
 
         .font_kind_map = params.font_kind_map,

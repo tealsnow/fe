@@ -726,6 +726,6 @@ pub fn expSmooth(
         value,
         target,
         cu.state.animation_speed,
-        cu.builder.dt_s,
+        cu.state.dt_s,
     );
 }
