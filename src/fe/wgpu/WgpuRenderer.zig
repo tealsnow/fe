@@ -723,7 +723,6 @@ const rlog = std.log.scoped(.@"wgpu render");
 pub fn render(
     renderer: *Renderer,
     arena: Allocator,
-    font_manager: *const FontManager,
     cu_state: *cu.State,
 ) !void {
     const trace =
@@ -740,15 +739,13 @@ pub fn render(
         try arena.alloc(RenderPassData, batch_data.len);
 
     {
-        const batch_to_render_pass_trace = tracy.beginZone(
-            @src(),
-            .{ .name = "batch to render pass" },
-        );
+        const batch_to_render_pass_trace = tracy.beginZone(@src(), .{});
         defer batch_to_render_pass_trace.end();
+        batch_to_render_pass_trace.name("batch to render pass", .{});
 
         for (batch_data, 0..) |data, i| {
             render_pass_data[i] =
-                try renderer.batchToRenderPass(font_manager, data);
+                try renderer.batchToRenderPass(data);
         }
     }
 
@@ -1191,12 +1188,9 @@ pub const RenderPassData = struct {
 
 pub fn batchToRenderPass(
     renderer: *Renderer,
-    font_manager: *const FontManager,
     batch_data: BatchData,
 ) !RenderPassData {
-    const atlas_texture = if (batch_data.font_face) |font_face| atlas: {
-        const font_atlas = font_manager.getAtlas(font_face);
-
+    const atlas_texture = if (batch_data.font_atlas) |font_atlas| atlas: {
         if (renderer.atlas_texture_cache.get(font_atlas)) |atlas_texture| {
             if (!font_atlas.modified) {
                 // best case scenario

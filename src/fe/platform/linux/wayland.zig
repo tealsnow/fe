@@ -374,7 +374,7 @@ pub const WaylandWindow = struct {
                 .setCursor(cuCursorShapeToWlCursorKind(shape)) catch {};
         }
 
-        try self.renderer.render(arena, self.backend.font_manager, cu_state);
+        try self.renderer.render(arena, cu_state);
         self.renderer.surface.present();
     }
 };

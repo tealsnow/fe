@@ -4,6 +4,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.@"wgpu.BatchProcessor");
 
+const FontAtlas = @import("FontAtlas.zig");
 const FontFace = @import("FontFace.zig");
 const FontManager = @import("FontManager.zig");
 const TextShaper = @import("TextShaper.zig");
@@ -19,13 +20,15 @@ shaper: TextShaper,
 
 surface_size: mt.Size(u32),
 scissor_rect: mt.Rect(u32),
-rect_list: std.ArrayListUnmanaged(RectInstance) = .empty,
+rect_list: RectList = .empty,
 text_lists: std.AutoHashMapUnmanaged(
-    *const FontFace,
-    std.ArrayListUnmanaged(RectInstance),
+    *FontAtlas,
+    RectList,
 ) = .empty,
 
 batches: std.ArrayListUnmanaged(BatchData) = .empty,
+
+pub const RectList = std.ArrayListUnmanaged(RectInstance);
 
 pub fn init(
     font_manager: *const FontManager,
@@ -86,12 +89,12 @@ fn processRoot(
 }
 
 fn flushBatches(self: *BatchProcessor, arena: Allocator) !void {
-    try self.batches.ensureUnusedCapacity(arena, self.text_lists.size + 1);
+    try self.batches.ensureUnusedCapacity(arena, self.text_lists.count() + 1);
 
     if (self.rect_list.items.len != 0)
         self.batches.appendAssumeCapacity(.{
             .scissor_rect = self.scissor_rect,
-            .font_face = null,
+            .font_atlas = null,
             .rects = self.rect_list.items,
         });
 
@@ -100,7 +103,7 @@ fn flushBatches(self: *BatchProcessor, arena: Allocator) !void {
         if (entry.value_ptr.items.len == 0) continue;
         self.batches.appendAssumeCapacity(.{
             .scissor_rect = self.scissor_rect,
-            .font_face = entry.key_ptr.*,
+            .font_atlas = entry.key_ptr.*,
             .rects = entry.value_ptr.items,
         });
     }
@@ -223,11 +226,10 @@ fn processAtom(
 
     if (atom.flags.contains(.draw_text)) {
         const font_face: *const FontFace = @ptrCast(@alignCast(atom.font));
+        const font_atlas = self.font_manager.getAtlas(font_face);
 
         const entry =
-            try self.text_lists.getOrPutValue(arena, font_face, .empty);
-
-        const font_atlas = self.font_manager.getAtlas(font_face);
+            try self.text_lists.getOrPutValue(arena, font_atlas, .empty);
 
         const shaped_text = try self.shaper
             .shape(font_face, font_atlas, atom.display_string);
@@ -252,6 +254,6 @@ fn processAtom(
 
 pub const BatchData = struct {
     scissor_rect: mt.Rect(u32),
-    font_face: ?*const FontFace,
+    font_atlas: ?*FontAtlas,
     rects: []const RectInstance,
 };
