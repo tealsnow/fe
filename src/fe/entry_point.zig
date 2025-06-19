@@ -13,7 +13,7 @@ const TestWindow = @import("app/TestWindow.zig");
 const PanelWindow = @import("app/PanelWindow.zig");
 const DebugWindow = @import("app/DebugWindow.zig");
 
-pub fn entryPoint(gpa: Allocator) !void {
+pub fn entryPoint(root_allocator: Allocator) !void {
     // setup at the end before any defers are run
     //- tracy setup
     var deinit_trace: tracy.ZoneContext = undefined;
@@ -21,6 +21,14 @@ pub fn entryPoint(gpa: Allocator) !void {
 
     tracy.printAppInfo(App.APP_ID, .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
+
+    log.info("starting fe", .{});
+
+    if (tracy.isConnected()) log.debug("tracing enabled", .{});
+
+    //- tracing allocator
+    var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
+    const gpa = tracing_allocator.allocator();
 
     // @FIXME: keep getting error about improper instrumentation in tracy:
     //   a free event without a matching allocation

@@ -196,6 +196,13 @@ pub inline fn updateAndRender(self: *App) !void {
         if (!app_win.should_draw) continue;
         app_win.should_draw = false;
 
+        const frame = tracy.startDiscontinuousFrame("window");
+        defer frame.end();
+
+        const trace = tracy.beginZone(@src(), .{});
+        defer trace.end();
+        trace.name("window ({*})", .{app_win.context});
+
         app_win.buildUI();
 
         const win = app_win.getWindow();

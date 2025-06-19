@@ -44,11 +44,6 @@ pub fn main() !void {
     try logFn.init("out.log");
     defer logFn.deinit();
 
-    log.info("starting fe", .{});
-
-    if (tracy.isConnected())
-        log.debug("tracing enabled", .{});
-
     //- allocator setup
     const root_allocator, const is_debug = gpa: {
         if (builtin.os.tag == .wasi) switch (builtin.mode) {
@@ -72,10 +67,6 @@ pub fn main() !void {
         _ = debug_allocator.deinit();
     };
 
-    var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
-    const gpa = tracing_allocator.allocator();
-    // const gpa = root_allocator;
-
     //- entry_point
-    return entryPoint(gpa);
+    return entryPoint(root_allocator);
 }
