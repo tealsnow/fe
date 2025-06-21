@@ -129,18 +129,15 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(fe_exe);
 
     fe_mod.link_libc = true;
-    fe_mod.linkSystemLibrary("fontconfig", .{ .needed = true });
     fe_mod.linkSystemLibrary("wasmtime", .{ .needed = true });
 
     //- sdl
     if (false) {
-        const sdl3 = b.lazyDependency("sdl3", .{
+        if (b.lazyDependency("sdl3", .{
             .target = target,
             .optimize = optimize,
-        });
-
-        if (sdl3) |m| {
-            fe_mod.addImport("sdl3", m.module("sdl3"));
+        })) |sdl3| {
+            fe_mod.addImport("sdl3", sdl3.module("sdl3"));
 
             fe_mod.linkSystemLibrary("sdl3", .{ .needed = true });
             fe_mod.linkSystemLibrary("sdl3-ttf", .{ .needed = true });
@@ -187,30 +184,39 @@ pub fn build(b: *std.Build) void {
 
         //- wgpu
 
-        const wgpu = b.lazyDependency("wgpu_native", .{
+        if (b.lazyDependency("wgpu_native", .{
             .target = target,
             .optimize = optimize,
-        });
-        if (wgpu) |m| {
-            fe_mod.addImport("wgpu", m.module("wgpu"));
+        })) |wgpu| {
+            fe_mod.addImport("wgpu", wgpu.module("wgpu"));
             fe_mod.linkSystemLibrary("wgpu_native", .{ .needed = true });
         }
 
         //- freetype
 
-        const freetype = b.lazyDependency("freetype", .{
+        if (b.lazyDependency("freetype", .{
             .target = target,
             .optimize = optimize,
-        });
-        if (freetype) |m| {
-            fe_mod.addImport("freetype", m.module("freetype"));
-            fe_mod.linkLibrary(m.artifact("freetype"));
+        })) |freetype| {
+            fe_mod.addImport("freetype", freetype.module("freetype"));
+            fe_mod.linkLibrary(freetype.artifact("freetype"));
         }
 
         //- harfbuzz
 
+        // @TODO: maybe use ghostty/pkg/harfbuzz
         fe_mod.addSystemIncludePath(b.path("harfbuzz"));
         fe_mod.linkSystemLibrary("harfbuzz", .{ .needed = true });
+
+        //- fontconfig
+
+        if (b.lazyDependency("fontconfig", .{
+            .target = target,
+            .optimize = optimize,
+        })) |fontconfig| {
+            fe_mod.addImport("fontconfig", fontconfig.module("fontconfig"));
+            fe_mod.linkSystemLibrary("fontconfig", .{ .needed = true });
+        }
     }
 
     fe_mod.addImport("cu", cu_mod);

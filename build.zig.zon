@@ -21,6 +21,10 @@
             .path = "./pkg/freetype",
             .lazy = true,
         },
+        .fontconfig = .{
+            .path = "./pkg/fontconfig/",
+            .lazy = true,
+        },
         .wgpu_native = .{
             // .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.1.0.tar.gz",
             // .hash = "wgpu_native_zig-5.1.0-B9jeDPmZAgAqCtg1bpt30WiO4lATvvQ9xKGTwfT2mzb0",

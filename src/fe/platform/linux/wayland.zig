@@ -1,5 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const log = std.log.scoped(.@"platform.WaylandBackend");
+
+const fc = @import("fontconfig");
 
 const wl = @import("wayland/wayland.zig");
 const WgpuRenderer = @import("../../wgpu/WgpuRenderer.zig");
@@ -11,9 +14,9 @@ const mt = cu.math;
 
 const platform = @import("../platform.zig");
 
-pub const WaylandBackend = struct {
-    const log = std.log.scoped(.@"platform.WaylandBackend");
+const font_resolution = @import("font_resolution.zig");
 
+pub const WaylandBackend = struct {
     pub const Window = WaylandWindow;
     pub const WindowId = wl.WindowId;
 
@@ -32,12 +35,23 @@ pub const WaylandBackend = struct {
     pub fn init(gpa: Allocator) !*WaylandBackend {
         const conn = try wl.Connection.init(gpa);
 
-        const font_manager = try WgpuRenderer.FontManager.init(gpa);
-        const def_font_path = try getFontFromFamilyName(gpa, "sans");
-        defer gpa.free(def_font_path);
-        const mono_font_path = try getFontFromFamilyName(gpa, "mono");
-        defer gpa.free(mono_font_path);
+        //- get font paths
+        if (!fc.init()) return error.fc;
 
+        var tmp_arena_alloc = std.heap.ArenaAllocator.init(gpa);
+        defer tmp_arena_alloc.deinit();
+        const tmp_arena = tmp_arena_alloc.allocator();
+
+        const def_fonts =
+            try font_resolution.resolveFontList(tmp_arena, .{ .family = .sans });
+        const mono_fonts =
+            try font_resolution.resolveFontList(tmp_arena, .{ .family = .mono });
+
+        const def_font_path = def_fonts[0].path;
+        const mono_font_path = mono_fonts[0].path;
+
+        //- setup font map
+        const font_manager = try WgpuRenderer.FontManager.init(gpa);
         const font_face_map = try font_manager.makeFontFaceMap(
             gpa,
             .init(.{
@@ -49,6 +63,7 @@ pub const WaylandBackend = struct {
             .square(96),
         );
 
+        //- return
         const plat = try gpa.create(WaylandBackend);
         plat.* = .{
             .gpa = gpa,
@@ -72,6 +87,8 @@ pub const WaylandBackend = struct {
         self.conn.deinit(gpa);
 
         gpa.destroy(self);
+
+        fc.fini();
     }
 
     pub fn createWindow(
@@ -378,32 +395,6 @@ pub const WaylandWindow = struct {
         self.renderer.surface.present();
     }
 };
-
-//= get font helper
-
-fn getFontFromFamilyName(
-    gpa: Allocator,
-    font_family: [:0]const u8,
-) ![:0]const u8 {
-    const fc = @import("../../misc/fontconfig.zig");
-    try fc.init();
-    defer fc.deinit();
-
-    const pattern = try fc.Pattern.create();
-    defer pattern.destroy();
-    try pattern.addString(.family, font_family);
-    try pattern.addBool(.outline, .true);
-
-    const config = try fc.Config.getCurrent();
-    try config.substitute(pattern, .pattern);
-    fc.defaultSubstitute(pattern);
-
-    const match = try fc.fontMatch(config, pattern);
-    defer match.destroy();
-
-    const path = try match.getString(.file, 0);
-    return try gpa.dupeZ(u8, path);
-}
 
 //= cu pointer kind to wl cursor kind
 
