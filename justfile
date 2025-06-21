@@ -23,6 +23,10 @@ profile:
 debug: build
     gf2 ./zig-out/bin/fe
 
+memcheck: 
+    zig build -Dvalgrind=true
+    valgrind --tool=memcheck --leak-check=full ./zig-out/bin/fe
+
 nproc := `nproc --all`
 check:
     zig build --prominent-compile-errors -fincremental \

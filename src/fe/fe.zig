@@ -61,8 +61,8 @@ pub fn main() !void {
             .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
         };
     };
-    // if (is_debug and builtin.link_libc)
-    //     debug_allocator.backing_allocator = std.heap.c_allocator;
+    if (build_options.valgrind and builtin.link_libc)
+        debug_allocator.backing_allocator = std.heap.c_allocator;
     defer if (is_debug) {
         _ = debug_allocator.deinit();
     };

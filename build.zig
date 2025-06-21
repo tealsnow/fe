@@ -15,6 +15,13 @@ pub fn build(b: *std.Build) void {
             "Do not emit binaries (default: false)",
         ) orelse false;
 
+    const valgrind =
+        b.option(
+            bool,
+            "valgrind",
+            "Indicate that app will be run with valgrind (default: false)",
+        ) orelse false;
+
     const profile =
         b.option(
             bool,
@@ -225,6 +232,7 @@ pub fn build(b: *std.Build) void {
 
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
+    options.addOption(bool, "valgrind", valgrind);
     fe_mod.addOptions("build_options", options);
 
     //- test plugin
