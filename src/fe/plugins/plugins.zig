@@ -6,7 +6,7 @@ const tracy = @import("tracy");
 const wasm = @import("wasm.zig");
 const PluginSchema = @import("plugin-schema").PluginSchema;
 
-const logFn = @import("logFn.zig");
+const logFn = @import("../logFn.zig");
 
 const log = std.log.scoped(.plugins);
 
@@ -487,7 +487,7 @@ pub const PluginHost = struct {
         log.info("finding plugins", .{});
 
         const cwd = std.fs.cwd();
-        var plugins_dir = try cwd.openDir("zig-out/plugins", .{ .access_sub_paths = true, .iterate = true });
+        var plugins_dir = try cwd.openDir("zig-out/share/fe/plugins/", .{ .access_sub_paths = true, .iterate = true });
         defer plugins_dir.close();
         var plugin_dir_iter = plugins_dir.iterate();
         while (try plugin_dir_iter.next()) |entry| {

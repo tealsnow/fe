@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.@"fe.entry_point");
+const log_scope = .@"fe.entry_point";
+const log = std.log.scoped(log_scope);
 
 const tracy = @import("tracy");
 
@@ -13,16 +14,20 @@ const TestWindow = @import("app/TestWindow.zig");
 const PanelWindow = @import("app/PanelWindow.zig");
 const DebugWindow = @import("app/DebugWindow.zig");
 
+const plugins = @import("plugins/plugins.zig");
+
+//= entry point
 pub fn entryPoint(root_allocator: Allocator) !void {
-    // setup at the end before any defers are run
     //- tracy setup
+
+    // setup at the end before any defers are run
     var deinit_trace: tracy.ZoneContext = undefined;
     defer deinit_trace.end();
 
+    log.info("starting fe", .{});
+
     tracy.printAppInfo(App.APP_ID, .{});
     const init_trace = tracy.beginZone(@src(), .{ .name = "init" });
-
-    log.info("starting fe", .{});
 
     if (tracy.isConnected()) log.debug("tracing enabled", .{});
 
@@ -30,24 +35,25 @@ pub fn entryPoint(root_allocator: Allocator) !void {
     var tracing_allocator = tracy.TracingAllocator.init(root_allocator);
     const gpa = tracing_allocator.allocator();
 
-    // @FIXME: keep getting error about improper instrumentation in tracy:
-    //   a free event without a matching allocation
-    //   likely that the in wasm allocator is not being traced i.e.
-    //   an allocation in guest that is then freed in the host
-    // //- plugin test
-    // {
-    //     const plugin_test_trace =
-    //         tracy.beginZone(@src(), .{ .name = "plugin test" });
-    //     defer plugin_test_trace.end();
-    //
-    //     log.info("setting up plugins", .{});
-    //
-    //     const host = try plugins.PluginHost.init(gpa);
-    //     defer host.deinit(gpa);
-    //
-    //     const plugin = host.plugins[0];
-    //     try plugins.doTest(plugin);
-    // }
+    //- plugin test
+    {
+        const plugin_test_trace =
+            tracy.beginZone(@src(), .{ .name = "plugin test" });
+        defer plugin_test_trace.end();
+
+        log.info("setting up plugins", .{});
+
+        // @FIXME: keep getting error about improper instrumentation in tracy:
+        //   a free event without a matching allocation
+        //   likely that the in wasm allocator is not being traced i.e.
+        //   an allocation in guest that is then freed in the host
+        //   using non-tracing allocator for now
+        const host = try plugins.PluginHost.init(root_allocator);
+        defer host.deinit(root_allocator);
+
+        const plugin = host.plugins[0];
+        try plugins.doTest(plugin);
+    }
 
     //- app
     const app = try App.init(gpa);
