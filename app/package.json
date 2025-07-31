@@ -1,0 +1,49 @@
+{
+  "name": "fe",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "format": "prettier -w src/",
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "tauri": "tauri"
+  },
+  "license": "MPL-2.0",
+  "dependencies": {
+    "@atlaskit/pragmatic-drag-and-drop": "^1.7.4",
+    "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
+    "@tanstack/solid-router": "^1.129.8",
+    "@tauri-apps/api": "^2.7.0",
+    "@tauri-apps/plugin-shell": "^2.3.0",
+    "@thisbeyond/solid-dnd": "^0.7.5",
+    "caniuse-lite": "^1.0.30001727",
+    "clsx": "^2.1.1",
+    "color": "^5.0.0",
+    "css-filter-converter": "^1.0.110",
+    "effect": "^3.17.1",
+    "solid-js": "^1.9.7",
+    "solid-notifications": "^1.2.0",
+    "ts-pattern": "^5.8.0",
+    "uuid": "^11.1.0",
+    "zod": "^4.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@tauri-apps/cli": "^2.7.1",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "postcss-import": "^16.1.1",
+    "postcss-nesting": "^13.0.2",
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.6.14",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.5",
+    "vite-plugin-solid": "^2.11.7",
+    "vite-plugin-solid-svg": "^0.8.1"
+  }
+}

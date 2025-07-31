@@ -1,0 +1,454 @@
+:root {
+  /* General */
+  --sn-z-index: 9999;
+
+  --sn-color-default: var(--theme-background);
+
+  --sn-color-success: var(--theme-colors-green-base);
+  --sn-color-error: var(--theme-colors-red-base);
+  --sn-color-warning: var(--theme-colors-orange-base);
+  --sn-color-info: var(--theme-colors-blue-base);
+
+  --sn-color-success-bar: var(--theme-colors-green-border);
+  --sn-color-error-bar: var(--theme-colors-red-border);
+  --sn-color-warning-bar: var(--theme-colors-orange-border);
+  --sn-color-info-bar: var(--theme-colors-blue-border);
+
+  /* Toast Wrapper */
+  --sn-wrapper-max-width: 334px;
+  --sn-wrapper-min-width: 264px;
+  --sn-wrapper-transition-duration: 0.3s;
+
+  /* Toast */
+  --sn-toast-bg-color: var(--theme-background);
+  --sn-toast-text-color: var(--theme-text);
+  --sn-toast-gap: 16px;
+  --sn-toast-font-size: 0.875rem;
+  --sn-toast-line-height: 1.5;
+  --sn-toast-padding: 14px 16px 16px 16px;
+  --sn-toast-border-radius: 6px;
+  --sn-toast-box-shadow:
+    inset 0 0 0.5px 1px hsla(0, 0%, 100%, 0.075),
+    0 0 0 1px hsla(0, 0%, 0%, 0.05), 0 0.3px 0.4px hsla(0, 0%, 0%, 0.02),
+    0 0.9px 1.5px hsla(0, 0%, 0%, 0.045), 0 3.5px 6px hsla(0, 0%, 0%, 0.09);
+
+  /* Dismiss Button */
+  --sn-dismiss-btn-color: var(--theme-icon-base-stroke);
+  --sn-dismiss-btn-hover-color: var(--theme-icon-active-stroke);
+  --sn-dismiss-btn-size: 1.175rem;
+  --sn-dismiss-btn-border-radius: 0.25rem;
+  --sn-dismiss-btn-transition: color 0.3s;
+  --sn-dismiss-btn-margin: 1px -4px 0px auto;
+
+  /* Progress Bar */
+  --sn-progress-bar-height: 2px;
+  --sn-progress-bar-color: var(--theme-border);
+
+  /* Icon */
+  --sn-icon-size: 1.125rem;
+  --sn-icon-margin: 1px 0 0 0;
+  --sn-icon-stroke: var(--theme-icon-base-stroke);
+  --sn-icon-fill: var(--theme-icon-base-fill);
+}
+
+/* Toast Types */
+.sn-type-success {
+  --sn-icon-fill: var(--sn-color-success);
+  --sn-progress-bar-color: var(--sn-color-success-bar);
+}
+
+.sn-type-error {
+  --sn-icon-fill: var(--sn-color-error);
+  --sn-progress-bar-color: var(--sn-color-error-bar);
+}
+
+.sn-type-warning {
+  --sn-icon-fill: var(--sn-color-warning);
+  --sn-progress-bar-color: var(--sn-color-warning-bar);
+}
+
+.sn-type-info {
+  --sn-icon-fill: var(--sn-color-info);
+  --sn-progress-bar-color: var(--sn-color-info-bar);
+}
+
+/* General CSS */
+*[data-role="toast"] {
+  pointer-events: all;
+  position: absolute;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform, opacity, top, bottom, left, right;
+  transition-property: transform, opacity, top, bottom, left, right;
+}
+
+*[data-role="progress"] {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  pointer-events: none;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.sn-toaster {
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  overflow: hidden;
+  z-index: var(--sn-z-index);
+}
+
+.sn-toast-wrapper {
+  box-sizing: border-box;
+  z-index: var(--sn-z-index);
+  max-width: var(--sn-wrapper-max-width);
+  min-width: var(--sn-wrapper-min-width);
+  transition-duration: var(--sn-wrapper-transition-duration);
+
+  /* @FIXME: maybe a better theme color could be used here than text for the outline */
+  @apply outline-theme-text rounded-sm outline-0 focus:outline;
+}
+
+.sn-toast-wrapper:focus-visible,
+.sn-toast-wrapper[data-keyboard-focused] {
+  outline: solid 2px white;
+}
+
+.sn-toast {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  overflow-wrap: anywhere;
+  background-color: var(--sn-toast-bg-color);
+  border-radius: var(--sn-toast-border-radius);
+  font-size: var(--sn-toast-font-size);
+  line-height: var(--sn-toast-line-height);
+  gap: var(--sn-toast-gap);
+  color: var(--sn-toast-text-color);
+  padding: var(--sn-toast-padding);
+  box-shadow: var(--sn-toast-box-shadow);
+}
+
+.sn-dismiss-button {
+  display: inline-flex;
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: transparent;
+  margin: var(--sn-dismiss-btn-margin);
+  transition: var(--sn-dismiss-btn-transition);
+  height: var(--sn-dismiss-btn-size);
+  width: var(--sn-dismiss-btn-size);
+  border-radius: var(--sn-dismiss-btn-border-radius);
+  color: var(--sn-dismiss-btn-color);
+}
+
+.sn-dismiss-button:hover {
+  color: var(--sn-dismiss-btn-hover-color);
+}
+
+.sn-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  will-change: transform, width;
+  height: var(--sn-progress-bar-height);
+  background-color: var(--sn-progress-bar-color);
+}
+
+/* Checkmark, Cross, Warning, Info and Loading Icon */
+
+.sn-icon {
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: block;
+  stroke-width: 4;
+  stroke-miterlimit: 10;
+  box-shadow: inset 0px 0px 0px;
+  animation:
+    SNFill 0.4s ease-in-out 0.4s forwards,
+    SNScale 0.3s ease-in-out 0.9s both;
+  -webkit-animation:
+    SNFill 0.4s ease-in-out 0.4s forwards,
+    SNScale 0.3s ease-in-out 0.9s both;
+  width: var(--sn-icon-size);
+  height: var(--sn-icon-size);
+  margin: var(--sn-icon-margin);
+  stroke: var(--sn-icon-stroke);
+  color: var(--sn-icon-fill);
+  box-shadow: inset 0px 0px 0px 30px var(--sn-toast-bg-color);
+}
+
+.sn-icon circle {
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  stroke-width: 2;
+  stroke-miterlimit: 10;
+  fill: none;
+  animation: SNStroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+  -webkit-animation: SNStroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.sn-icon path {
+  transform-origin: 50% 50%;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  stroke-width: 6;
+  animation: SNStroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+  -webkit-animation: SNStroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+}
+
+.sn-icon-loading {
+  display: grid;
+  border-radius: 50%;
+
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    #0000 40%,
+    var(--theme-text) 41%
+  );
+  mask: radial-gradient(farthest-side, #0000 40%, var(--theme-text) 41%);
+  background:
+    linear-gradient(
+        0deg,
+        color-mix(in srgb, var(--theme-text) 80%, transparent) 50%,
+        var(--theme-text) 0
+      )
+      center/1.9px 100%,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--theme-text) 40%, transparent) 50%,
+        var(--theme-text) 0
+      )
+      center/100% 1.9px;
+  background-repeat: no-repeat;
+
+  box-shadow: none;
+  animation: SNRotate 1s infinite steps(12);
+}
+
+.sn-icon-loading::before,
+.sn-icon-loading::after {
+  content: "";
+  grid-area: 1/1;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.915;
+  transform: rotate(30deg);
+}
+
+.sn-icon-loading::after {
+  opacity: 0.83;
+  transform: rotate(60deg);
+}
+
+@keyframes SNRotate {
+  100% {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes SNStroke {
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes SNScale {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    -webkit-transform: scale3d(1.1, 1.1, 1);
+    transform: scale3d(1.1, 1.1, 1);
+  }
+}
+
+@keyframes SNFill {
+  100% {
+    box-shadow: inset 0px 0px 0px 30px currentColor;
+  }
+}
+
+/* Presence Animations */
+.sn-state-right-top-entering,
+.sn-state-right-bottom-entering {
+  -webkit-animation: SNSlideInRight 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideInRight 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-right-top-exiting,
+.sn-state-right-bottom-exiting {
+  -webkit-animation: SNSlideOutRight 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideOutRight 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-left-top-entering,
+.sn-state-left-bottom-entering {
+  -webkit-animation: SNSlideInLeft 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideInLeft 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-left-top-exiting,
+.sn-state-left-bottom-exiting {
+  -webkit-animation: SNSlideOutLeft 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideOutLeft 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-center-top-entering {
+  -webkit-animation: SNSlideInTop 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideInTop 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-center-top-exiting {
+  -webkit-animation: SNSlideOutTop 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideOutTop 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-center-bottom-entering {
+  -webkit-animation: SNSlideInBottom 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideInBottom 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.sn-state-center-bottom-exiting {
+  -webkit-animation: SNSlideOutBottom 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  animation: SNSlideOutBottom 0.3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+@keyframes SNSlideInRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(120%, 0, 0);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(-3px, 0, 0);
+  }
+  90% {
+    transform: translate3d(3px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes SNSlideOutRight {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(-3px, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(80%, 0, 0);
+  }
+}
+
+@keyframes SNSlideInLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-120%, 0, 0);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(3px, 0, 0);
+  }
+  90% {
+    transform: translate3d(-3px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes SNSlideOutLeft {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(3px, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-80%, 0, 0);
+  }
+}
+
+@keyframes SNSlideInTop {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -120%, 0) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, 2px, 0);
+  }
+  90% {
+    transform: translate3d(0, -2px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes SNSlideOutTop {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(0, 3px, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -80%, 0) scale(0.6);
+  }
+}
+
+@keyframes SNSlideInBottom {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 120%, 0) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0);
+  }
+  90% {
+    transform: translate3d(0, 2px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes SNSlideOutBottom {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(0, -3px, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 80%, 0) scale(0.9);
+  }
+}

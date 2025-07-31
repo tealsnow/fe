@@ -1,0 +1,14 @@
+{
+  "name": "generate_asset_types",
+  "type": "module",
+  "main": "./generate_asset_types.ts",
+  "scripts": {
+    "generate": "bun run ./generate_asset_types.ts"
+  },
+  "dependencies": {
+    "ts-morph": "^26.0.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.2.19"
+  }
+}

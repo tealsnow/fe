@@ -1,0 +1,11 @@
+{
+  "name": "fe",
+  "version": "0.0.1",
+  "workspaces": [
+    "app",
+    "scripts/*"
+  ],
+  "trustedDependencies": [
+    "@tailwindcss/oxide"
+  ]
+}
