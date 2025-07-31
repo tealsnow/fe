@@ -83,14 +83,14 @@ const Piece = (props: PieceProps) => {
   });
 
   return (
-    <div ref={ref}>
-      <Icon
-        kind={pieceIconLookup[props.type]}
-        class={clsx(
-          "h-[45px] w-[45px] rounded-md p-1 hover:bg-gray-600",
-          dragging() && "opacity-50",
-        )}
-      />
+    <div
+      ref={ref}
+      class={clsx(
+        "h-[45px] w-[45px] rounded-md p-1 hover:bg-gray-600",
+        dragging() && "opacity-50",
+      )}
+    >
+      <Icon kind={pieceIconLookup[props.type]} />
     </div>
   );
 };

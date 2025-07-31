@@ -87,7 +87,7 @@ const RenderItem = (props: { item: StatusBarItem }) => {
       </Match>
       <Match when={props.item.kind === "button"}>
         <button
-          class="hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill rounded-sm p-0.5"
+          class="hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill cursor-pointer rounded-sm p-0.5"
           onClick={() => {
             props.item.onClick?.call({});
           }}

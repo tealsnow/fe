@@ -143,7 +143,7 @@ const Titlebar = (props: TitlebarProps) => {
         </DragDropProvider>
 
         <div
-          class="hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill ml-2 rounded-sm p-1"
+          class="hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill ml-2 cursor-pointer rounded-sm p-1"
           onClick={() => props.onNewClick()}
         >
           <Icon kind="add" class="size-4" />
@@ -244,7 +244,7 @@ const WorkspaceTabHandleImpl = (props: WorkspaceTabHandleImplProps) => {
 
       <div // Close icon
         class={clsx(
-          "hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill rounded-xl p-1 opacity-0 group-hover:opacity-100",
+          "hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill cursor-pointer rounded-xl p-1 opacity-0 group-hover:opacity-100",
           props.active && "opacity-100",
         )}
         onClick={(event) => {

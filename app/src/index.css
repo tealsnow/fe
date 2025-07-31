@@ -5,12 +5,7 @@
 
 @layer base {
   :root {
-    /* @apply bg-bg-0 text-fg-0 cursor-default text-base leading-4 font-normal select-none; */
-    @apply bg-theme-background text-theme-text cursor-default leading-4 font-normal select-none;
-
-    /* fill: red;
-    @apply fill-red; */
-    /* font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; -webkit-text-size-adjust: 100%; */
+    @apply cursor-default leading-4 font-normal select-none;
   }
 
   a {
@@ -19,18 +14,15 @@
 }
 
 @utility interaction-primary {
-  /* @apply bg-bg-1 text-fg-1 focus:border-fg-1 min-w-20 rounded-sm border border-solid border-transparent p-0.5 px-1 text-sm font-medium shadow-md transition outline-none hover:shadow-lg focus:ring-0; */
-
+  /* @TODO: use better colors for these */
   @apply bg-theme-background text-theme-text focus:border-theme-border min-w-20 rounded-sm border border-solid border-transparent p-0.5 px-1 text-sm font-medium shadow-md transition outline-none hover:shadow-lg focus:ring-0;
 }
 
 @utility btn-primary {
-  /* @apply interaction-primary bg-bg-2 hover:border-fg-1 active:bg-bg-3 cursor-pointer; */
   @apply interaction-primary hover:border-theme-border cursor-pointer;
 }
 
 @utility btn-secondary {
-  /* @apply interaction-primary bg-bg-1 hover:border-fg-1 active:bg-bg-2 cursor-pointer; */
   @apply interaction-primary;
 }
 

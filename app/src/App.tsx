@@ -3,7 +3,8 @@ import { createStore } from "solid-js/store";
 import { Icon, iconKinds } from "./assets/icons";
 import { NotificationProvider, notify, notifyPromise } from "./notifications";
 import StatusBar, { statusBar } from "./StatusBar";
-import * as theming from "./theme";
+import * as theming from "./Theme";
+import ThemeProvider from "./ThemeProvider";
 import Titlebar from "./Titlebar";
 import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "./Workspace";
 
@@ -11,14 +12,20 @@ import DND from "./dnd_tut";
 import Panels from "./panels";
 
 const App = () => {
+  // @FIXME: This applies the theme globally - setting the css vars on the
+  //  document globally. This is mostly just for the toasts, since they
+  //  are built with normal css.
+  //  If that changes to use inline styles and/or tailwind we can remove this
   theming.applyTheme(theming.defaultTheme);
 
   return (
-    <div class="flex h-screen w-screen flex-col overflow-hidden">
+    <ThemeProvider theme={theming.defaultTheme}>
       <NotificationProvider>
-        <Root />
+        <div class="bg-theme-background text-theme-text flex h-screen w-screen flex-col overflow-hidden">
+          <Root />
+        </div>
       </NotificationProvider>
-    </div>
+    </ThemeProvider>
   );
 };
 

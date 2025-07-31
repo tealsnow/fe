@@ -50,6 +50,7 @@ export const ThemeSchema = z.object({
 });
 
 export type Theme = z.infer<typeof ThemeSchema>;
+export default Theme;
 export type ThemeIconTuple = z.infer<typeof ThemeIconTupleSchema>;
 export type ThemeColorTuple = z.infer<typeof ThemeColorTupleSchema>;
 export type ThemeColors = z.infer<typeof ThemeColorsSchema>;
@@ -205,6 +206,15 @@ export const applyTheme = (theme: Theme) => {
     const value: string = path.reduce((acc, key) => acc[key], theme);
     document.documentElement.style.setProperty(cssVarName, value);
   });
+};
+
+export const themeCssStyles = (theme: Theme) => {
+  return themeDescFlat
+    .map((path) => {
+      const value = path.reduce((acc, key) => (acc as any)[key], theme);
+      return `--theme-${path.join("-")}: ${value};`;
+    })
+    .join(" ");
 };
 
 const themeDescriptionCssVarNames = () =>
