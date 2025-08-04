@@ -1,10 +1,10 @@
-import { JSX } from "solid-js/h/jsx-runtime";
+import { Component } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 
 export type Workspace = {
   uuid: string;
   title: string;
-  render: () => JSX.Element;
+  render: Component;
 };
 
 export type WorkspaceState = {
@@ -14,7 +14,7 @@ export type WorkspaceState = {
 
 export const mkWorkspace = (props: {
   title: string;
-  render: () => JSX.Element;
+  render: Component;
 }): Workspace => {
   return {
     uuid: uuidv4(),

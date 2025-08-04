@@ -7,7 +7,7 @@ export * from "./generated/icons";
 export type IconComponent = Component<JSX.SvgSVGAttributes<SVGElement>>;
 export type Icons = { [key: string]: IconComponent };
 
-let icons: Icons = flattenArrayOfObjects(
+const icons: Icons = flattenArrayOfObjects(
   Object.entries(
     import.meta.glob("./icons/*.svg", {
       query: "?component-solid",
@@ -29,7 +29,7 @@ export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
 
 export const Icon = (props: IconProps) => {
   let klass = `stroke-theme-icon-base-stroke fill-theme-icon-base-fill ${props.class}`;
-  if (!!props.noDefaultStyles) klass = props.class ? props.class : "";
+  if (props.noDefaultStyles) klass = props.class ? props.class : "";
   const I = icons[props.kind];
   return <I {...props} class={klass} />;
 };

@@ -1,6 +1,15 @@
-import { createRoot, For, Match, onMount, Switch } from "solid-js";
+import {
+  createRoot,
+  createSignal,
+  For,
+  Index,
+  Match,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js";
 import { createStore } from "solid-js/store";
-import { Icon, iconKinds } from "./assets/icons";
+import { Icon, IconKind, iconKinds } from "./assets/icons";
 import { NotificationProvider, notify, notifyPromise } from "./notifications";
 import StatusBar, { statusBar } from "./StatusBar";
 import * as theming from "./Theme";
@@ -10,6 +19,7 @@ import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "./Workspace";
 
 import DND from "./dnd_tut";
 import Panels from "./panels";
+import Panels2 from "./panels2";
 
 const App = () => {
   // @FIXME: This applies the theme globally - setting the css vars on the
@@ -21,7 +31,10 @@ const App = () => {
   return (
     <ThemeProvider theme={theming.defaultTheme}>
       <NotificationProvider>
-        <div class="bg-theme-background text-theme-text flex h-screen w-screen flex-col overflow-hidden">
+        <div
+          class="bg-theme-background text-theme-text flex h-screen w-screen
+            flex-col overflow-hidden"
+        >
           <Root />
         </div>
       </NotificationProvider>
@@ -30,43 +43,62 @@ const App = () => {
 };
 
 const Root = () => {
+  const [showNoise, setShowNoise] = createSignal(true);
+
   onMount(() => {
-    const item = statusBar.createItem({
+    const bell = statusBar.createItem({
       id: "fe.notifications",
       alignment: "right",
       kind: "button",
     });
-    item.content = () => <Icon kind="bell" class="size-4" />;
-    item.onClick = () => {
+    bell.content = () => <Icon kind="bell" class="size-4" />;
+    bell.onClick = () => {
       notify("yo ho ho");
+    };
+
+    const showNoiseBtn = statusBar.createItem({
+      id: "fe.showNoise",
+      alignment: "left",
+      kind: "button",
+    });
+    showNoiseBtn.content = () => {
+      const kind: IconKind = showNoise() ? "window_restore" : "window_maximize";
+      return <Icon kind={kind} class="size-4" />;
+    };
+    showNoiseBtn.onClick = () => {
+      setShowNoise((b) => !b);
     };
   });
 
   const [workspaceState, setWorkspaceState] = createStore<WorkspaceState>({
     workspaces: [
       mkWorkspace({
-        title: "Theme Showcase",
-        render: () => ThemeShowcase,
+        title: "panels2",
+        render: Panels2,
       }),
       mkWorkspace({
         title: "panels",
-        render: () => Panels,
+        render: Panels,
+      }),
+      mkWorkspace({
+        title: "Theme Showcase",
+        render: ThemeShowcase,
       }),
       mkWorkspace({
         title: "Dnd2",
-        render: () => DND,
+        render: DND,
       }),
       mkWorkspace({
         title: "Notifications",
-        render: () => Notifications,
+        render: Notifications,
       }),
       mkWorkspace({
         title: "Icons",
-        render: () => Icons,
+        render: Icons,
       }),
       mkWorkspace({
         title: "Stores",
-        render: () => Stores,
+        render: Stores,
       }),
     ],
     activeIndex: 0,
@@ -74,6 +106,51 @@ const Root = () => {
 
   return (
     <>
+      <Show when={showNoise()}>
+        <svg
+          class="w-full h-full absolute inset-0 pointer-events-none"
+          style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
+        >
+          <filter id="noiseFilter" x={0} y={0} width="100%" height="100%">
+            <feTurbulence
+              type="fractalNoise"
+              // type="turbulence"
+              baseFrequency="0.32"
+              numOctaves={2}
+              stitchTiles="stitch"
+              result="turbulence"
+            />
+            <feComponentTransfer in="turbulence" result="darken">
+              <feFuncR type="linear" slope="0.8" intercept="0" />
+              <feFuncG type="linear" slope="0.8" intercept="0" />
+              <feFuncB type="linear" slope="0.8" intercept="0" />
+            </feComponentTransfer>
+            <feDisplacementMap
+              in="sourceGraphic"
+              in2="darken"
+              scale={25}
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="displacement"
+            />
+            <feBlend
+              mode="multiply"
+              in="sourceGraphic"
+              in2="displacement"
+              result="multiply"
+            />
+            <feColorMatrix in="multiply" type="saturate" values="0" />
+          </filter>
+
+          <rect
+            width="100%"
+            height="100%"
+            filter="url(#noiseFilter)"
+            fill="transparent"
+          />
+        </svg>
+      </Show>
+
       <Titlebar
         workspaces={workspaceState.workspaces}
         activeIndex={workspaceState.activeIndex}
@@ -120,10 +197,7 @@ const Root = () => {
             {(workspace, index) => {
               return (
                 <Match when={workspaceState.activeIndex === index()}>
-                  <div data-index={index()}>
-                    {/* @ts-ignore: not sure what is complaining about, but all is working */}
-                    {workspace.render()}
-                  </div>
+                  {workspace.render({})}
                 </Match>
               );
             }}
@@ -221,7 +295,7 @@ const Notifications = () => {
         onClick={() => {
           const succeedOrFail = new Promise<void>((resolve, reject) => {
             setTimeout(() => {
-              Math.random() > 0.5 ? resolve() : reject();
+              const _ = Math.random() > 0.5 ? resolve() : reject();
             }, 2000);
           });
           notifyPromise(succeedOrFail, {
@@ -300,20 +374,23 @@ const Stores = () => {
 const Icons = () => {
   return (
     <div class="flex flex-row flex-wrap justify-evenly text-center">
-      <For each={iconKinds}>
+      <Index each={iconKinds}>
         {(kind) => {
           return (
-            <div class="m-1 flex-grow flex-col content-center items-center justify-center rounded-sm p-2 text-xs shadow-md">
-              {kind}
+            <div
+              class="m-1 flex-grow flex-col content-center items-center
+                justify-center rounded-sm p-2 text-xs shadow-md"
+            >
+              {kind()}
               <Icon
-                kind={kind}
-                noDefaultStyles={kind === "fe"}
+                kind={kind()}
+                noDefaultStyles={kind() === "fe"}
                 class="size-10"
               />
             </div>
           );
         }}
-      </For>
+      </Index>
     </div>
   );
 };
@@ -321,65 +398,55 @@ const Icons = () => {
 const Colors = () => {
   return (
     <div class="flex flex-row justify-evenly text-center">
-      <For
-        each={[
-          "red",
-          "orange",
-          "yellow",
-          "green",
-          "aqua",
-          "blue",
-          "purple",
-          "pink",
-        ]}
-      >
-        {(color, index) => {
+      <Index each={theming.colors}>
+        {(color) => {
           return (
             <div
-              data-index={index()}
-              class="m-1 flex size-16 flex-grow flex-row content-center items-center justify-center gap-2 border-2 shadow-md"
+              class="m-1 flex size-16 flex-grow flex-row content-center
+                items-center justify-center gap-2 border-2 shadow-md"
               style={{
-                background: `var(--theme-colors-${color}-background)`,
-                "border-color": `var(--theme-colors-${color}-border)`,
+                background: `var(--theme-colors-${color()}-background)`,
+                "border-color": `var(--theme-colors-${color()}-border)`,
               }}
             >
               <div
                 class="size-5 border-2"
                 style={{
-                  background: `var(--theme-colors-${color}-base)`,
-                  "border-color": `var(--theme-colors-${color}-border)`,
+                  background: `var(--theme-colors-${color()}-base)`,
+                  "border-color": `var(--theme-colors-${color()}-border)`,
                 }}
               ></div>
-              {color}
+              {color()}
             </div>
           );
         }}
-      </For>
+      </Index>
     </div>
   );
 };
 
 const ThemeShowcase = () => {
-  const flat = theming.themeDescFlat;
-
   return (
     <div class="flex-col">
       <Colors />
-      <For each={flat}>
+      <Index each={theming.themeDescFlat}>
         {(item) => {
           return (
-            <div class="m-1 flex flex-row items-center gap-2 border border-black p-1">
+            <div
+              class="m-1 flex flex-row items-center gap-2 border border-black
+                p-1"
+            >
               <div
                 class="size-6 border border-black"
                 style={{
-                  background: `var(--theme-${item.join("-")})`,
+                  background: `var(--theme-${item().join("-")})`,
                 }}
               ></div>
-              <p class="font-mono">{item.join("-")}</p>
+              <p class="font-mono">{item().join("-")}</p>
             </div>
           );
         }}
-      </For>
+      </Index>
     </div>
   );
 };

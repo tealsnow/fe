@@ -6,11 +6,40 @@
 @layer base {
   :root {
     @apply cursor-default leading-4 font-normal select-none;
+
+    @-moz-document url-prefix() {
+      scrollbar-color: var(--theme-text) transparent;
+    }
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-theme-text/50;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-theme-text;
   }
 
   a {
     /* @apply text-blue font-medium decoration-inherit select-text hover:underline; */
   }
+}
+
+input {
+  @apply ring-theme-colors-blue-base;
+}
+
+input[type="text"] {
+  @apply bg-theme-background border-2 border-theme-border ring-theme-colors-blue-base p-1;
+}
+
+@utility no-scrollbar {
+  @apply [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
 }
 
 @utility interaction-primary {

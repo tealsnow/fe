@@ -13,36 +13,10 @@ export const flattenArrayOfObjects = function <
   return array.reduce<Output>((acc, obj) => ({ ...acc, ...obj }), {} as Output);
 };
 
-declare global {
-  interface Array<T> {
-    flatten<
-      InputValue,
-      OutputValue,
-      Input extends Record<keyof any, InputValue>,
-      Output extends Record<keyof any, OutputValue>,
-    >(
-      this: Input[],
-    ): Output;
-  }
-}
-
-/**
- * Flatten an array of objects into a single object.
- * e.g. `[{ a: 1 }, { b: 2 }]` => `{ a: 1, b: 2 }`
- */
-Array.prototype.flatten = function <
-  InputValue,
-  OutputValue,
-  Input extends Record<keyof any, InputValue> | {},
-  Output extends Record<keyof any, OutputValue> | {},
->(this: Input[]): Output {
-  return flattenArrayOfObjects(this);
-};
-
 /**
  * Flatten a generic object into a list of leaf paths,
  * e.g. `{ foo: { bar: {}, baz: { a: {}, b: {} }, }, quux: {} }`
- * becomes [["foo", "bar"], ["foo", "baz", "a"], ["foo", "bar", "b"] ["quux"]]
+ * becomes [["foo", "bar"], ["foo", "baz", "a"], ["foo", "baz", "b"] ["quux"]]
  */
 export const flattenObjectToPaths = (
   obj: Record<string, any>,

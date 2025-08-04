@@ -1,7 +1,28 @@
-import { flattenZodSchemaPaths } from "./flatten";
+import { flattenArrayOfObjects, flattenZodSchemaPaths } from "./flatten";
 import { DeepPartial } from "./type_helpers";
 import Color from "color";
 import * as z from "zod";
+
+export type ColorKind =
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "aqua"
+  | "blue"
+  | "purple"
+  | "pink";
+
+export const colors = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "aqua",
+  "blue",
+  "purple",
+  "pink",
+];
 
 export const ThemeIconTupleSchema = z.object({
   stroke: z.string(),
@@ -202,8 +223,9 @@ export const defaultTheme = themeFromBase16(
 export const applyTheme = (theme: Theme) => {
   themeDescFlat.map((path) => {
     const cssVarName = `--theme-${path.join("-")}`;
-    // @ts-ignore: it works
-    const value: string = path.reduce((acc, key) => acc[key], theme);
+    // @HACK: typing escape hatch here, it does make sense if you read it
+    //   and it works, so bonus points for that
+    const value = path.reduce((acc: any, key) => acc[key], theme) as string;
     document.documentElement.style.setProperty(cssVarName, value);
   });
 };
@@ -224,5 +246,5 @@ const themeDescriptionCssVarNames = () =>
   });
 
 export const tailwindColorsConfig = () => {
-  return themeDescriptionCssVarNames().flatten();
+  return flattenArrayOfObjects(themeDescriptionCssVarNames());
 };

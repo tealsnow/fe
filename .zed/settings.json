@@ -12,5 +12,6 @@
       }
     }
   },
-  "preferred_line_length": 80
+  "preferred_line_length": 80,
+  "format_on_save": "prettier"
 }

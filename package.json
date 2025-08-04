@@ -7,5 +7,9 @@
   ],
   "trustedDependencies": [
     "@tailwindcss/oxide"
-  ]
+  ],
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3"
+  }
 }

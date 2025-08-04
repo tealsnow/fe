@@ -71,13 +71,11 @@ const project = new morph.Project({
   skipAddingFilesFromTsConfig: true,
 });
 
-const file = project.createSourceFile(
-  path.join(dir_app_assets_generated, "icons.ts"),
-  "",
-  {
-    overwrite: true,
-  },
-);
+const file_path = path.join(dir_app_assets_generated, "icons.ts");
+
+const file = project.createSourceFile(file_path, "", {
+  overwrite: true,
+});
 
 file.addTypeAlias({
   name: "IconKind",
@@ -97,3 +95,4 @@ file.addVariableStatement({
 });
 
 file.saveSync();
+console.log(`wrote file: ${file_path}`);
