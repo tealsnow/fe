@@ -36,7 +36,7 @@ export const pieceIconLookup: {
 };
 
 export const pieceLookup: {
-  [Key in PieceType]: DrawPeice;
+  [Key in PieceType]: DrawPiece;
 } = {
   king: (props: SinglePieceProps) => <King location={props.location} />,
   pawn: (props: SinglePieceProps) => <Pawn location={props.location} />,
@@ -95,7 +95,7 @@ const Piece = (props: PieceProps) => {
   );
 };
 
-type DrawPeice = Component<SinglePieceProps>;
+type DrawPiece = Component<SinglePieceProps>;
 
 const King = (props: SinglePieceProps) => {
   return <Piece type="king" location={props.location} />;

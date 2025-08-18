@@ -38,7 +38,7 @@ type NarrowedWindow = {
   close: () => Promise<void>;
 };
 
-// @TODO: when there is overflow scroll to the apropriate tab when focused
+// @TODO: when there is overflow scroll to the appropriate tab when focused
 const Titlebar = (props: TitlebarProps) => {
   let win: NarrowedWindow | null = null;
   try {

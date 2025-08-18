@@ -20,7 +20,7 @@ export type EnumMap<U extends string, T> = {
 };
 
 /**
- * Acts like [`Partial`] but does so recursivly
+ * Acts like [`Partial`] but does so recursively
  */
 export type DeepPartial<T> = T extends object
   ? {

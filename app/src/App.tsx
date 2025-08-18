@@ -314,8 +314,8 @@ const Notifications = () => {
 const personStore = createRoot(() =>
   createStore({
     name: {
-      first: "brandon",
-      last: "sanderson",
+      first: "Brandon",
+      last: "Sanderson",
     },
     age: 45,
     books: [

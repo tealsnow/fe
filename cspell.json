@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "ignorePaths": ["node_modules"],
+  "words": [
+    "Titlebar",
+    "notif",
+    "clsx",
+    "uuidv",
+    "Checkmark",
+    "const iface",
+    "iface",
+    "hexa",
+    "Invisibles",
+    "gruvbox",
+    "thisbeyond",
+    "tauri",
+    "nowrap",
+    "klass",
+    "globaly",
+    "direnv"
+  ]
+}

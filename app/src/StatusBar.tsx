@@ -41,7 +41,7 @@ export const statusBar: StatusBarInterface = {
   createItem: (props: StatusBarProps): StatusBarItem => {
     // @NOTE: This is to avoid duplication during dev/hmr
     //   if an item need to be re-inserted, i.e. changes side,
-    //   a full refreash is required
+    //   a full refresh is required
     const existing = itemsStore.val[props.alignment][props.id];
     if (existing) return existing;
 
