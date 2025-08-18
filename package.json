@@ -2,8 +2,7 @@
   "name": "fe",
   "version": "0.0.1",
   "workspaces": [
-    "app",
-    "scripts/*"
+    "app"
   ],
   "trustedDependencies": [
     "@tailwindcss/oxide"

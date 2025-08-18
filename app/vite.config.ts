@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import solidSvg from "vite-plugin-solid-svg";
+import generateAssetTypesPlugin from "./plugins/generate_asset_types";
 
-// @ts-expect-error process is a nodejs global
+// @//ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
@@ -12,6 +13,7 @@ export default defineConfig(async () => ({
     solidSvg({
       defaultAsComponent: true,
     }),
+    generateAssetTypesPlugin(),
   ],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
