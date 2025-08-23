@@ -19,7 +19,9 @@ import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "./Workspace";
 
 import DND from "./dnd_tut";
 import Panels from "./panels";
-import Panels2 from "./panels2";
+import Panels2 from "./panels2/panels2";
+import Panels3 from "./panels3/panels3";
+import Panels4 from "./panels4/panels4";
 
 const App = () => {
   // @FIXME: This applies the theme globally - setting the css vars on the
@@ -72,6 +74,14 @@ const Root = () => {
 
   const [workspaceState, setWorkspaceState] = createStore<WorkspaceState>({
     workspaces: [
+      // mkWorkspace({
+      //   title: "panels4",
+      //   render: Panels4,
+      // }),
+      mkWorkspace({
+        title: "panels3",
+        render: Panels3,
+      }),
       mkWorkspace({
         title: "panels2",
         render: Panels2,
@@ -311,25 +321,29 @@ const Notifications = () => {
   );
 };
 
-const personStore = createRoot(() =>
-  createStore({
-    name: {
-      first: "Brandon",
-      last: "Sanderson",
-    },
-    age: 45,
-    books: [
-      { title: "The Final Empire", series: "Mistborn", kind: "Novel" },
-      { title: "Oathbringer", series: "Stormlight", kind: "Novel" },
-      { title: "Secret History", series: "Mistborn", kind: "Novela" },
-    ],
-  }),
+const personStore = createRoot(
+  () =>
+    // cspell:disable
+    createStore({
+      name: {
+        first: "Brandon",
+        last: "Sanderson",
+      },
+      age: 45,
+      books: [
+        { title: "The Final Empire", series: "Mistborn", kind: "Novel" },
+        { title: "Oathbringer", series: "Stormlight", kind: "Novel" },
+        { title: "Secret History", series: "Mistborn", kind: "Novela" },
+      ],
+    }),
+  // cspell:enable
 );
 
 const Stores = () => {
   const [person, setPerson] = personStore;
 
-  const addMistbornPrefixes = () => {
+  // cspell:disable
+  const addPrefixes = () => {
     setPerson(
       "books",
       (b) => b.series == "Mistborn",
@@ -337,6 +351,7 @@ const Stores = () => {
       (old) => `Mistborn: ${old}`,
     );
   };
+  // cspell:enable
 
   return (
     <div class="flex flex-col gap-3">
@@ -355,7 +370,7 @@ const Stores = () => {
         )}
       </For>
 
-      <button class="btn-primary" onClick={addMistbornPrefixes}>
+      <button class="btn-primary" onClick={addPrefixes}>
         update books
       </button>
 

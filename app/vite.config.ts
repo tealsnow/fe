@@ -1,9 +1,14 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
+
+import path from "node:path";
+
 import solid from "vite-plugin-solid";
 import solidSvg from "vite-plugin-solid-svg";
 import generateAssetTypesPlugin from "./plugins/generate_asset_types";
+import tailwindcss from "@tailwindcss/vite";
 
-// @//ts-expect-error process is a nodejs global
+// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
@@ -14,7 +19,14 @@ export default defineConfig(async () => ({
       defaultAsComponent: true,
     }),
     generateAssetTypesPlugin(),
+    tailwindcss(),
   ],
+
+  resolve: {
+    alias: {
+      "~": path.resolve(__dirname, "src"),
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -35,6 +47,18 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+  },
+  test: {
+    globals: true,
+    // environment: 'jsdom',
+    // setupFiles: "./test/setup.ts",
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    disableConsoleIntercept: false,
+    chaiConfig: {
+      truncateThreshold: 0,
+      showDiff: true,
+      includeStack: true,
     },
   },
 }));

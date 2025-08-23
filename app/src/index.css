@@ -30,13 +30,13 @@
   }
 }
 
-input {
+/*input {
   @apply ring-theme-colors-blue-base;
 }
 
 input[type="text"] {
   @apply bg-theme-background border-2 border-theme-border ring-theme-colors-blue-base p-1;
-}
+}*/
 
 @utility no-scrollbar {
   @apply [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
