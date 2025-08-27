@@ -17,6 +17,7 @@
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.4",
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
     "@solid-primitives/destructure": "^0.2.2",
+    "@tanstack/solid-table": "^8.21.3",
     "@tauri-apps/api": "^2.7.0",
     "@tauri-apps/plugin-shell": "^2.3.0",
     "@thisbeyond/solid-dnd": "^0.7.5",

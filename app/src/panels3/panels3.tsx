@@ -10,40 +10,42 @@ import { createStore } from "solid-js/store";
 import { notify } from "../notifications";
 import { createSignal, onMount, Show } from "solid-js";
 import Inspector from "./Inspector";
-import clsx from "clsx";
+import { cn } from "~/lib/cn";
+
+import { App as Table } from "./table_test";
 
 const Panels3 = () => {
-  const treeStore = storeObjectProduceFromStore(
-    createStore<Panel.PanelTreeData>(Panel.createTree.pipe(Effect.runSync)),
+  const [tree, setTree] = createStore<Panel.PanelTree>(
+    Panel.createTree.pipe(Effect.runSync),
   );
 
   const [selectedId, setSelectedId] = createSignal<
     Option.Option<Panel.PanelId>
-  >(Option.some(treeStore.value.root));
+  >(Option.some(tree.root));
 
   const [showExplorer, setShowExplorer] = createSignal(true);
 
   onMount(() => {
     // console.log("Running Panel3 OnMount\n\n\n\n");
     Effect.gen(function* () {
-      const root = treeStore.value.root;
+      const root = tree.root;
 
-      const a = yield* Panel.createPanel(treeStore, {
+      const a = yield* Panel.createPanel(setTree, {
         dbgName: "a",
         layout: "vertical",
       });
-      const b = yield* Panel.createPanel(treeStore, { dbgName: "b" });
-      const c = yield* Panel.createPanel(treeStore, { dbgName: "c" });
-      const d = yield* Panel.createPanel(treeStore, {
+      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
+      const c = yield* Panel.createPanel(setTree, { dbgName: "c" });
+      const d = yield* Panel.createPanel(setTree, {
         dbgName: "d",
         layout: "vertical",
       });
 
-      yield* Panel.addChild(treeStore, { parentId: root, newChildId: a });
-      yield* Panel.addChild(treeStore, { parentId: root, newChildId: d });
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: d });
 
-      yield* Panel.addChild(treeStore, { parentId: a, newChildId: b });
-      yield* Panel.addChild(treeStore, { parentId: a, newChildId: c });
+      yield* Panel.addChild(setTree, { parentId: a, newChildId: b });
+      yield* Panel.addChild(setTree, { parentId: a, newChildId: c });
 
       // const id1 = yield* Panel.createId;
       // // const id2 = yield* Panel.createId;
@@ -106,7 +108,7 @@ const Panels3 = () => {
   return (
     <div class="flex w-full h-full">
       <div
-        class={clsx(
+        class={cn(
           "h-full border-r border-theme-border p-0.5",
           showExplorer() ? "w-[50%]" : "w-full",
         )}
@@ -116,13 +118,15 @@ const Panels3 = () => {
           root={root}
           selectedId={selectedId()}
           emitEvent={emitEvent}
-        />*/}
+          />*/}
+        <Table />
       </div>
 
       <Show when={showExplorer()}>
         <div class="w-[50%]">
           <Inspector
-            treeStore={treeStore}
+            tree={tree}
+            setTree={setTree}
             selectedId={selectedId()}
             selectPanel={setSelectedId}
           />

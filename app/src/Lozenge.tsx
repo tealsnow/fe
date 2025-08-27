@@ -39,7 +39,9 @@ const Lozenge = (props_: LozengeProps) => {
             `,
           ],
       )}
-    />
+    >
+      {props.children}
+    </button>
   );
 };
 

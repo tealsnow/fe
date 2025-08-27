@@ -45,3 +45,16 @@ export function produceUpdate<T, R = void>(
   });
   return res;
 }
+
+export function storeUpdate<T, R = void>(
+  set: SetStoreFunction<T>,
+  fn: (state: T) => R,
+): R {
+  let res!: R;
+  set(
+    produce((state) => {
+      res = fn(state);
+    }),
+  );
+  return res;
+}

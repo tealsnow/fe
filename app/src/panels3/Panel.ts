@@ -1,6 +1,7 @@
 import * as uuid from "uuid";
 import { Brand, Cause, Data, Effect, Match, Option, Order, pipe } from "effect";
-import { produceUpdate, StoreObjectProduce } from "../SignalObject";
+import { storeUpdate } from "../SignalObject";
+import { SetStoreFunction } from "solid-js/store";
 
 export type PanelId = string & Brand.Brand<"PanelId">;
 export const PanelId = Brand.refined<PanelId>(
@@ -47,12 +48,12 @@ export type PanelNode = PanelNodePropsCommon & {
   children: PanelId[];
 };
 
-export type PanelTreeData = {
+export type PanelTree = {
   root: PanelId;
   nodes: Record<PanelId, PanelNode>;
 };
 
-export type PanelTreeStore = StoreObjectProduce<PanelTreeData>;
+export type SetPanelTree = SetStoreFunction<PanelTree>;
 
 export class PanelDoesNotExistError extends Data.TaggedError(
   "PanelDoesNotExistError",
@@ -96,9 +97,7 @@ export const createId: Effect.Effect<PanelId, never> = Effect.sync(() =>
   PanelId(uuid.v4()),
 );
 
-// export const createRootPanel = (): Effect.Effect<PanelId, never> =>
-
-export const createTree: Effect.Effect<PanelTreeData, never> = Effect.andThen(
+export const createTree: Effect.Effect<PanelTree, never> = Effect.andThen(
   createId,
   (root) =>
     ({
@@ -112,31 +111,32 @@ export const createTree: Effect.Effect<PanelTreeData, never> = Effect.andThen(
           ...PanelNodePropsOptional,
         },
       },
-    }) satisfies PanelTreeData,
+    }) satisfies PanelTree,
 );
 
 export const createPanel = (
-  treeStore: PanelTreeStore,
+  setTree: SetPanelTree,
   props: PanelNodeProps,
   newId?: PanelId,
 ): Effect.Effect<PanelId, never> =>
-  Effect.gen(function* (_) {
-    const id = newId ?? (yield* createId);
-    const panel: PanelNode = {
-      id,
-      parent: Option.none(),
-      children: [],
-      ...{ ...PanelNodePropsOptional, ...props },
-    };
-    produceUpdate(treeStore, (tree) => {
-      tree.nodes[id] = panel;
-    });
+  storeUpdate(setTree, (tree) =>
+    Effect.gen(function* (_) {
+      const id = newId ?? (yield* createId);
+      const panel: PanelNode = {
+        id,
+        parent: Option.none(),
+        children: [],
+        ...{ ...PanelNodePropsOptional, ...props },
+      };
 
-    return id;
-  });
+      tree.nodes[id] = panel;
+
+      return id;
+    }),
+  );
 
 export const doesPanelExist = (
-  tree: PanelTreeData,
+  tree: PanelTree,
   {
     panelId,
   }: {
@@ -149,7 +149,7 @@ export const doesPanelExist = (
   });
 
 export const getPanel = (
-  tree: PanelTreeData,
+  tree: PanelTree,
   params: {
     panelId: PanelId;
     parentId?: PanelId;
@@ -171,7 +171,7 @@ export const getPanel = (
 };
 
 export const addChild = (
-  treeStore: PanelTreeStore,
+  setTree: SetPanelTree,
   {
     parentId,
     newChildId,
@@ -180,7 +180,7 @@ export const addChild = (
     newChildId: PanelId;
   },
 ): Effect.Effect<void, PanelDoesNotExistError | AlreadyHasParentError> =>
-  produceUpdate(treeStore, (tree) =>
+  storeUpdate(setTree, (tree) =>
     Effect.gen(function* () {
       // This keep the ratio of sizes of existing panels while adding
       // a new one still trying to honor its percent
@@ -247,7 +247,7 @@ export const addChild = (
   );
 
 export const deletePanel = (
-  treeStore: PanelTreeStore,
+  setTree: SetPanelTree,
   {
     panelId,
     removeFromParent = true,
@@ -256,7 +256,7 @@ export const deletePanel = (
     removeFromParent?: boolean;
   },
 ): Effect.Effect<void, PanelDoesNotExistError | CannotDeleteRootPanelError> =>
-  produceUpdate(treeStore, (tree) =>
+  storeUpdate(setTree, (tree) =>
     Effect.gen(function* () {
       if (panelId === tree.root)
         yield* Effect.fail(new CannotDeleteRootPanelError());
@@ -287,7 +287,7 @@ export const deletePanel = (
       );
 
       for (const childId of panel.children) {
-        yield* deletePanel(treeStore, {
+        yield* deletePanel(setTree, {
           panelId: childId,
           removeFromParent: false,
         }).pipe(
@@ -322,7 +322,7 @@ export const deletePanel = (
   );
 
 export const validateChildrenSizes = (
-  tree: PanelTreeData,
+  tree: PanelTree,
   { panelId }: { panelId: PanelId },
 ): Effect.Effect<{ ok: boolean; difference: number }, PanelDoesNotExistError> =>
   Effect.gen(function* () {
@@ -343,10 +343,10 @@ export const validateChildrenSizes = (
   });
 
 export const update = (
-  treeStore: PanelTreeStore,
+  setTree: SetPanelTree,
   { panelId, props }: { panelId: PanelId; props: PanelNodePropsCommonPartial },
 ): Effect.Effect<void, PanelDoesNotExistError> =>
-  produceUpdate(treeStore, (tree) =>
+  storeUpdate(setTree, (tree) =>
     Effect.gen(function* () {
       const panel = yield* getPanel(tree, { panelId });
 

@@ -1,16 +1,17 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Order } from "effect";
 import {
   Accessor,
   createEffect,
   createMemo,
   createSignal,
   For,
+  onCleanup,
   onMount,
   Show,
 } from "solid-js";
 import { css } from "solid-styled-components";
-import clsx from "clsx";
 import { MapOption } from "solid-effect";
+import { cn } from "~/lib/cn";
 
 import { DragLocationHistory } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
@@ -24,11 +25,11 @@ import { getIntrinsicMinWidth } from "../getIntrinsicSize";
 
 import * as Panel from "./Panel";
 
-const getPanel = (treeStore: Panel.PanelTreeStore, panelId: Panel.PanelId) =>
-  Panel.getPanel(treeStore.value, { panelId }).pipe(Effect.runSync);
+const getPanel = (tree: Panel.PanelTree, panelId: Panel.PanelId) =>
+  Panel.getPanel(tree, { panelId }).pipe(Effect.runSync);
 
 export type RenderPanelPillProps = {
-  treeStore: Panel.PanelTreeStore;
+  tree: Panel.PanelTree;
   selectedId: Option.Option<Panel.PanelId>;
   selectPanel: (id: Panel.PanelId) => void;
 
@@ -37,20 +38,7 @@ export type RenderPanelPillProps = {
 };
 
 export const RenderPanelPill = (props: RenderPanelPillProps) => {
-  // const panel = () => getPanel(props.treeStore, props.panelId());
-  // const panel = createMemo(() => getPanel(props.treeStore, props.panelId()));
-
-  // const panel_ = getPanel(props.treeStore, props.panelId());
-  // const panel = () => panel_;
-
-  // const panel = () => getPanel(props.treeStore, props.panelId());
-
-  // const dbgName = () => panel().dbgName;
-
-  const panel = () => props.treeStore.value.nodes[props.panelId()];
-
-  // const dbgName = () => props.treeStore.value.nodes[props.panelId()].dbgName;
-  const dbgName = props.treeStore.value.nodes[props.panelId()].dbgName;
+  const panel = () => getPanel(props.tree, props.panelId());
 
   return (
     <>
@@ -71,9 +59,7 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
             props.selectPanel(props.panelId());
           }}
         >
-          {/*{panel().dbgName}*/}
-          {/*{dbgName()}*/}
-          {dbgName}
+          {panel().dbgName}
         </Lozenge>
       </div>
 
@@ -95,78 +81,103 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
 };
 
 type PanelInspector2Props = {
-  treeStore: Panel.PanelTreeStore;
+  tree: Panel.PanelTree;
+  setTree: Panel.SetPanelTree;
   panelId: Panel.PanelId;
   selectPanel: (id: Panel.PanelId) => void;
 };
 
 const PanelInspector2 = (props: PanelInspector2Props) => {
-  const panel = () => getPanel(props.treeStore, props.panelId);
+  const panel = () => getPanel(props.tree, props.panelId);
 
   return (
-    <>
-      <Property.PropertyEditor
-        properties={[
-          <Property.Property
-            key="Selected"
-            value={
-              // <Lozenge class="font-mono min-w-10" color="blue">
-              //   {panel().dbgName}
-              // </Lozenge>
-              panel().dbgName
-            }
-          />,
-          <Property.StringProperty
-            key="Debug name"
-            value={panel().dbgName}
-            onUpdate={(newValue) => {
-              // console.debug("new value:", newValue);
-              Panel.update(props.treeStore, {
+    <div class="font-mono">
+      <Property.PropertyEditor>
+        <Property.StringProperty
+          key="Debug name"
+          value={panel().dbgName}
+          onUpdate={(newValue) => {
+            // console.debug("new value:", newValue);
+            Panel.update(props.setTree, {
+              panelId: props.panelId,
+              props: {
+                dbgName: newValue,
+              },
+            }).pipe(Effect.runSync);
+          }}
+        />
+        <Property.StringProperty
+          key="Parent"
+          value={Option.map(panel().parent, (id) =>
+            Panel.getPanel(props.tree, { panelId: id }).pipe(
+              Effect.map((panel) => panel.dbgName),
+              Effect.runSync,
+            ),
+          ).pipe(Option.getOrElse(() => "null"))}
+          onClick={Option.map(
+            panel().parent,
+            (id) => () => props.selectPanel(id),
+          ).pipe(Option.getOrUndefined)}
+        />
+        <Property.StringProperty
+          key="Percent of parent"
+          value={(panel().percentOfParent * 100).toString()}
+          format={(str) => str + "%"}
+          onUpdate={(update) => {
+            const num: number = parseFloat(update);
+            if (num < 0 || num > 100) return;
+            if (!isNaN(num)) {
+              Panel.update(props.setTree, {
                 panelId: props.panelId,
                 props: {
-                  dbgName: newValue,
+                  percentOfParent: Panel.Percent(num / 100),
                 },
               }).pipe(Effect.runSync);
-            }}
-          />,
+            }
+          }}
+        />
 
-          <Property.Property
-            key="Parent"
-            value={Option.map(panel().parent, (id) =>
-              Panel.getPanel(props.treeStore.value, { panelId: id }).pipe(
-                Effect.map((panel) => panel.dbgName),
-                Effect.runSync,
+        <Show when={panel().children.length !== 0}>
+          <Property.StringProperty
+            key="Children % valid"
+            value={Panel.validateChildrenSizes(props.tree, {
+              panelId: props.panelId,
+            }).pipe(
+              Effect.flatMap(({ ok, difference }) =>
+                Effect.if(ok, {
+                  onTrue: () => Effect.succeed("Valid"),
+                  onFalse: () =>
+                    Effect.succeed(
+                      `Invalid (${(difference * 100).toFixed(2)}%)`,
+                    ),
+                }),
               ),
-            ).pipe(Option.getOrElse(() => "null"))}
-          />,
-          // {
-          //   key: "Selected",
-          //   value: panel().dbgName,
-          // },
-          // {
-          //   key: "Parent",
-          //   value: () =>
-          //     Option.map(panel().parent, (id) =>
-          //       Panel.getPanel(props.treeStore.value, { panelId: id }).pipe(
-          //         Effect.map((panel) => panel.dbgName),
-          //         Effect.runSync,
-          //       ),
-          //     ).pipe(Option.getOrElse(() => "null")),
-          // },
-        ]}
-      />
-    </>
+              Effect.runSync,
+            )}
+          />
+        </Show>
+      </Property.PropertyEditor>
+
+      {/*<div class="w-full border-2 flex flex-col">
+        <div class="w-full border flex flex-row">
+          <div class="w-full">Debug name</div>
+
+          <div class="w-full">{panel().dbgName}</div>
+        </div>
+      </div>*/}
+    </div>
   );
 };
 
 type PanelInspectorProps = {
-  treeStore: Panel.PanelTreeStore;
+  tree: Panel.PanelTree;
+  setTree: Panel.SetPanelTree;
   panelId: Panel.PanelId;
   selectPanel: (id: Panel.PanelId) => void;
 };
 
 const PanelInspector = (props: PanelInspectorProps) => {
-  const panel = () => getPanel(props.treeStore, props.panelId);
+  const panel = () => getPanel(props.tree, props.panelId);
 
   return (
     <div class="flex flex-col gap-2">
@@ -187,7 +198,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }
         >
           {(parentId) => {
-            const parent = () => getPanel(props.treeStore, parentId());
+            const parent = () => getPanel(props.tree, parentId());
             return (
               <Lozenge
                 class="font-mono min-w-10"
@@ -226,7 +237,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
         <ul class="flex flex-col gap-1 list-disc">
           <For each={panel().children}>
             {(childId) => {
-              const child = () => getPanel(props.treeStore, childId);
+              const child = () => getPanel(props.tree, childId);
               return (
                 <li>
                   <Lozenge
@@ -306,7 +317,8 @@ const PanelInspector = (props: PanelInspectorProps) => {
       </div>
       <div class="w-full border-t border-theme-border pt-3">
         <PanelInspector2
-          treeStore={props.treeStore}
+          tree={props.tree}
+          setTree={props.setTree}
           panelId={props.panelId}
           selectPanel={props.selectPanel}
         />
@@ -316,7 +328,8 @@ const PanelInspector = (props: PanelInspectorProps) => {
 };
 
 export type InspectorProps = {
-  treeStore: Panel.PanelTreeStore;
+  tree: Panel.PanelTree;
+  setTree: Panel.SetPanelTree;
   selectedId: Option.Option<Panel.PanelId>;
   selectPanel: (id: Option.Option<Panel.PanelId>) => void;
 };
@@ -332,14 +345,19 @@ const Inspector = (props: InspectorProps) => {
     const delta =
       location.current.input.clientX - location.initial.input.clientX;
 
-    const min = getIntrinsicMinWidth(sidePanelRef);
-    const max = componentRef.clientWidth * 0.75;
+    // const min = getIntrinsicMinWidth(sidePanelRef);
+    // const max = componentRef.clientWidth * 0.75;
 
-    return Math.clamp(startingWidth() - delta, min, max);
+    // return Math.clamp(startingWidth() - delta, min, max);
+
+    return Order.clamp(Order.number)({
+      minimum: 0,
+      maximum: componentRef.clientWidth,
+    })(startingWidth() - delta);
   };
 
   onMount(() => {
-    return draggable({
+    const dragCleanup = draggable({
       element: dividerRef,
 
       onGenerateDragPreview: ({ nativeSetDragImage }) => {
@@ -364,6 +382,10 @@ const Inspector = (props: InspectorProps) => {
         sidePanelRef.style.removeProperty("--local-resizing-width");
       },
     });
+
+    onCleanup(() => {
+      dragCleanup();
+    });
   });
 
   return (
@@ -374,17 +396,17 @@ const Inspector = (props: InspectorProps) => {
         onClick={() => props.selectPanel(Option.none())}
       >
         <RenderPanelPill
-          treeStore={props.treeStore}
+          tree={props.tree}
           selectedId={props.selectedId}
           selectPanel={(id) => props.selectPanel(Option.some(id))}
-          panelId={() => props.treeStore.value.root}
+          panelId={() => props.tree.root}
           indent={0}
         />
       </div>
 
       <div
         ref={dividerRef}
-        class={clsx(
+        class={cn(
           "ml-auto w-[1px] bg-theme-border cursor-ew-resize relative",
           css`
             &::before {
@@ -402,7 +424,7 @@ const Inspector = (props: InspectorProps) => {
 
       <div
         ref={sidePanelRef}
-        class="flex flex-col p-2 gap-2"
+        class="flex flex-col p-2 gap-2 overflow-clip"
         style={{
           "--local-starting-width": `${startingWidth()}px`,
           width: `var(--local-resizing-width, var(--local-starting-width))`,
@@ -423,7 +445,8 @@ const Inspector = (props: InspectorProps) => {
         <MapOption on={props.selectedId}>
           {(selectedId) => (
             <PanelInspector
-              treeStore={props.treeStore}
+              tree={props.tree}
+              setTree={props.setTree}
               panelId={selectedId()}
               selectPanel={(id) => props.selectPanel(Option.some(id))}
             />

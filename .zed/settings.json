@@ -7,7 +7,7 @@
     "tailwindcss-language-server": {
       "settings": {
         "experimental": {
-          "classRegex": ["clsx\\(([^)]*)\\)"]
+          "classRegex": ["cn\\(([^)]*)\\)"]
         }
       }
     }
