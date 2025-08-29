@@ -1,7 +1,9 @@
-import { flattenArrayOfObjects, flattenZodSchemaPaths } from "~/lib/flatten";
-import { DeepPartial } from "~/lib/type_helpers";
 import Color from "color";
 import * as z from "zod";
+
+// @NOTE: These cannot use '~' since this file is imported from `tailwind.config.ts`
+import { flattenArrayOfObjects, flattenZodSchemaPaths } from "./lib/flatten";
+import { DeepPartial } from "./lib/type_helpers";
 
 export type ColorKind =
   | "red"
