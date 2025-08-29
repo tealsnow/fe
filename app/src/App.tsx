@@ -9,25 +9,29 @@ import {
   Switch,
 } from "solid-js";
 import { createStore } from "solid-js/store";
-import { Icon, IconKind, iconKinds } from "./assets/icons";
-import { NotificationProvider, notify, notifyPromise } from "./notifications";
-import StatusBar, { statusBar } from "./StatusBar";
-import * as theming from "./Theme";
-import ThemeProvider from "./ThemeProvider";
-import Titlebar from "./Titlebar";
-import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "./Workspace";
 
-import DND from "./dnd_tut";
-import Panels from "./panels";
-import Panels2 from "./panels2/panels2";
-import Panels3 from "./panels3/panels3";
-import Panels4 from "./panels4/panels4";
+import { Icon, IconKind, iconKinds } from "~/assets/icons";
+import { NotificationProvider, notify, notifyPromise } from "~/notifications";
+import StatusBar, { statusBar } from "~/StatusBar";
+import * as theming from "~/Theme";
+import ThemeProvider from "~/ThemeProvider";
+import Titlebar from "~/Titlebar";
+import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
+
+import DND from "~/dnd_tut";
+import Panels from "~/panels";
+import Panels2 from "~/panels2/panels2";
+import Panels3 from "~/panels3/panels3";
 
 const App = () => {
-  // @FIXME: This applies the theme globally - setting the css vars on the
+  // @NOTE: This applies the theme globally - setting the css vars on the
   //  document globally. This is mostly just for the toasts, since they
   //  are built with normal css.
   //  If that changes to use inline styles and/or tailwind we can remove this
+  //
+  //  As is stands this works just fine, if and when we do a theme preview
+  //  we can just use the provider, unless we want to show what toast would
+  //  look like...
   theming.applyTheme(theming.defaultTheme);
 
   return (

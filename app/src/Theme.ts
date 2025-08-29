@@ -1,5 +1,5 @@
-import { flattenArrayOfObjects, flattenZodSchemaPaths } from "./flatten";
-import { DeepPartial } from "./type_helpers";
+import { flattenArrayOfObjects, flattenZodSchemaPaths } from "~/lib/flatten";
+import { DeepPartial } from "~/lib/type_helpers";
 import Color from "color";
 import * as z from "zod";
 

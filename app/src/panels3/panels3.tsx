@@ -5,14 +5,12 @@
 import { Console, Effect, Match, Option, pipe } from "effect";
 
 import * as Panel from "./Panel";
-import { produceUpdate, storeObjectProduceFromStore } from "../SignalObject";
+import { produceUpdate, storeObjectProduceFromStore } from "~/lib/SignalObject";
 import { createStore } from "solid-js/store";
 import { notify } from "../notifications";
 import { createSignal, onMount, Show } from "solid-js";
 import Inspector from "./Inspector";
 import { cn } from "~/lib/cn";
-
-import { App as Table } from "./table_test";
 
 const Panels3 = () => {
   const [tree, setTree] = createStore<Panel.PanelTree>(
@@ -119,7 +117,6 @@ const Panels3 = () => {
           selectedId={selectedId()}
           emitEvent={emitEvent}
           />*/}
-        <Table />
       </div>
 
       <Show when={showExplorer()}>
@@ -127,8 +124,8 @@ const Panels3 = () => {
           <Inspector
             tree={tree}
             setTree={setTree}
-            selectedId={selectedId()}
-            selectPanel={setSelectedId}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
           />
         </div>
       </Show>

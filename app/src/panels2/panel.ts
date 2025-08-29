@@ -1,10 +1,8 @@
-import "../clamp";
-
 import { Emitter } from "solid-events";
 import { v4 as uuidv4 } from "uuid";
-import { produceUpdate, StoreObjectProduce } from "../SignalObject";
+import { produceUpdate, StoreObjectProduce } from "~/lib/SignalObject";
 
-import { Brand, Data, Effect, Match } from "effect";
+import { Brand, Data, Effect, Match, Order } from "effect";
 
 export type PanelId = string & Brand.Brand<"PanelId">;
 export const PanelId = Brand.nominal<PanelId>();
@@ -150,8 +148,10 @@ export const panels = {
           sum += child.percentOfParent;
         }
 
-        let pNew = newChild.percentOfParent / (n + 1);
-        pNew = Math.clamp(pNew, 0, 1);
+        const pNew = Order.clamp(Order.number)({
+          minimum: 0,
+          maximum: 1,
+        })(newChild.percentOfParent / (n + 1));
 
         if (sum <= 0) {
           if (n === 0) {

@@ -1,7 +1,8 @@
-import clsx from "clsx";
 import { JSX, mergeProps } from "solid-js";
 import { css } from "solid-styled-components";
-import { ColorKind } from "./Theme";
+
+import { ColorKind } from "~/Theme";
+import { cn } from "~/lib/cn";
 
 export type LozengeProps = JSX.HTMLAttributes<HTMLButtonElement> & {
   color: ColorKind;
@@ -20,8 +21,7 @@ const Lozenge = (props_: LozengeProps) => {
   return (
     <button
       {...forwardProps}
-      class={clsx(
-        props.class,
+      class={cn(
         "inline-block px-0.5 py-1 size-fit border-2 text-center content-center",
         css`
           ${props.disabled
@@ -38,6 +38,7 @@ const Lozenge = (props_: LozengeProps) => {
               }
             `,
           ],
+        props.class,
       )}
     >
       {props.children}

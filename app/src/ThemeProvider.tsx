@@ -1,5 +1,5 @@
 import { ParentProps } from "solid-js";
-import Theme, { themeCssStyles } from "./Theme";
+import Theme, { themeCssStyles } from "~/Theme";
 
 export type ThemeProviderProps = ParentProps<{
   theme: Theme;

@@ -1,6 +1,6 @@
 import * as uuid from "uuid";
 import { Brand, Cause, Data, Effect, Match, Option, Order, pipe } from "effect";
-import { storeUpdate } from "../SignalObject";
+import { storeUpdate } from "~/lib/SignalObject";
 import { SetStoreFunction } from "solid-js/store";
 
 export type PanelId = string & Brand.Brand<"PanelId">;
@@ -120,7 +120,7 @@ export const createPanel = (
   newId?: PanelId,
 ): Effect.Effect<PanelId, never> =>
   storeUpdate(setTree, (tree) =>
-    Effect.gen(function* (_) {
+    Effect.gen(function* () {
       const id = newId ?? (yield* createId);
       const panel: PanelNode = {
         id,
@@ -266,8 +266,7 @@ export const deletePanel = (
       const parentId = Option.getOrUndefined(panel.parent);
       if (removeFromParent && parentId) {
         const parent = yield* getPanel(tree, { panelId: parentId });
-        const idx = parent.children.findIndex((id) => id === panelId);
-        parent.children.splice(idx, 1);
+        parent.children = parent.children.filter((id) => id !== panelId);
         panel.parent = Option.none();
       }
 

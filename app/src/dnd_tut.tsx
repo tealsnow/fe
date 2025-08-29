@@ -5,15 +5,16 @@ import {
   onMount,
   ParentProps,
 } from "solid-js";
-import { IconKind, Icon } from "./assets/icons";
 import {
   draggable,
   dropTargetForElements,
   monitorForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import clsx from "clsx";
 import { match } from "ts-pattern";
 import { createStore } from "solid-js/store";
+
+import { IconKind, Icon } from "~/assets/icons";
+import { cn } from "~/lib/cn";
 
 export type Coord = [number, number];
 
@@ -85,7 +86,7 @@ const Piece = (props: PieceProps) => {
   return (
     <div
       ref={ref}
-      class={clsx(
+      class={cn(
         "h-[45px] w-[45px] rounded-md p-1 hover:bg-gray-600",
         dragging() && "opacity-50",
       )}
@@ -189,7 +190,7 @@ const Square = (props: SquareProps) => {
   return (
     <div
       ref={ref}
-      class={clsx(
+      class={cn(
         "flex size-full items-center justify-center",
         isDark ? "bg-gray-500" : "bg-gray-50",
         match(state())

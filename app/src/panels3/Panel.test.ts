@@ -269,6 +269,31 @@ describe("deleting", () => {
     }),
   );
 
+  it.effect("removes from parent", () =>
+    Effect.gen(function* () {
+      const [tree, setTree] = createTreeStore();
+
+      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
+      const c = yield* Panel.createPanel(setTree, { dbgName: "c" });
+
+      yield* Panel.addChild(setTree, { parentId: a, newChildId: b });
+      yield* Panel.addChild(setTree, { parentId: a, newChildId: c });
+
+      expect(tree.nodes[a].children).toContain(b);
+      expect(tree.nodes[a].children).toContain(c);
+
+      yield* Panel.deletePanel(setTree, { panelId: b });
+
+      expect(tree.nodes[a].children).not.toContain(b);
+      expect(tree.nodes[a].children).toContain(c);
+
+      expect(tree.nodes[a]).toBeDefined();
+      expect(tree.nodes[b]).toBeUndefined();
+      expect(tree.nodes[c]).toBeDefined();
+    }),
+  );
+
   it.effect("errors on delete root panel", () =>
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();

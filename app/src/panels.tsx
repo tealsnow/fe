@@ -1,8 +1,9 @@
 // import { ParentProps } from "solid-js";
 
-import clsx from "clsx";
 import { createSignal, For, Match, mergeProps, Show, Switch } from "solid-js";
 import { match } from "ts-pattern";
+
+import { cn } from "~/lib/cn";
 
 // type PanelLeafLinks = {
 //   parent?: PanelNode;
@@ -286,7 +287,7 @@ const RenderPanelSplit = (props_: RenderPanelSplitProps) => {
 
       {/* children */}
       <div
-        class={clsx(
+        class={cn(
           "flex flex-1 gap-0.5",
           match(props.panel.splitInfo.direction)
             .with("horizontal", () => "flex-row")
@@ -314,7 +315,7 @@ const RenderPanel = (props_: RenderPanelProps) => {
 
   return (
     <div
-      class={clsx(
+      class={cn(
         "flex flex-1 flex-col",
         props.dbgSplitBorders &&
           props.panel.kind === "split" &&

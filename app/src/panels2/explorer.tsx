@@ -1,9 +1,5 @@
-import "../clamp";
-
-import clsx from "clsx";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { css } from "solid-styled-components";
-import Lozenge from "../Lozenge";
 
 import { DragLocationHistory } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
@@ -17,7 +13,10 @@ import {
   panels,
   PanelTreeStore,
 } from "./panel";
-import { getIntrinsicMinWidth } from "../getIntrinsicSize";
+import { getIntrinsicMinWidth } from "~/lib/getIntrinsicSize";
+import { cn } from "~/lib/cn";
+import Lozenge from "../Lozenge";
+import { Order } from "effect";
 
 export type RenderPanelPillProps = {
   treeStore: PanelTreeStore;
@@ -225,10 +224,10 @@ export const PanelsExplorer = (props: PanelsExplorerProps) => {
     const delta =
       location.current.input.clientX - location.initial.input.clientX;
 
-    const min = getIntrinsicMinWidth(sidePanelRef);
-    const max = componentRef.clientWidth * 0.75;
-
-    return Math.clamp(startingWidth() - delta, min, max);
+    return Order.clamp(Order.number)({
+      minimum: getIntrinsicMinWidth(sidePanelRef),
+      maximum: componentRef.clientWidth * 0.75,
+    })(startingWidth() - delta);
   };
 
   onMount(() => {
@@ -276,7 +275,7 @@ export const PanelsExplorer = (props: PanelsExplorerProps) => {
 
       <div
         ref={dividerRef}
-        class={clsx(
+        class={cn(
           "ml-auto w-[1px] bg-theme-border cursor-ew-resize relative",
           css`
             &::before {
@@ -300,7 +299,7 @@ export const PanelsExplorer = (props: PanelsExplorerProps) => {
           width: `var(--local-resizing-width, var(--local-starting-width))`,
         }}
       >
-        <Lozenge
+        {/*<Lozenge
           color="pink"
           interactive
           onClick={() => {
@@ -310,7 +309,7 @@ export const PanelsExplorer = (props: PanelsExplorerProps) => {
           }}
         >
           Print all panels
-        </Lozenge>
+        </Lozenge>*/}
 
         <Show when={props.selectedId !== null}>
           <Inspect

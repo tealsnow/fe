@@ -2,11 +2,10 @@ import { createEvent } from "solid-events";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 
-import clsx from "clsx";
-
 import { Console, Effect, Match, Option, pipe } from "effect";
 
-import { storeObjectProduceFromStore } from "../SignalObject";
+import { cn } from "~/lib/cn";
+import { storeObjectProduceFromStore } from "~/lib/SignalObject";
 import { NotificationType, notify } from "../notifications";
 import Lozenge from "../Lozenge";
 
@@ -81,7 +80,7 @@ export const RenderPanel = (props: RenderPanelProps) => {
       </div>
 
       <div
-        class={clsx(
+        class={cn(
           "flex w-full h-full gap-1 p-1",
           panel().layout === "vertical" && "flex-col",
           panel().layout === "horizontal" && "flex-row",
@@ -297,7 +296,7 @@ const Panels2 = () => {
 
       <div class="flex flex-row w-full h-full">
         <div
-          class={clsx(
+          class={cn(
             "h-full border-r border-theme-border p-0.5",
             showExplorer() ? "w-[50%]" : "w-full",
           )}

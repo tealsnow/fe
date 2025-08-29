@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
-import { Icon, IconKind } from "./assets/icons";
 import {
   closestCenter,
   createDraggable,
@@ -9,9 +8,11 @@ import {
   DragDropSensors,
   DragOverlay,
 } from "@thisbeyond/solid-dnd";
-import { statusBar } from "./StatusBar";
-import { Workspace } from "./Workspace";
-import clsx from "clsx";
+
+import { Icon, IconKind } from "~/assets/icons";
+import { statusBar } from "~/StatusBar";
+import { Workspace } from "~/Workspace";
+import { cn } from "~/lib/cn";
 
 declare module "solid-js" {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -115,7 +116,7 @@ const Titlebar = (props: TitlebarProps) => {
 
       {/* Left shadow overlay */}
       <div
-        class={clsx(
+        class={cn(
           "absolute top-0 h-full w-8 pointer-events-none z-10",
           "bg-gradient-to-r from-theme-panel-tab-background-idle to-transparent",
           hasLeftOverflow() ? "opacity-100" : "opacity-0",
@@ -125,7 +126,7 @@ const Titlebar = (props: TitlebarProps) => {
 
       {/* Right shadow overlay */}
       <div
-        class={clsx(
+        class={cn(
           "absolute top-0 h-full w-8 pointer-events-none z-10",
           "bg-gradient-to-l from-theme-panel-tab-background-idle to-transparent",
           hasRightOverflow() ? "opacity-100" : "opacity-0",
@@ -280,7 +281,7 @@ type WorkspaceTabHandleImplProps = {
 const WorkspaceTabHandleImpl = (props: WorkspaceTabHandleImplProps) => {
   return (
     <div // Tab
-      class={clsx(
+      class={cn(
         `hover:bg-theme-panel-tab-background-active group inline-flex h-full
         items-center gap-2 px-2 text-sm whitespace-nowrap`,
         {
@@ -307,7 +308,7 @@ const WorkspaceTabHandleImpl = (props: WorkspaceTabHandleImplProps) => {
       {props.name}
 
       <div // Close icon
-        class={clsx(
+        class={cn(
           `hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill
           cursor-pointer rounded-xl p-1 opacity-0 group-hover:opacity-100`,
           props.active && "opacity-100",

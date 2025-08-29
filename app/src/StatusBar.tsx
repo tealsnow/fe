@@ -1,8 +1,9 @@
 import { For, Match, Switch } from "solid-js";
 import { Component, createRoot } from "solid-js";
-import { EnumMap } from "./type_helpers";
 import { createStore } from "solid-js/store";
-import { storeObjectFromStore } from "./SignalObject";
+
+import { EnumMap } from "~/lib/type_helpers";
+import { storeObjectFromStore } from "~/lib/SignalObject";
 
 export type StatusBarAlignment = "left" | "right";
 
