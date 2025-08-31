@@ -21,6 +21,7 @@
     "klass",
     "globaly",
     "direnv",
-    "tanstack"
+    "tanstack",
+    "adjustables"
   ]
 }

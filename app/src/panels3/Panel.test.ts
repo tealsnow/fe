@@ -1,14 +1,13 @@
 import { it, expect, describe } from "@effect/vitest";
-import { Effect, Exit, Logger, Option } from "effect";
 
-// import { produceUpdate, storeObjectProduceFromStore } from "../SignalObject";
+import { Effect, Exit, Logger, Option } from "effect";
 import { createStore } from "solid-js/store";
 
 import * as Panel from "./Panel";
-import { storeUpdate } from "~/SignalObject";
+import { storeUpdate } from "~/lib/SignalObject";
 
-const createTreeStore = (): [Panel.PanelTree, Panel.SetPanelTree] => {
-  const [tree, setTree] = createStore<Panel.PanelTree>(
+const createTreeStore = (): [Panel.Tree, Panel.SetTree] => {
+  const [tree, setTree] = createStore<Panel.Tree>(
     Panel.createTree.pipe(Effect.runSync),
   );
   return [tree, setTree];
@@ -19,7 +18,7 @@ it.effect("errors on get nonexistent panel", () =>
     const [tree, _setTree] = createTreeStore();
 
     const id = yield* Panel.createId;
-    const result = yield* Effect.exit(Panel.getPanel(tree, { panelId: id }));
+    const result = yield* Effect.exit(Panel.getNode(tree, { id }));
 
     // @HACK: something is internally different between the result error
     //  and the constructed error, so we stringify them to compare the
@@ -37,22 +36,22 @@ describe("creating/adding", () => {
 
       expect(Object.entries(tree.nodes)).toHaveLength(1);
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
-      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
-      const c = yield* Panel.createPanel(setTree, { dbgName: "c" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
+      const c = yield* Panel.createNode(setTree, { dbgName: "c" });
 
       expect(Object.entries(tree.nodes)).toHaveLength(4);
 
       const ids = [a, b, c];
       const names = ["a", "b", "c"];
 
-      const zipped: [Panel.PanelId, string][] = ids.map((id, idx) => [
+      const zipped: [Panel.ID, string][] = ids.map((id, idx) => [
         id,
         names[idx],
       ]);
       yield* Effect.forEach(zipped, ([id, name]) =>
         Effect.gen(function* () {
-          const panel = yield* Panel.getPanel(tree, { panelId: id });
+          const panel = yield* Panel.getNode(tree, { id });
           expect(panel).toBeDefined();
           expect(panel.dbgName).toBe(name);
           return Effect.void;
@@ -66,11 +65,9 @@ describe("creating/adding", () => {
       const [tree, setTree] = createTreeStore();
 
       const root = tree.root;
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
-      const rootPanel = yield* Panel.getPanel(tree, {
-        panelId: root,
-      });
+      const rootPanel = yield* Panel.getNode(tree, { id: root });
 
       expect(rootPanel.children).toHaveLength(0);
 
@@ -79,9 +76,7 @@ describe("creating/adding", () => {
       expect(rootPanel.children).toHaveLength(1);
       expect(rootPanel.children).toContain(a);
 
-      const aPanel = yield* Panel.getPanel(tree, {
-        panelId: a,
-      });
+      const aPanel = yield* Panel.getNode(tree, { id: a });
 
       expect(aPanel.parent).toStrictEqual(Option.some(root));
       expect(aPanel.percentOfParent).toBe(1);
@@ -93,27 +88,21 @@ describe("creating/adding", () => {
       const [tree, setTree] = createTreeStore();
 
       const root = tree.root;
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
-      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
 
-      const rootPanel = yield* Panel.getPanel(tree, {
-        panelId: root,
-      });
+      const rootPanel = yield* Panel.getNode(tree, { id: root });
 
       expect(rootPanel.children).toHaveLength(0);
 
       yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
       yield* Panel.addChild(setTree, { parentId: root, newChildId: b });
 
-      const aPanel = yield* Panel.getPanel(tree, {
-        panelId: a,
-      });
-      const bPanel = yield* Panel.getPanel(tree, {
-        panelId: b,
-      });
+      const aPanel = yield* Panel.getNode(tree, { id: a });
+      const bPanel = yield* Panel.getNode(tree, { id: b });
 
       const childrenValid = yield* Panel.validateChildrenSizes(tree, {
-        panelId: root,
+        id: root,
       });
       expect(childrenValid).toStrictEqual({ ok: true, difference: 0 });
 
@@ -129,33 +118,27 @@ describe("creating/adding", () => {
       const [tree, setTree] = createTreeStore();
 
       const root = tree.root;
-      const a = yield* Panel.createPanel(setTree, {
+      const a = yield* Panel.createNode(setTree, {
         dbgName: "a",
         percentOfParent: Panel.Percent(1),
       });
-      const b = yield* Panel.createPanel(setTree, {
+      const b = yield* Panel.createNode(setTree, {
         dbgName: "b",
         percentOfParent: Panel.Percent(0.5),
       });
 
-      const rootPanel = yield* Panel.getPanel(tree, {
-        panelId: root,
-      });
+      const rootPanel = yield* Panel.getNode(tree, { id: root });
 
       expect(rootPanel.children).toHaveLength(0);
 
       yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
       yield* Panel.addChild(setTree, { parentId: root, newChildId: b });
 
-      const aPanel = yield* Panel.getPanel(tree, {
-        panelId: a,
-      });
-      const bPanel = yield* Panel.getPanel(tree, {
-        panelId: b,
-      });
+      const aPanel = yield* Panel.getNode(tree, { id: a });
+      const bPanel = yield* Panel.getNode(tree, { id: b });
 
       const childrenValid = yield* Panel.validateChildrenSizes(tree, {
-        panelId: root,
+        id: root,
       });
       expect(childrenValid).toStrictEqual({ ok: true, difference: 0 });
 
@@ -172,7 +155,7 @@ describe("creating/adding", () => {
 
       const fakeParent = yield* Panel.createId;
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
       expect(tree.nodes[a]).toBeDefined();
       expect(Object.entries(tree.nodes)).toHaveLength(2);
@@ -191,7 +174,7 @@ describe("creating/adding", () => {
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
       const fakeChild = yield* Panel.createId;
 
@@ -212,13 +195,13 @@ describe("creating/adding", () => {
     Effect.gen(function* () {
       const [_tree, setTree] = createTreeStore();
 
-      const parentA = yield* Panel.createPanel(setTree, {
+      const parentA = yield* Panel.createNode(setTree, {
         dbgName: "parentA",
       });
-      const parentB = yield* Panel.createPanel(setTree, {
+      const parentB = yield* Panel.createNode(setTree, {
         dbgName: "parentB",
       });
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
       yield* Panel.addChild(setTree, { parentId: parentA, newChildId: a });
 
@@ -238,12 +221,12 @@ describe("deleting", () => {
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
       expect(tree.nodes[a]).toBeDefined();
       expect(Object.entries(tree.nodes)).toHaveLength(2);
 
-      yield* Panel.deletePanel(setTree, { panelId: a });
+      yield* Panel.deleteNode(setTree, { id: a });
 
       expect(tree.nodes[a]).toBeUndefined();
       expect(Object.entries(tree.nodes)).toHaveLength(1);
@@ -254,14 +237,14 @@ describe("deleting", () => {
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
-      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
-      const c = yield* Panel.createPanel(setTree, { dbgName: "c" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
+      const c = yield* Panel.createNode(setTree, { dbgName: "c" });
 
       yield* Panel.addChild(setTree, { parentId: a, newChildId: b });
       yield* Panel.addChild(setTree, { parentId: a, newChildId: c });
 
-      yield* Panel.deletePanel(setTree, { panelId: a });
+      yield* Panel.deleteNode(setTree, { id: a });
 
       expect(tree.nodes[a]).toBeUndefined();
       expect(tree.nodes[b]).toBeUndefined();
@@ -273,9 +256,9 @@ describe("deleting", () => {
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
-      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
-      const c = yield* Panel.createPanel(setTree, { dbgName: "c" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
+      const c = yield* Panel.createNode(setTree, { dbgName: "c" });
 
       yield* Panel.addChild(setTree, { parentId: a, newChildId: b });
       yield* Panel.addChild(setTree, { parentId: a, newChildId: c });
@@ -283,7 +266,7 @@ describe("deleting", () => {
       expect(tree.nodes[a].children).toContain(b);
       expect(tree.nodes[a].children).toContain(c);
 
-      yield* Panel.deletePanel(setTree, { panelId: b });
+      yield* Panel.deleteNode(setTree, { id: b });
 
       expect(tree.nodes[a].children).not.toContain(b);
       expect(tree.nodes[a].children).toContain(c);
@@ -294,12 +277,66 @@ describe("deleting", () => {
     }),
   );
 
+  it.effect("redistributes simple", () =>
+    Effect.gen(function* () {
+      const [tree, setTree] = createTreeStore();
+
+      const root = tree.root;
+      const a = yield* Panel.createNode(setTree, {
+        dbgName: "a",
+      });
+      const b = yield* Panel.createNode(setTree, {
+        dbgName: "b",
+        percentOfParent: Panel.Percent(0.5),
+      });
+
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: b });
+
+      expect(tree.nodes[a].percentOfParent).toBe(Panel.Percent(0.75));
+      expect(tree.nodes[b].percentOfParent).toBe(Panel.Percent(0.25));
+
+      yield* Panel.deleteNode(setTree, { id: b });
+
+      expect(tree.nodes[b]).toBeUndefined();
+      expect(tree.nodes[a].percentOfParent).toBe(Panel.Percent(1));
+    }),
+  );
+
+  it.effect("redistributes complex", () =>
+    Effect.gen(function* () {
+      const [tree, setTree] = createTreeStore();
+
+      const root = tree.root;
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
+      const c = yield* Panel.createNode(setTree, { dbgName: "b" });
+
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: b });
+      yield* Panel.addChild(setTree, { parentId: root, newChildId: c });
+
+      // setup complex sizes
+      storeUpdate(setTree, (tree) => {
+        tree.nodes[a].percentOfParent = Panel.Percent(0.5);
+        tree.nodes[b].percentOfParent = Panel.Percent(0.3);
+        tree.nodes[c].percentOfParent = Panel.Percent(0.2);
+      });
+
+      yield* Panel.deleteNode(setTree, { id: c });
+
+      expect(tree.nodes[c]).toBeUndefined();
+      expect(tree.nodes[a].percentOfParent).toBe(Panel.Percent(0.625)); // 0.5/0.8
+      expect(tree.nodes[b].percentOfParent).toBe(Panel.Percent(0.375)); // 0.3/0.8
+    }),
+  );
+
   it.effect("errors on delete root panel", () =>
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
       const result = yield* Effect.exit(
-        Panel.deletePanel(setTree, { panelId: tree.root }),
+        Panel.deleteNode(setTree, { id: tree.root }),
       );
 
       expect(JSON.stringify(result)).toStrictEqual(
@@ -312,18 +349,16 @@ describe("deleting", () => {
     Effect.gen(function* () {
       const [_tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
 
       yield* storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
-          const panel = yield* Panel.getPanel(tree, { panelId: a });
+          const panel = yield* Panel.getNode(tree, { id: a });
           panel.children.push(tree.root);
         }),
       );
 
-      const result = yield* Effect.exit(
-        Panel.deletePanel(setTree, { panelId: a }),
-      );
+      const result = yield* Effect.exit(Panel.deleteNode(setTree, { id: a }));
 
       expect(JSON.stringify(result)).toStrictEqual(
         JSON.stringify(Exit.fail(new Panel.CannotDeleteRootPanelError())),
@@ -335,8 +370,8 @@ describe("deleting", () => {
     Effect.gen(function* () {
       const [tree, setTree] = createTreeStore();
 
-      const a = yield* Panel.createPanel(setTree, { dbgName: "a" });
-      const b = yield* Panel.createPanel(setTree, { dbgName: "b" });
+      const a = yield* Panel.createNode(setTree, { dbgName: "a" });
+      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
 
       const fakeId = yield* Panel.createId;
 
@@ -344,7 +379,7 @@ describe("deleting", () => {
 
       yield* storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
-          const panel = yield* Panel.getPanel(tree, { panelId: a });
+          const panel = yield* Panel.getNode(tree, { id: a });
           panel.children.push(fakeId);
         }),
       );
@@ -353,9 +388,7 @@ describe("deleting", () => {
       expect(tree.nodes[a].children).toHaveLength(2);
       expect(Object.entries(tree.nodes)).toHaveLength(3);
 
-      const result = yield* Effect.exit(
-        Panel.deletePanel(setTree, { panelId: a }),
-      );
+      const result = yield* Effect.exit(Panel.deleteNode(setTree, { id: a }));
 
       expect(JSON.stringify(result)).toStrictEqual(
         JSON.stringify(

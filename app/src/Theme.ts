@@ -51,6 +51,7 @@ export const ThemeColorsSchema = z.object({
 export const ThemeSchema = z.object({
   background: z.string(),
   text: z.string(),
+  deemphasis: z.string(),
   border: z.string(),
   panel: z.object({
     tab: z.object({
@@ -169,6 +170,7 @@ export const themeFromBase16 = (
   return {
     background: overrides?.background ?? base16.base00,
     text: overrides?.text ?? base16.base05,
+    deemphasis: overrides?.deemphasis ?? base16.base04,
     border: overrides?.border ?? base16.base02,
     panel: {
       tab: {

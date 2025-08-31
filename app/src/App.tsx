@@ -4,6 +4,7 @@ import {
   For,
   Index,
   Match,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -21,7 +22,7 @@ import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
 import DND from "~/dnd_tut";
 import Panels from "~/panels";
 import Panels2 from "~/panels2/panels2";
-import Panels3 from "~/panels3/panels3";
+import { Panels3 } from "~/panels3/panels3";
 
 const App = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the

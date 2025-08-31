@@ -223,10 +223,11 @@ export type ArrayPropertyProps<T> = {
   previewCount?: number;
   render: (item: T) => JSX.Element;
   preview?: (item: T) => JSX.Element;
+  last?: () => JSX.Element;
 };
 
 export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
-  const preview = props.preview || props.render;
+  const preview = props.preview ?? props.render;
   const previewCount = props.previewCount ?? 3;
 
   const context = useContext(PropertyEditorContext)!;
@@ -234,7 +235,7 @@ export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
 
   const [expanded, setExpanded] = makePersisted(createSignal(false), {
     storage: sessionStorage,
-    name: `array-property-${props.key}-expanded`,
+    name: `array-property-expanded-'${props.key}'`,
   });
   createEffect(() => {
     context.setAnyArrayExpanded(expanded());
@@ -254,21 +255,28 @@ export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
             >
               <Icon kind="chevron_right" class="fill-transparent size-3 p-0" />
             </button>
-            <div class="pt-0.5">{props.key}</div>
+            <div class={cn("pt-1", expanded() && "pt-0.5")}>{props.key}</div>
           </Key>
 
-          <Value class="h-full overflow-clip flex items-center">
-            [
-            {[
-              props.items.slice(0, previewCount).map((item, index) => (
-                <>
-                  {preview(item)}
-                  {props.items.length > index + 1 ? ", " : ""}
-                </>
-              )),
-              props.items.length > previewCount && "…",
-            ]}
-            ]
+          <Value
+            class={cn(
+              "h-full overflow-clip flex items-center",
+              expanded() && "pt-0 pb-[2px]",
+            )}
+          >
+            <span class="text-theme-deemphasis">
+              [
+              {[
+                props.items.slice(0, previewCount).map((item, index) => (
+                  <>
+                    <span class="text-theme-text">{preview(item)}</span>
+                    {props.items.length > index + 1 ? ", " : ""}
+                  </>
+                )),
+                props.items.length > previewCount && "…",
+              ]}
+              ]
+            </span>
           </Value>
         </Row>
       </Row>
@@ -280,6 +288,9 @@ export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
               <Row class="pl-8 last:border-b-2">{props.render(item)}</Row>
             )}
           </For>
+          <Show when={props.last}>
+            <Row class="pl-8 last:border-b-2">{props.last!()}</Row>
+          </Show>
         </div>
       </Show>
     </>
@@ -287,6 +298,7 @@ export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
 };
 
 export type PropertyEditorProps = ParentProps<{
+  name: string;
   showHeader?: boolean;
   header?: {
     key: string;
@@ -309,7 +321,7 @@ export const PropertyEditor = (inProps: PropertyEditorProps) => {
 
   const [width, setWidth] = makePersisted(createSignal(0.5), {
     storage: sessionStorage,
-    name: "property-editor-split-width",
+    name: `property-editor-split-width-'${props.name}'`,
   });
   const [widthPx, setWidthPx] = createSignal<number>(0);
   const updateWidthPx = () => setWidthPx(width() * tableRef.clientWidth);

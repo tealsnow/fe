@@ -31,7 +31,7 @@ const Lozenge = (props_: LozengeProps) => {
         `,
         props.interactive &&
           !props.disabled && [
-            "transition duration-150 underline",
+            "transition duration-150 cursor-pointer",
             css`
               &:hover {
                 background: ${`var(--theme-colors-${props.color}-base)`} !important;
