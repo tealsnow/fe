@@ -6,8 +6,8 @@ import { Console, Effect, Match, Option, pipe } from "effect";
 
 import { cn } from "~/lib/cn";
 import { storeObjectProduceFromStore } from "~/lib/SignalObject";
-import { NotificationType, notify } from "../notifications";
-import Lozenge from "../Lozenge";
+import { NotificationType, notify } from "~/notifications";
+import Lozenge from "~/ui/components/Lozenge";
 
 import PanelsExplorer from "./explorer";
 import {

@@ -25,11 +25,15 @@ export type NodePropsRequired = {
 export type NodePropsOptional = {
   layout: Layout;
   percentOfParent: Percent;
+
+  tabs: Tab[];
 };
 
 export const NodePropsOptional: NodePropsOptional = {
   layout: "horizontal",
   percentOfParent: Percent(1),
+
+  tabs: [],
 };
 
 export type NodePropsOptionalPartial = Partial<NodePropsOptional>;
@@ -45,6 +49,11 @@ export type Node = NodePropsCommon & {
   parent: Option.Option<ID>;
 
   children: ID[];
+  tabs: Tab[];
+};
+
+export type Tab = {
+  title: string;
 };
 
 export type Tree = {

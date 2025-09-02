@@ -1,14 +1,8 @@
 import { Effect, Option, Order, pipe } from "effect";
-import {
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
 import { css } from "solid-styled-components";
 import { MapOption } from "solid-effect";
+import { makePersisted } from "@solid-primitives/storage";
 
 import { DragLocationHistory } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
@@ -16,11 +10,13 @@ import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/elem
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 
 import { cn } from "~/lib/cn";
-import Lozenge from "~/Lozenge";
+import { storeUpdate } from "~/lib/SignalObject";
+
+import Dialog from "~/ui/components/Dialog";
+import Button from "~/ui/components/Button";
 
 import * as Panel from "./Panel";
-import * as Property from "./Property";
-import { makePersisted } from "@solid-primitives/storage";
+import PropertyEditor from "./PropertyEditor";
 
 const getPanel = (tree: Panel.Tree, id: Panel.ID) =>
   Panel.getNode(tree, { id }).pipe(Effect.runSync);
@@ -37,29 +33,27 @@ export type RenderPanelPillProps = {
 };
 
 export const RenderPanelPill = (props: RenderPanelPillProps) => {
-  const panel = createMemo(() => getPanel(props.tree, props.panelId()));
+  const panel = () => getPanel(props.tree, props.panelId());
 
   return (
     <>
-      <div class="flex flex-row">
+      <div class="flex flex-row my-0.5">
         <div
           style={{
             "padding-left": `${props.indent * 2}rem`,
           }}
         />
 
-        <Lozenge
-          class="m-0.5 min-w-10"
-          interactive={true}
+        <Button
+          color="orange"
           highlighted={Option.getOrNull(props.selectedId()) === props.panelId()}
-          color={panel().children.length === 0 ? "green" : "purple"}
           onClick={(event) => {
             event.stopPropagation();
             props.selectPanel(props.panelId());
           }}
         >
           {panel().dbgName}
-        </Lozenge>
+        </Button>
       </div>
 
       <div class="flex flex-col">
@@ -91,29 +85,12 @@ type PanelInspectorProps = {
 const PanelInspector = (props: PanelInspectorProps) => {
   const panel = createMemo(() => getPanel(props.tree, props.panelId()));
 
-  let newChildInputRef!: HTMLInputElement;
-  const [newChildName, setNewChildName] = createSignal<string | null>(null);
-  const addChild = () => {
-    const name = newChildName();
-    if (!name) return;
-
-    Effect.gen(function* () {
-      const newChildId = yield* Panel.createNode(props.setTree, {
-        dbgName: name,
-      });
-      yield* Panel.addChild(props.setTree, {
-        parentId: panel().id,
-        newChildId,
-      });
-    }).pipe(Effect.runSync);
-
-    setNewChildName(null);
-  };
+  const [showConfirmDelete, setShowConfirmDelete] = createSignal(false);
 
   return (
     <div class="font-mono">
-      <Property.PropertyEditor name="panel-inspector" showHeader={true}>
-        <Property.StringProperty
+      <PropertyEditor name="panel-inspector" showHeader={true}>
+        <PropertyEditor.String
           key="Debug name"
           value={panel().dbgName}
           onUpdate={(dbgName) => {
@@ -124,27 +101,51 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }}
         />
 
-        <Property.ButtonProperty
+        <PropertyEditor.Button
           key="Delete panel?"
           onClick={Option.getOrUndefined(
-            Option.map(
-              panel().parent,
-              (parentId) => () =>
-                Effect.runSync(
-                  Effect.gen(function* () {
-                    const id = panel().id;
-                    props.deselectPanel();
-                    yield* Panel.deleteNode(props.setTree, { id });
-                    props.selectPanel(parentId);
-                  }),
-                ),
-            ),
+            Option.map(panel().parent, () => () => setShowConfirmDelete(true)),
           )}
         >
           Delete
-        </Property.ButtonProperty>
+          <Dialog
+            open={showConfirmDelete()}
+            onOpenChange={setShowConfirmDelete}
+          >
+            <Dialog.Content noCloseButton>
+              <Dialog.Header>
+                <Dialog.Title>
+                  Are you sure you want to delete this panel?
+                </Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Footer>
+                <Button
+                  color="green"
+                  onClick={() => setShowConfirmDelete(false)}
+                >
+                  cancel
+                </Button>
+                <Button
+                  color="red"
+                  noOnClickToOnMouseDown
+                  onClick={() =>
+                    Effect.gen(function* () {
+                      const id = panel().id;
+                      const parentId = yield* panel().parent;
+                      props.deselectPanel();
+                      yield* Panel.deleteNode(props.setTree, { id });
+                      props.selectPanel(parentId);
+                    }).pipe(Effect.runSync)
+                  }
+                >
+                  delete
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog>
+        </PropertyEditor.Button>
 
-        <Property.ButtonProperty
+        <PropertyEditor.Button
           key="Parent"
           onClick={Option.map(
             panel().parent,
@@ -157,9 +158,9 @@ const PanelInspector = (props: PanelInspectorProps) => {
               Effect.runSync,
             ),
           ).pipe(Option.getOrElse(() => "null"))}
-        </Property.ButtonProperty>
+        </PropertyEditor.Button>
 
-        <Property.EnumProperty
+        <PropertyEditor.Enum
           key="Layout"
           value={panel().layout}
           options={["vertical", "horizontal"]}
@@ -173,7 +174,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }}
         />
 
-        <Property.ArrayProperty
+        <PropertyEditor.Array
           key="Children"
           items={Array.from(panel().children).map((id) =>
             Panel.getNode(props.tree, { id }).pipe(
@@ -181,66 +182,36 @@ const PanelInspector = (props: PanelInspectorProps) => {
               Effect.runSync,
             ),
           )}
-          // preview={(item) => `'${item.dbgName}'`}
           render={(item) => (
-            <Lozenge
-              class="font-mono min-w-8 h-full p-0 px-1 border-1"
+            <Button
+              size="small"
               color="aqua"
-              interactive
+              class="h-full pt-1"
               onClick={() => props.selectPanel(item.id)}
             >
               {item.dbgName}
-            </Lozenge>
+            </Button>
           )}
           last={() => (
-            <div class="flex h-full gap-1">
-              <Show when={newChildName() !== null}>
-                <input
-                  ref={newChildInputRef}
-                  type="text"
-                  class={cn(
-                    "ring-0 min-h-0 h-full p-0 px-1 pt-0.5 box-border bg-theme-colors-purple-background border border-theme-colors-purple-border",
-                  )}
-                  size={12}
-                  placeholder="new child name"
-                  value={newChildName()!}
-                  onBlur={() => setTimeout(() => setNewChildName(null), 100)}
-                  onInput={({ currentTarget: { value } }) =>
-                    setNewChildName(value)
-                  }
-                  onKeyDown={({ key }) => {
-                    switch (key) {
-                      case "Enter":
-                        addChild();
-                        break;
-                      case "Escape":
-                        setNewChildName(null);
-                        break;
-                    }
-                  }}
-                />
-              </Show>
-              <Lozenge
-                class="font-mono min-w-8 h-full p-0 px-1 border-1"
-                color="green"
-                interactive
-                onClick={() => {
-                  if (newChildName() !== null) {
-                    addChild();
-                  } else {
-                    setNewChildName("new child");
-                    newChildInputRef.focus();
-                    newChildInputRef.select();
-                  }
-                }}
-              >
-                +
-              </Lozenge>
-            </div>
+            <PropertyEditor.AddString
+              placeholder="new child name"
+              defaultValue="new child"
+              onSubmit={(name) => {
+                Effect.gen(function* () {
+                  const newChildId = yield* Panel.createNode(props.setTree, {
+                    dbgName: name,
+                  });
+                  yield* Panel.addChild(props.setTree, {
+                    parentId: panel().id,
+                    newChildId,
+                  });
+                }).pipe(Effect.runSync);
+              }}
+            />
           )}
         />
 
-        <Property.ButtonProperty
+        <PropertyEditor.Button
           key="redistribute children?"
           onClick={() =>
             Panel.redistributeChildren(props.setTree, { id: panel().id }).pipe(
@@ -249,9 +220,9 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }
         >
           redistribute
-        </Property.ButtonProperty>
+        </PropertyEditor.Button>
 
-        <Property.ButtonProperty
+        <PropertyEditor.Button
           key="balance children?"
           onClick={() =>
             Panel.uniformChildren(props.setTree, { id: panel().id }).pipe(
@@ -260,9 +231,9 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }
         >
           balance
-        </Property.ButtonProperty>
+        </PropertyEditor.Button>
 
-        <Property.StringProperty
+        <PropertyEditor.String
           key="% of parent"
           value={(panel().percentOfParent * 100).toFixed(2)}
           // format={(str) => str + "%"}
@@ -289,7 +260,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
           }}
         />
 
-        <Property.StringProperty
+        <PropertyEditor.String
           key="Children % valid"
           value={pipe(
             Effect.if(panel().children.length !== 0, {
@@ -312,7 +283,27 @@ const PanelInspector = (props: PanelInspectorProps) => {
             Effect.runSync,
           )}
         />
-      </Property.PropertyEditor>
+
+        <PropertyEditor.Array
+          key="Tabs"
+          items={panel().tabs}
+          render={(tab) => tab.title}
+          last={() => (
+            <PropertyEditor.AddString
+              placeholder="new tab name"
+              defaultValue="new tab"
+              onSubmit={(title) => {
+                storeUpdate(props.setTree, (tree) =>
+                  Effect.gen(function* () {
+                    const node = yield* Panel.getNode(tree, { id: panel().id });
+                    node.tabs.push({ title });
+                  }).pipe(Effect.runSync),
+                );
+              }}
+            />
+          )}
+        />
+      </PropertyEditor>
     </div>
   );
 };
@@ -419,18 +410,75 @@ const Inspector = (props: InspectorProps) => {
           height: `calc(var(--local-resizing-size, var(--local-starting-size)) * 1px)`,
         }}
       >
-        <Lozenge
-          class="ml-2 mt-2"
-          color="pink"
-          interactive
-          onClick={() => {
-            for (const [id, panel] of Object.entries(props.tree.nodes)) {
-              console.log("id:", id, ",", "dbgName:", panel.dbgName);
-            }
-          }}
-        >
-          Print all panels
-        </Lozenge>
+        <div class="ml-2 mt-2 flex gap-1">
+          {/*<Button
+            color="pink"
+            onClick={() => {
+              for (const [id, panel] of Object.entries(props.tree.nodes)) {
+                console.log("id:", id, ",", "dbgName:", panel.dbgName);
+              }
+            }}
+          >
+            Print all panels
+          </Button>*/}
+
+          {/*<Button color="pink" onClick={() => setShowDialog(true)}>
+            show dialog
+          </Button>*/}
+
+          {/*<Dialog open={showDialog()} onOpenChange={setShowDialog}>*/}
+          <Dialog>
+            <Dialog.Trigger as={Button} color="pink">
+              show dialog
+            </Dialog.Trigger>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Title!</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Description>Description!</Dialog.Description>
+              yo!
+              <Dialog.Footer>Footer!</Dialog.Footer>
+            </Dialog.Content>
+          </Dialog>
+
+          {/*<Dialog open={showDialog()} onClose={() => setShowPortal(false)}>
+            yo!
+          </Dialog>*/}
+
+          {/*<Button color="red">button</Button>
+          <Button color="pink" disabled>
+            disabled
+          </Button>
+          <Button color="red" size="small">
+            small
+          </Button>
+          <Button color="blue" variant="outline">
+            outline
+          </Button>
+          <Button color="yellow" variant="ghost">
+            ghost
+          </Button>
+          <Button
+            variant="link"
+            as="a"
+            href="https://example.com"
+            target="_blank"
+          >
+            Link
+          </Button>*/}
+        </div>
+
+        {/*<Show when={showPortal()}>
+          <Portal mount={themeContext.rootElement()}>
+            <div
+              class="fixed top-0 left-0 w-full h-full bg-theme-background/60"
+              onClick={() => setShowPortal(false)}
+            />
+            <div class="fixed top-[50%] left-[50%] transform-[translate(-50%, -50%)] bg-theme-background border p-2 rounded-md shadow">
+              yo!
+            </div>
+          </Portal>
+        </Show>*/}
 
         <MapOption on={props.selectedId()}>
           {(selectedId) => (
@@ -443,9 +491,90 @@ const Inspector = (props: InspectorProps) => {
             />
           )}
         </MapOption>
+
+        {/*<ParentComponent>
+          <MyTokenA> 1 A 1st</MyTokenA>
+          <MyTokenB> 1 B 2nd </MyTokenB>
+          <MyTokenA> 2 A 3rd </MyTokenA>
+        </ParentComponent>*/}
       </div>
     </div>
   );
 };
 
 export default Inspector;
+
+// import {
+//   createTokenizer,
+//   createToken,
+//   resolveTokens,
+// } from "@solid-primitives/jsx-tokenizer";
+// import { ColorKind } from "~/Theme";
+// import { Icon } from "~/assets/icons";
+// import { Button } from "~/ui/components/Button";
+
+// type TokenProps = ParentProps<{ type: "A" | "B"; color?: ColorKind }>;
+// const Tokenizer = createTokenizer<TokenProps>({
+//   name: "Example Tokenizer",
+// });
+
+// type MyTokenAProps = ParentProps<{}>;
+// const MyTokenA = createToken<MyTokenAProps, TokenProps>(Tokenizer, (props) => ({
+//   type: "A",
+//   ...props,
+// }));
+// type MyTokenBProps = ParentProps<{ color?: ColorKind }>;
+// const MyTokenB = createToken<MyTokenBProps, TokenProps>(Tokenizer, (props) => ({
+//   type: "B",
+//   ...props,
+// }));
+
+// function ParentComponent(props: ParentProps<{}>) {
+//   const tokens = resolveTokens<TokenProps>(Tokenizer, () => props.children);
+
+//   const allA = tokens().filter((token) => token.data.type === "A");
+//   const allB = tokens().filter((token) => token.data.type === "B");
+
+//   return (
+//     <ul>
+//       {/*<For each={tokens()}>{(token) => <li>{token.data.type}</li>}</For>*/}
+//       <For each={allA}>{(token) => <li>{token.data.children}</li>}</For>
+//       <For each={allB}>{(token) => <li>{token.data.children}</li>}</For>
+//     </ul>
+//   );
+// }
+
+// // <ParentComponent>
+// //   <MyTokenA />
+// //   <MyTokenB />
+// // </ParentComponent>;
+
+// // function Tabs<T>(props: {
+// //   children: (Tab: Component<{ value: T }>) => JSX.Element;
+// //   active: T;
+// // }) {
+// //   const Tab = createToken((props: { value: T }) => props.value);
+// //   // resolveTokens will look for tokens created by Tab component
+// //   const tokens = resolveTokens(Tab, () => props.children(Tab));
+// //   return (
+// //     <ul>
+// //       <For each={tokens()}>
+// //         {(token) => (
+// //           <li classList={{ active: token.data === props.active }}>
+// //             {token.data as any}
+// //           </li>
+// //         )}
+// //       </For>
+// //     </ul>
+// //   );
+// // }
+
+// // // usage
+// // <Tabs active="tab1">
+// //   {(Tab) => (
+// //     <>
+// //       <Tab value="tab1" />
+// //       <Tab value="tab2" />
+// //     </>
+// //   )}
+// // </Tabs>;

@@ -38,12 +38,7 @@ const App = () => {
   return (
     <ThemeProvider theme={theming.defaultTheme}>
       <NotificationProvider>
-        <div
-          class="bg-theme-background text-theme-text flex h-screen w-screen
-            flex-col overflow-hidden"
-        >
-          <Root />
-        </div>
+        <Root />
       </NotificationProvider>
     </ThemeProvider>
   );
@@ -120,7 +115,7 @@ const Root = () => {
   });
 
   return (
-    <>
+    <div class="flex flex-col w-full h-full">
       <Show when={showNoise()}>
         <svg
           class="w-full h-full absolute inset-0 pointer-events-none"
@@ -221,7 +216,7 @@ const Root = () => {
       </div>
 
       <StatusBar />
-    </>
+    </div>
   );
 };
 

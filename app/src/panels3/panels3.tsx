@@ -3,9 +3,11 @@ import {
   createMemo,
   createSignal,
   For,
+  Match,
   onCleanup,
   onMount,
   Show,
+  Switch,
 } from "solid-js";
 import { css } from "solid-styled-components";
 import { makePersisted } from "@solid-primitives/storage";
@@ -18,10 +20,10 @@ import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unha
 
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
-import Lozenge from "~/Lozenge";
 
 import * as Panel from "./Panel";
 import Inspector from "./Inspector";
+import { Button } from "~/ui/components/Button";
 
 export type RenderPanelProps = {
   tree: Panel.Tree;
@@ -39,13 +41,17 @@ export const RenderPanel = (props: RenderPanelProps) => {
       .pipe(Effect.runSync),
   );
 
-  const selected = () => Option.getOrNull(props.selectedPanel()) === panel().id;
+  const isSelected = () =>
+    Option.getOrNull(props.selectedPanel()) === panel().id;
+
+  if (panel().children.length !== 0) assert(panel().tabs.length === 0);
+  const isLeaf = () => panel().tabs.length > 0 || panel().children.length === 0;
 
   return (
     <div
       class={cn(
-        "flex flex-col w-full h-full border-theme-colors-purple-border",
-        selected() && "border",
+        "flex flex-col w-full h-full outline-theme-colors-purple-border/80 -outline-offset-1",
+        isSelected() && "outline",
         // "border-theme-colors-purple-border border p-[1px]",
         // selected() && "border-2 p-0",
       )}
@@ -62,67 +68,64 @@ export const RenderPanel = (props: RenderPanelProps) => {
       }
     >
       <Show when={props.dbgHeader()}>
-        <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border-b border-theme-colors-purple-border">
-          <Lozenge
+        <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border border-theme-colors-orange-border">
+          <Button
             color="orange"
-            class="min-w-10"
-            interactive
-            highlighted={selected()}
+            size="small"
+            highlighted={isSelected()}
             onClick={() => props.selectPanel(panel().id)}
           >
             {panel().dbgName}
-          </Lozenge>
-          {(panel().percentOfParent * 100).toFixed(2)}% Children %:
-          {Panel.validateChildrenSizes(props.tree, {
-            id: panel().id,
-          }).pipe(
-            Effect.map(({ ok, difference }) => (
-              <>
-                {ok ? (
-                  <div class="text-green-500">OK</div>
-                ) : (
-                  <div class="text-red-500">
-                    Error: difference: {difference}
-                  </div>
-                )}
-              </>
-            )),
-            Effect.runSync,
-          )}
+          </Button>
         </div>
       </Show>
 
-      <div
-        class={cn(
-          "flex w-full h-full",
-          panel().layout === "vertical" ? "flex-col" : "flex-row",
-        )}
-      >
-        <For each={panel().children}>
-          {(panelId, idx) => (
-            <>
-              <RenderPanel
-                tree={props.tree}
-                setTree={props.setTree}
-                parentLayout={panel().layout}
-                panelId={() => panelId}
-                selectedPanel={props.selectedPanel}
-                selectPanel={props.selectPanel}
-                dbgHeader={props.dbgHeader}
-              />
-              <Show when={idx() !== panel().children.length - 1}>
-                <ResizeHandle
-                  tree={props.tree}
-                  setTree={props.setTree}
-                  panelId={() => panelId}
-                  parent={panel}
-                  idx={idx}
-                />
-              </Show>
-            </>
-          )}
-        </For>
-      </div>
+      <Switch>
+        <Match when={isLeaf()}>
+          <div class="w-full h-full">
+            <div class="flex items-center px-1 w-full h-6 border-b border-theme-border">
+              <For each={panel().tabs}>
+                {(tab) => {
+                  return tab.title;
+                }}
+              </For>
+            </div>
+          </div>
+        </Match>
+        <Match when={!isLeaf()}>
+          <div
+            class={cn(
+              "flex w-full h-full",
+              panel().layout === "vertical" ? "flex-col" : "flex-row",
+            )}
+          >
+            <For each={panel().children}>
+              {(panelId, idx) => (
+                <>
+                  <RenderPanel
+                    tree={props.tree}
+                    setTree={props.setTree}
+                    parentLayout={panel().layout}
+                    panelId={() => panelId}
+                    selectedPanel={props.selectedPanel}
+                    selectPanel={props.selectPanel}
+                    dbgHeader={props.dbgHeader}
+                  />
+                  <Show when={idx() !== panel().children.length - 1}>
+                    <ResizeHandle
+                      tree={props.tree}
+                      setTree={props.setTree}
+                      panelId={() => panelId}
+                      parent={panel}
+                      idx={idx}
+                    />
+                  </Show>
+                </>
+              )}
+            </For>
+          </div>
+        </Match>
+      </Switch>
     </div>
   );
 };
@@ -232,8 +235,6 @@ const ResizeHandle = (props: ResizeHandleProps) => {
       },
     });
 
-    console.log("added drag handler");
-
     onCleanup(() => {
       dragCleanup();
     });
@@ -243,10 +244,10 @@ const ResizeHandle = (props: ResizeHandleProps) => {
     <div
       ref={resizeRef}
       class={cn(
-        "relative bg-theme-border",
+        "relative bg-theme-border transition-colors hover:bg-theme-deemphasis",
         props.parent().layout === "vertical"
-          ? "h-[2px] w-full"
-          : "w-[2px] h-full",
+          ? "h-[1px] w-full"
+          : "w-[1px] h-full",
         css`
           &::before {
             content: "";
@@ -255,13 +256,13 @@ const ResizeHandle = (props: ResizeHandleProps) => {
               ? `
               cursor: ns-resize;
               width: 100%;
-              height: 8px;
+              height: 7px;
               top: -2px;
               `
               : `
               cursor: ew-resize;
               height: 100%;
-              width: 8px;
+              width: 7px;
               left: -2px;
               `}
           }

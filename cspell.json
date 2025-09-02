@@ -22,6 +22,7 @@
     "globaly",
     "direnv",
     "tanstack",
-    "adjustables"
+    "adjustables",
+    "kobalte"
   ]
 }

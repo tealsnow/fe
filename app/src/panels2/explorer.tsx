@@ -6,6 +6,8 @@ import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/disable-native-drag-preview";
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 
+import { Order } from "effect";
+
 import {
   PanelEvent,
   PanelEventEmitter,
@@ -15,8 +17,7 @@ import {
 } from "./panel";
 import { getIntrinsicMinWidth } from "~/lib/getIntrinsicSize";
 import { cn } from "~/lib/cn";
-import Lozenge from "../Lozenge";
-import { Order } from "effect";
+import Lozenge, { TextInputLozenge } from "~/ui/components/Lozenge";
 
 export type RenderPanelPillProps = {
   treeStore: PanelTreeStore;
@@ -140,8 +141,11 @@ export const Inspect = (props: InspectProps) => {
         </ul>
       </div>
       <div class="flex flex-row gap-2">
-        <input
+        {/*<input
           type="text"
+        />*/}
+        <TextInputLozenge
+          color="purple"
           value={newChildName()}
           placeholder="new child name"
           name="new child name"

@@ -4,6 +4,7 @@ import { createStore } from "solid-js/store";
 
 import { EnumMap } from "~/lib/type_helpers";
 import { storeObjectFromStore } from "~/lib/SignalObject";
+import Button from "./ui/components/Button";
 
 export type StatusBarAlignment = "left" | "right";
 
@@ -84,17 +85,24 @@ const RenderItem = (props: { item: StatusBarItem }) => {
   return (
     <Switch>
       <Match when={props.item.kind === "text"}>
-        <div class="p-0.5">{props.item.content({})}</div>
+        <div class="px-0.5">{props.item.content({})}</div>
       </Match>
       <Match when={props.item.kind === "button"}>
-        <button
+        {/*<button
           class="hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill cursor-pointer rounded-sm p-0.5"
           onClick={() => {
             props.item.onClick?.call({});
           }}
         >
           {props.item.content({})}
-        </button>
+        </button>*/}
+        <Button
+          variant="icon"
+          size="icon"
+          onClick={() => props.item.onClick?.call({})}
+        >
+          {props.item.content({})}
+        </Button>
       </Match>
     </Switch>
   );
