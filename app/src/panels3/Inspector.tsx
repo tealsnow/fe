@@ -236,7 +236,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
         <PropertyEditor.String
           key="% of parent"
           value={(panel().percentOfParent * 100).toFixed(2)}
-          // format={(str) => str + "%"}
+          format={(str) => str + "%"}
           onUpdate={(update) => {
             const num = Order.clamp(Order.number)({
               minimum: 0,
@@ -284,7 +284,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
           )}
         />
 
-        <PropertyEditor.Array
+        {/*<PropertyEditor.Array
           key="Tabs"
           items={panel().tabs}
           render={(tab) => tab.title}
@@ -302,7 +302,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
               }}
             />
           )}
-        />
+        />*/}
       </PropertyEditor>
     </div>
   );
@@ -396,7 +396,7 @@ const Inspector = (props: InspectorProps) => {
               position: absolute;
               width: 100%;
               height: 1rem;
-              left: -0.5rem;
+              top: -0.5rem;
             }
           `,
         )}

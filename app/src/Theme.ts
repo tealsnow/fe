@@ -178,7 +178,7 @@ export const themeFromBase16 = (
           idle: overrides?.panel?.tab?.background?.idle ?? base16.base00,
           active: overrides?.panel?.tab?.background?.active ?? base16.base01,
           dropTarget:
-            overrides?.panel?.tab?.background?.dropTarget ?? base16.base07,
+            overrides?.panel?.tab?.background?.dropTarget ?? base16.base04,
         },
       },
     },

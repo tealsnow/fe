@@ -3,6 +3,7 @@ import { Brand, Cause, Data, Effect, Match, Option, Order, pipe } from "effect";
 import { SetStoreFunction } from "solid-js/store";
 
 import { storeUpdate } from "~/lib/SignalObject";
+import { PickOptional } from "~/lib/type_helpers";
 
 export type ID = string & Brand.Brand<"PanelId">;
 export const ID = Brand.refined<ID>(
@@ -18,42 +19,22 @@ export const Percent = Brand.refined<Percent>(
 
 export type Layout = "vertical" | "horizontal";
 
-export type NodePropsRequired = {
+export type NodeProps = {
   dbgName: string;
+  layout?: Layout;
+  percentOfParent?: Percent;
 };
-
-export type NodePropsOptional = {
-  layout: Layout;
-  percentOfParent: Percent;
-
-  tabs: Tab[];
-};
-
-export const NodePropsOptional: NodePropsOptional = {
+const NodeProps: Required<PickOptional<NodeProps>> = {
   layout: "horizontal",
   percentOfParent: Percent(1),
-
-  tabs: [],
 };
 
-export type NodePropsOptionalPartial = Partial<NodePropsOptional>;
-
-export type NodeProps = NodePropsRequired & NodePropsOptionalPartial;
-
-export type NodePropsCommon = NodePropsRequired & NodePropsOptional;
-
-export type PanelNodePropsCommonPartial = Partial<NodePropsCommon>;
-
-export type Node = NodePropsCommon & {
+export type Node = Required<NodeProps> & {
   id: ID;
+  // should only be none for root or for transient panels
   parent: Option.Option<ID>;
 
   children: ID[];
-  tabs: Tab[];
-};
-
-export type Tab = {
-  title: string;
 };
 
 export type Tree = {
@@ -84,6 +65,8 @@ export class PanelDoesNotExistError extends Data.TaggedError(
     );
   }
 }
+
+export class NotAParentError extends Data.TaggedError("NotAParent")<{}> {}
 
 export class CannotDeleteRootPanelError extends Data.TaggedError(
   "CannotDeleteRootPanelError",
@@ -116,7 +99,7 @@ export const createTree: Effect.Effect<Tree, never> = Effect.andThen(
           parent: Option.none(),
           id: root,
           children: [],
-          ...NodePropsOptional,
+          ...NodeProps,
         },
       },
     }) satisfies Tree,
@@ -134,7 +117,7 @@ export const createNode = (
         id,
         parent: Option.none(),
         children: [],
-        ...{ ...NodePropsOptional, ...props },
+        ...{ ...NodeProps, ...props },
       };
 
       tree.nodes[id] = node;
@@ -437,7 +420,7 @@ export const validateChildrenSizes = (
 
 export const updateNode = (
   setTree: SetTree,
-  { id, props }: { id: ID; props: PanelNodePropsCommonPartial },
+  { id, props }: { id: ID; props: Partial<NodeProps> },
 ): Effect.Effect<void, PanelDoesNotExistError> =>
   storeUpdate(setTree, (tree) =>
     Effect.gen(function* () {

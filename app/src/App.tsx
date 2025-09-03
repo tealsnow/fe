@@ -19,6 +19,8 @@ import ThemeProvider from "~/ThemeProvider";
 import Titlebar from "~/Titlebar";
 import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
 
+import Button from "~/ui/components/Button";
+
 import DND from "~/dnd_tut";
 import Panels from "~/panels";
 import Panels2 from "~/panels2/panels2";
@@ -223,12 +225,9 @@ const Root = () => {
 const Notifications = () => {
   return (
     <div class="m-2 flex flex-row flex-wrap gap-2">
-      <button class="btn-primary" onClick={() => notify("def")}>
-        default
-      </button>
+      <Button onClick={() => notify("def")}>default</Button>
 
-      <button
-        class="btn-primary"
+      <Button
         onClick={() => {
           setTimeout(() => {
             notify("one sec later");
@@ -236,59 +235,44 @@ const Notifications = () => {
         }}
       >
         in one second
-      </button>
+      </Button>
 
-      <button
-        class="btn-primary"
-        onClick={() => notify("success", { type: "success" })}
-      >
+      <Button onClick={() => notify("success", { type: "success" })}>
         success
-      </button>
+      </Button>
 
-      <button
-        class="btn-primary"
-        onClick={() => notify("error", { type: "error" })}
-      >
-        error
-      </button>
+      <Button onClick={() => notify("error", { type: "error" })}>error</Button>
 
-      <button
-        class="btn-primary"
-        onClick={() => notify("warning", { type: "warning" })}
-      >
+      <Button onClick={() => notify("warning", { type: "warning" })}>
         warning
-      </button>
+      </Button>
 
-      <button
-        class="btn-primary"
-        onClick={() => notify("info", { type: "info" })}
-      >
-        info
-      </button>
+      <Button onClick={() => notify("info", { type: "info" })}>info</Button>
 
-      <button
-        class="btn-primary"
+      <Button
         onClick={() => {
           notify(
             ({ notif }) => {
               return (
-                <div class="flex-col gap-3 px-2">
+                <div class="flex flex-col gap-3 px-2">
                   <p>Are you sure?</p>
 
-                  <div class="flex-row gap-2">
-                    <button
-                      class="btn-primary"
+                  <div class="flex flex-row gap-2">
+                    <Button
+                      color="green"
+                      size="small"
                       onClick={() => notif.dismiss("yes")}
                     >
                       Yes
-                    </button>
+                    </Button>
 
-                    <button
-                      class="btn-secondary"
+                    <Button
+                      color="red"
+                      size="small"
                       onClick={() => notif.dismiss("no")}
                     >
                       No
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );
@@ -298,10 +282,9 @@ const Notifications = () => {
         }}
       >
         confirm
-      </button>
+      </Button>
 
-      <button
-        class="btn-primary"
+      <Button
         onClick={() => {
           const succeedOrFail = new Promise<void>((resolve, reject) => {
             setTimeout(() => {
@@ -316,7 +299,7 @@ const Notifications = () => {
         }}
       >
         promise
-      </button>
+      </Button>
     </div>
   );
 };
@@ -370,18 +353,15 @@ const Stores = () => {
         )}
       </For>
 
-      <button class="btn-primary" onClick={addPrefixes}>
-        update books
-      </button>
+      <Button onClick={addPrefixes}>update books</Button>
 
-      <button
-        class="btn-primary"
+      <Button
         onClick={() => {
           setPerson("name", "last", "bar");
         }}
       >
         change last name
-      </button>
+      </Button>
     </div>
   );
 };

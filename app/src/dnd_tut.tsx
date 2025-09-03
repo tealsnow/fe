@@ -2,6 +2,7 @@ import {
   Component,
   createEffect,
   createSignal,
+  onCleanup,
   onMount,
   ParentProps,
 } from "solid-js";
@@ -15,6 +16,7 @@ import { createStore } from "solid-js/store";
 
 import { IconKind, Icon } from "~/assets/icons";
 import { cn } from "~/lib/cn";
+import { Brand } from "effect";
 
 export type Coord = [number, number];
 
@@ -36,31 +38,22 @@ export const pieceIconLookup: {
   pawn: "close",
 };
 
-export const pieceLookup: {
-  [Key in PieceType]: DrawPiece;
-} = {
-  king: (props: SinglePieceProps) => <King location={props.location} />,
-  pawn: (props: SinglePieceProps) => <Pawn location={props.location} />,
+type PieceDragData = {
+  location: Coord;
+  type: PieceType;
+} & Brand.Brand<"PieceDragData">;
+const PieceDragData = Brand.nominal<PieceDragData>();
+
+const isPieceDragData = (obj: any): obj is PieceDragData => {
+  return PieceDragData.is(obj);
 };
 
 type SinglePieceProps = {
   location: Coord;
 };
 
-type PieceProps = {
+type PieceProps = SinglePieceProps & {
   type: PieceType;
-} & SinglePieceProps;
-
-const PieceDragDataSymbol = Symbol("PieceDragData");
-
-type PieceDragData = {
-  [PieceDragDataSymbol]: true;
-  location: Coord;
-  type: PieceType;
-};
-
-const isPieceDragData = (obj: any): obj is PieceDragData => {
-  return obj[PieceDragDataSymbol as any];
 };
 
 const Piece = (props: PieceProps) => {
@@ -68,19 +61,22 @@ const Piece = (props: PieceProps) => {
 
   let ref!: HTMLDivElement;
   onMount(() => {
-    return draggable({
+    // setup element to be dragged
+    // we provide some data for other listeners to get the info for
+    // the "source"
+    const cleanup = draggable({
       element: ref,
 
       getInitialData: () =>
-        ({
-          [PieceDragDataSymbol]: true,
+        PieceDragData({
           location: props.location,
           type: props.type,
-        }) satisfies PieceDragData,
+        }) as any,
 
       onDrag: () => setDragging(true),
       onDrop: () => setDragging(false),
     });
+    onCleanup(() => cleanup());
   });
 
   return (
@@ -106,6 +102,13 @@ const Pawn = (props: SinglePieceProps) => {
   return <Piece type="pawn" location={props.location} />;
 };
 
+export const pieceLookup: {
+  [Key in PieceType]: DrawPiece;
+} = {
+  king: (props: SinglePieceProps) => <King location={props.location} />,
+  pawn: (props: SinglePieceProps) => <Pawn location={props.location} />,
+};
+
 const canMove = (
   type: PieceType,
   src: Coord,
@@ -128,37 +131,40 @@ const canMove = (
     .exhaustive();
 };
 
+type SquareDragData = {
+  location: Coord;
+} & Brand.Brand<"SquareDragData">;
+const SquareDragData = Brand.nominal<SquareDragData>();
+
+const isSquareDragData = (obj: any): obj is SquareDragData => {
+  return SquareDragData.is(obj);
+};
+
 type SquareProps = ParentProps<{
   location: Coord;
   pieces: PieceRecord[];
 }>;
 
-type SquareHoverState = "idle" | "valid" | "invalid";
-
-const SquareDragDataSymbol = Symbol("SquareDragData");
-
-type SquareDragData = {
-  [SquareDragDataSymbol]: true;
-  location: Coord;
-};
-
-const isSquareDragData = (obj: any): obj is SquareDragData => {
-  return obj[SquareDragDataSymbol as any];
-};
-
 const Square = (props: SquareProps) => {
+  type SquareHoverState = "idle" | "valid" | "invalid";
+
   let ref!: HTMLDivElement;
   const [state, setState] = createSignal<SquareHoverState>("idle");
 
   onMount(() => {
-    return dropTargetForElements({
+    // setup this element as a place where we can drop elements
+    // we provide data for monitorForElements to learn about it from
+    // the "destination"
+    // has access to "source"s and is able to determine if they can or
+    // cannot be dropped here
+    // doesn't handle the drop itself
+    const cleanup = dropTargetForElements({
       element: ref,
 
       getData: () =>
-        ({
-          [SquareDragDataSymbol]: true,
+        SquareDragData({
           location: props.location,
-        }) satisfies SquareDragData,
+        }) as any,
 
       canDrop: ({ source }) => {
         if (!isPieceDragData(source.data)) return false;
@@ -182,6 +188,7 @@ const Square = (props: SquareProps) => {
       onDragLeave: () => setState("idle"),
       onDrop: () => setState("idle"),
     });
+    onCleanup(() => cleanup());
   });
 
   const [row, col] = props.location;
@@ -230,7 +237,10 @@ const Chessboard = () => {
   ]);
 
   createEffect(() => {
-    return monitorForElements({
+    // orchestrates the whole dnd system
+    // has access to both "source" and "destination"
+    // handles the actual drop and state update
+    const cleanup = monitorForElements({
       onDrop: ({ source, location }) => {
         const destination = location.current.dropTargets[0];
         if (!destination) return;
@@ -256,6 +266,7 @@ const Chessboard = () => {
         }
       },
     });
+    onCleanup(() => cleanup());
   });
 
   return (

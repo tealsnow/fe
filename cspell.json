@@ -23,6 +23,7 @@
     "direnv",
     "tanstack",
     "adjustables",
-    "kobalte"
+    "kobalte",
+    "pdnd"
   ]
 }

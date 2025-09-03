@@ -8,7 +8,7 @@
     @apply cursor-default leading-4 font-normal select-none;
 
     @-moz-document url-prefix() {
-      scrollbar-color: var(--theme-text) transparent;
+      scrollbar-color: var(--theme-deemphasis) transparent;
     }
   }
 
@@ -19,42 +19,13 @@
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-theme-text/50;
+    @apply bg-theme-deemphasis/50;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-theme-text;
-  }
-
-  a {
-    /* @apply text-blue font-medium decoration-inherit select-text hover:underline; */
+    @apply bg-theme-deemphasis;
   }
 }
-
-/*input {
-  @apply ring-theme-colors-blue-base;
-}
-
-input[type="text"] {
-  @apply bg-theme-background border-2 border-theme-border ring-theme-colors-blue-base p-1;
-}*/
 
 @utility no-scrollbar {
   @apply [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
-}
-
-@utility interaction-primary {
-  /* @TODO: use better colors for these */
-  @apply bg-theme-background text-theme-text focus:border-theme-border min-w-20 rounded-sm border border-solid border-transparent p-0.5 px-1 text-sm font-medium shadow-md transition outline-none hover:shadow-lg focus:ring-0;
-}
-
-@utility btn-primary {
-  @apply interaction-primary hover:border-theme-border cursor-pointer;
-}
-
-@utility btn-secondary {
-  @apply interaction-primary;
-}
-
-@utility input-primary {
-  @apply interaction-primary;
 }

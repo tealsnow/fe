@@ -1,8 +1,9 @@
-import { Component, JSX, lazy, mergeProps } from "solid-js";
+import { Component, JSX, lazy, mergeProps, splitProps } from "solid-js";
 
 import { flattenArrayOfObjects } from "~/lib/flatten";
 
 import { IconKind } from "./generated/icons";
+import { cn } from "~/lib/cn";
 export * from "./generated/icons";
 
 export type IconComponent = Component<JSX.SvgSVGAttributes<SVGElement>>;
@@ -34,13 +35,18 @@ export const IconProps = {
 
 export const Icon = (inProps: IconProps) => {
   const props = mergeProps(IconProps, inProps);
+  const [, rest] = splitProps(props, ["kind", "noDefaultStyles"]);
 
-  let klass = `stroke-theme-icon-base-stroke fill-theme-icon-base-fill ${props.class}`;
+  // let klass = `stroke-theme-icon-base-stroke fill-theme-icon-base-fill ${props.class}`;
+  let klass = cn(
+    "stroke-theme-icon-base-stroke fill-theme-icon-base-fill",
+    props.class,
+  );
   if (props.noDefaultStyles) klass = props.class ? props.class : "";
   const I = icons[props.kind];
   return (
     <I
-      {...props}
+      {...rest}
       class={klass}
       // class={
       //   props.noDefaultStyles
