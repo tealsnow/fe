@@ -1,0 +1,38 @@
+{
+  "name": "@fe/native",
+  "version": "0.1.0",
+  "main": "index.js",
+  "files": [
+    "index.d.ts",
+    "index.js"
+  ],
+  "napi": {
+    "binaryName": "native",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-apple-darwin",
+      "aarch64-unknown-linux-musl",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "engines": {
+    "node": ">= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "format:prettier": "prettier . -w",
+    "format:rs": "cargo fmt",
+    "format": "pnpm run format:prettier && pnpm run format:rs",
+    "lint": "cargo clippy"
+  },
+  "devDependencies": {
+    "@emnapi/core": "^1.4.5",
+    "@emnapi/runtime": "^1.4.5"
+  }
+}

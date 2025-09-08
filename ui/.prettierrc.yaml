@@ -1,0 +1,5 @@
+singleQuote: false
+doubleQuote: true
+semi: true
+printWidth: 80
+trailingComma: all

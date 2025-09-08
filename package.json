@@ -1,14 +1,15 @@
 {
   "name": "fe",
-  "version": "0.0.1",
-  "workspaces": [
-    "app"
-  ],
-  "trustedDependencies": [
-    "@tailwindcss/oxide"
-  ],
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
+  },
   "devDependencies": {
+    "@napi-rs/cli": "^3.1.5",
     "prettier": "^3.6.2",
-    "typescript": "^5.9.2"
+    "turbo": "^2.5.6",
+    "typescript": "^5.8.3"
   }
 }

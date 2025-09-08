@@ -25,6 +25,9 @@
     "adjustables",
     "kobalte",
     "pdnd",
-    "tsafe"
+    "tsafe",
+    "napi",
+    "cpus",
+    "hitbox"
   ]
 }

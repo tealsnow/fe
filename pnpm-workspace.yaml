@@ -1,0 +1,8 @@
+packages:
+  - ui
+  - native
+
+onlyBuiltDependencies:
+  - '@tailwindcss/oxide'
+  - electron
+  - esbuild

@@ -2,17 +2,13 @@
   description = "fe";
 
   inputs = {
-    # nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     # nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
     systems.url = "github:nix-systems/default";
 
     flake-utils = {
       url = "github:numtide/flake-utils";
       inputs.systems.follows = "systems";
-    };
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
     };
   };
 
@@ -21,76 +17,78 @@
       nixpkgs,
       # nixpkgs-stable,
       flake-utils,
-      rust-overlay,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        # pkgs = nixpkgs.legacyPackages.${system};
-        # # stable-pkgs = nixpkgs-stable.legacyPackages.${system};
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
-
-        toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-
-        packages = with pkgs; [
-          cargo
-          cargo-tauri
-          toolchain
-          rust-analyzer-unwrapped
-          # bun
-          just
-          entr
-        ];
-
-        nativeBuildLibraries = with pkgs; [
-          webkitgtk_4_1
-          gtk3
-          dbus
-          openssl
-          glib
-          librsvg
-        ];
-
-        nativeBuildPackages =
-          with pkgs;
-          [
-            pkg-config
-            libsoup_2_4
-          ]
-          ++ nativeBuildLibraries;
-
-        libraries =
-          with pkgs;
-          [
-            cairo
-            gdk-pixbuf
-          ]
-          ++ nativeBuildLibraries;
+        lib = nixpkgs.lib;
+        pkgs = nixpkgs.legacyPackages.${system};
+        # stable-pkgs = nixpkgs-stable.legacyPackages.${system};
       in
+      # rec
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = packages;
+          packages =
+            (with pkgs; [
+              #- electron
+              alsa-lib
+              atkmm
+              at-spi2-atk
+              cairo
+              cups
+              dbus
+              expat
+              glib
+              glibc
+              gtk2
+              gtk3
+              gtk4
+              libdrm
+              libxkbcommon
+              mesa
+              nspr
+              nss
+              nodePackages.pnpm
+              nodejs_20
+              pango
+              udev
 
-          nativeBuildInputs = nativeBuildPackages;
+              #- rust
+              rustc
+              cargo
+              rustfmt
+              clippy
+              rust-analyzer
+            ])
+            ++ (with pkgs.xorg; [
+              #- electron
+              libXcomposite
+              libXdamage
+              libXext
+              libXfixes
+              libXrandr
+              libX11
+              xcbutil
+              libxcb
+            ]);
 
-          shellHook = with pkgs; ''
-            export PROJECT_ROOT=$PWD
+          env = {
+            LD_LIBRARY_PATH = lib.makeLibraryPath (
+              with pkgs;
+              [
+                #- electron
+                gtk3
+                libgbm
+              ]
+            );
+            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+          };
 
-            export PATH="$PATH:./bun/"
+          shellHook = ''
+            # pnpm install
 
-            export LD_LIBRARY_PATH="${lib.makeLibraryPath libraries}:$LD_LIBRARY_PATH"
-
-            export OPENSSL_INCLUDE_DIR="${openssl.dev}/include/openssl"
-
-            export OPENSSL_LIB_DIR="${openssl.out}/lib"
-
-            export OPENSSL_ROOT_DIR="${openssl.out}"
-
-            export RUST_SRC_PATH="${toolchain}/lib/rustlib/src/rust/library"
+            export PATH="./node_modules/.bin:$PATH"
           '';
         };
       }

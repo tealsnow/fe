@@ -7,7 +7,6 @@
     "tailwindcss-language-server": {
       "settings": {
         "experimental": {
-          // "classRegex": ["cn\\(([^)]*)\\)", "cva\\(([^)]*)\\)"]
           "classRegex": [
             ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
             ["cn\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
@@ -18,6 +17,13 @@
       }
     }
   },
-  "preferred_line_length": 80,
-  "format_on_save": "prettier"
+  "languages": {
+    "TypeScript": {
+      "format_on_save": "prettier"
+    },
+    "Rust": {
+      "format_on_save": "language_server"
+    }
+  },
+  "preferred_line_length": 80
 }
