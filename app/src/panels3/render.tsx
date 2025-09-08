@@ -9,6 +9,7 @@ import {
   Switch,
 } from "solid-js";
 import { css } from "solid-styled-components";
+import { MapOption } from "solid-effect";
 
 import { Brand, Effect, Option, Order } from "effect";
 
@@ -22,12 +23,13 @@ import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unha
 
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
+import { MatchTag } from "~/lib/MatchTag";
+import { storeUpdate } from "~/lib/SignalObject";
 
 import Button from "~/ui/components/Button";
 import { Icon } from "~/assets/icons";
 
 import * as Panel from "./Panel";
-import { storeUpdate } from "~/lib/SignalObject";
 
 export type RenderPanelsProps = {
   tree: Panel.Tree;
@@ -126,17 +128,12 @@ export type RenderPanelProps = {
 
 export const RenderPanel = (props: RenderPanelProps) => {
   const panel = createMemo(() =>
-    Panel.getNode(props.tree, { id: props.panelId() }) //
+    Panel.Node.get(props.tree, { id: props.panelId() }) //
       .pipe(Effect.runSync),
   );
 
   const isSelected = () =>
     Option.getOrNull(props.selectedPanel()) === panel().id;
-
-  // if (panel().children.length > 0) assert(panel().tabs.length === 0);
-  // if (panel().tabs.length > 0) assert(panel().children.length === 0);
-  // const isLeaf = () => panel().tabs.length > 0 || panel().children.length === 0;
-  const isLeaf = () => panel().children.length === 0;
 
   return (
     <div
@@ -159,59 +156,71 @@ export const RenderPanel = (props: RenderPanelProps) => {
       }
     >
       <Show when={props.dbgHeader()}>
-        <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border border-theme-colors-orange-border">
+        <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border border-theme-colors-orange-border overflow-clip">
           <Button
             color="orange"
             size="small"
             highlighted={isSelected()}
             onClick={() => props.selectPanel(panel().id)}
           >
-            {panel().dbgName}
+            {panel().id.uuid}
+            <MapOption on={Panel.Node.$as("leaf")(panel())}>
+              {(leaf) => <> - '{leaf().title}'</>}
+            </MapOption>
           </Button>
         </div>
       </Show>
 
       <Switch>
-        <Match when={isLeaf()}>
-          <div class="w-full h-full">
-            <TabBar setTree={props.setTree} panel={panel} />
+        <MatchTag on={panel()} tag="leaf">
+          {(leaf) => (
+            <div class="w-full h-full">
+              <TabBar setTree={props.setTree} panel={panel} />
 
-            {/* content */}
-          </div>
-        </Match>
-        <Match when={!isLeaf()}>
-          <div
-            class={cn(
-              "flex w-full h-full",
-              panel().layout === "vertical" ? "flex-col" : "flex-row",
-            )}
-          >
-            <For each={panel().children}>
-              {(panelId, idx) => (
-                <>
-                  <RenderPanel
-                    tree={props.tree}
-                    setTree={props.setTree}
-                    parentLayout={panel().layout}
-                    panelId={() => panelId}
-                    selectedPanel={props.selectedPanel}
-                    selectPanel={props.selectPanel}
-                    dbgHeader={props.dbgHeader}
-                  />
-                  <Show when={idx() !== panel().children.length - 1}>
-                    <ResizeHandle
-                      tree={props.tree}
-                      setTree={props.setTree}
-                      panelId={() => panelId}
-                      parent={panel}
-                      idx={idx}
-                    />
-                  </Show>
-                </>
-              )}
-            </For>
-          </div>
-        </Match>
+              {/* content */}
+            </div>
+          )}
+        </MatchTag>
+        <MatchTag on={panel()} tag="parent">
+          {(parent) => (
+            <Switch>
+              <Match when={parent().layout === "tabs"}>TODO: tabs</Match>
+              <Match when={parent().layout !== "tabs"}>
+                <div
+                  class={cn(
+                    "flex w-full h-full",
+                    parent().layout === "vertical" ? "flex-col" : "flex-row",
+                  )}
+                >
+                  <For each={parent().children}>
+                    {(panelId, idx) => (
+                      <>
+                        <RenderPanel
+                          tree={props.tree}
+                          setTree={props.setTree}
+                          parentLayout={parent().layout}
+                          panelId={() => panelId}
+                          selectedPanel={props.selectedPanel}
+                          selectPanel={props.selectPanel}
+                          dbgHeader={props.dbgHeader}
+                        />
+                        <Show when={idx() !== parent().children.length - 1}>
+                          <ResizeHandle
+                            tree={props.tree}
+                            setTree={props.setTree}
+                            panelId={() => panelId}
+                            parent={parent}
+                            idx={idx}
+                          />
+                        </Show>
+                      </>
+                    )}
+                  </For>
+                </div>
+              </Match>
+            </Switch>
+          )}
+        </MatchTag>
       </Switch>
     </div>
   );
@@ -222,7 +231,7 @@ type ResizeHandleProps = {
   setTree: Panel.SetTree;
   panelId: () => Panel.ID;
 
-  parent: () => Panel.Node;
+  parent: () => Panel.Node.Parent;
   idx: () => number;
 };
 
@@ -244,7 +253,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
         Effect.gen(function* () {
           const parent = props.parent();
           const nodeId = props.panelId();
-          const node = yield* Panel.getNode(props.tree, { id: nodeId });
+          const node = yield* Panel.Node.get(props.tree, { id: nodeId });
 
           const nextNodeId = parent.children[props.idx() + 1];
           // we should never rendered after be the last one
@@ -252,7 +261,9 @@ const ResizeHandle = (props: ResizeHandleProps) => {
             nextNodeId !== undefined,
             "Trying to place a resize handle when there is no next node",
           );
-          const nextNode = yield* Panel.getNode(props.tree, { id: nextNodeId });
+          const nextNode = yield* Panel.Node.get(props.tree, {
+            id: nextNodeId,
+          });
 
           const parentRect = resizeRef.parentElement?.getBoundingClientRect();
           assert(parentRect !== undefined);
@@ -303,13 +314,13 @@ const ResizeHandle = (props: ResizeHandleProps) => {
           const newPercent = newSize / parentSize;
           const nextNewPercent = nextNewSize / parentSize;
 
-          yield* Panel.updateNode(props.setTree, {
+          yield* Panel.Node.update(props.setTree, {
             id: nodeId,
             props: {
               percentOfParent: Panel.Percent(newPercent),
             },
           });
-          yield* Panel.updateNode(props.setTree, {
+          yield* Panel.Node.update(props.setTree, {
             id: nextNodeId,
             props: {
               percentOfParent: Panel.Percent(nextNewPercent),
@@ -396,9 +407,9 @@ const TabBar = (props: TabBarProps) => {
         }) as any,
 
       canDrop: ({ source }) => {
-        // if (!isTabHandleDragData(source.data)) return false;
+        // if (isTabHandleDragData(source.data)) return true;
 
-        return true;
+        return false;
       },
       onDragEnter: ({ source }) => {
         // if (!isTabHandleDragData(source.data)) return;

@@ -24,6 +24,7 @@
     "tanstack",
     "adjustables",
     "kobalte",
-    "pdnd"
+    "pdnd",
+    "tsafe"
   ]
 }

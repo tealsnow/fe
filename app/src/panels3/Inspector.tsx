@@ -1,5 +1,12 @@
-import { Effect, Option, Order, pipe } from "effect";
-import { createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
+import { Effect, Option, Order } from "effect";
+import {
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Switch,
+} from "solid-js";
 import { css } from "solid-styled-components";
 import { MapOption } from "solid-effect";
 import { makePersisted } from "@solid-primitives/storage";
@@ -10,20 +17,19 @@ import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/elem
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 
 import { cn } from "~/lib/cn";
-import { storeUpdate } from "~/lib/SignalObject";
+import { MatchTag } from "~/lib/MatchTag";
 
 import Dialog from "~/ui/components/Dialog";
 import Button from "~/ui/components/Button";
+import PropertyEditor from "~/ui/components/PropertyEditor";
 
 import * as Panel from "./Panel";
-import PropertyEditor from "./PropertyEditor";
 
 const getPanel = (tree: Panel.Tree, id: Panel.ID) =>
-  Panel.getNode(tree, { id }).pipe(Effect.runSync);
+  Panel.Node.getOrError(tree, { id }).pipe(Effect.runSync);
 
 export type RenderPanelPillProps = {
   tree: Panel.Tree;
-  setTree: Panel.SetTree;
 
   selectedId: () => Option.Option<Panel.ID>;
   selectPanel: (id: Panel.ID) => void;
@@ -34,6 +40,14 @@ export type RenderPanelPillProps = {
 
 export const RenderPanelPill = (props: RenderPanelPillProps) => {
   const panel = () => getPanel(props.tree, props.panelId());
+
+  console.log("rendering panel pill:", panel().id);
+
+  const p = panel();
+  if (Panel.Node.$is("parent")(p)) {
+    console.log("is parent");
+    console.log("children: ", p.children);
+  }
 
   return (
     <>
@@ -52,23 +66,34 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
             props.selectPanel(props.panelId());
           }}
         >
-          {panel().dbgName}
+          {panel().id.uuid}
         </Button>
       </div>
 
-      <div class="flex flex-col">
-        <For each={panel().children}>
-          {(childId) => {
-            return (
-              <RenderPanelPill
-                {...props}
-                panelId={() => childId}
-                indent={props.indent + 1}
-              />
-            );
-          }}
-        </For>
-      </div>
+      <MapOption on={Panel.Node.$as("parent")(panel())}>
+        {(parent) => {
+          console.log("rendering children");
+          console.log("children: ", parent().children);
+          return (
+            <div class="flex flex-col">
+              <For each={parent().children}>
+                {(childId) => {
+                  console.log("rendering single child");
+                  console.log("childId:", childId);
+                  console.log("parent:", parent().id);
+                  return (
+                    <RenderPanelPill
+                      {...props}
+                      panelId={() => childId}
+                      indent={props.indent + 1}
+                    />
+                  );
+                }}
+              </For>
+            </div>
+          );
+        }}
+      </MapOption>
     </>
   );
 };
@@ -91,12 +116,42 @@ const PanelInspector = (props: PanelInspectorProps) => {
     <div class="font-mono">
       <PropertyEditor name="panel-inspector" showHeader={true}>
         <PropertyEditor.String
-          key="Debug name"
-          value={panel().dbgName}
-          onUpdate={(dbgName) => {
-            Panel.updateNode(props.setTree, {
+          key="id"
+          value={panel().id.uuid}
+          valueClass="text-xs text-center"
+        />
+
+        <PropertyEditor.Button
+          key="Parent"
+          onClick={Option.map(
+            panel().parent,
+            (id) => () => props.selectPanel(id),
+          ).pipe(Option.getOrUndefined)}
+        >
+          <span class="text-xs">
+            {Option.map(panel().parent, (id) =>
+              Panel.Node.Parent.getOrError(props.tree, { id }).pipe(
+                Effect.map((panel) => panel.id.uuid),
+                Effect.runSync,
+              ),
+            ).pipe(Option.getOrElse(() => "null"))}
+          </span>
+        </PropertyEditor.Button>
+
+        <PropertyEditor.String
+          key="% of parent"
+          value={(panel().percentOfParent * 100).toFixed(2)}
+          format={(str) => str + "%"}
+          onUpdate={(update) => {
+            const num = Order.clamp(Order.number)({
+              minimum: 0,
+              maximum: 100,
+            })(parseFloat(update));
+            const percent = Panel.Percent(num / 100);
+
+            Panel.Node.setPercentOfParent(props.setTree, {
               id: panel().id,
-              props: { dbgName },
+              percent,
             }).pipe(Effect.runSync);
           }}
         />
@@ -133,7 +188,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
                       const id = panel().id;
                       const parentId = yield* panel().parent;
                       props.deselectPanel();
-                      yield* Panel.deleteNode(props.setTree, { id });
+                      yield* Panel.Node.destroy(props.setTree, { id });
                       props.selectPanel(parentId);
                     }).pipe(Effect.runSync)
                   }
@@ -145,164 +200,143 @@ const PanelInspector = (props: PanelInspectorProps) => {
           </Dialog>
         </PropertyEditor.Button>
 
-        <PropertyEditor.Button
-          key="Parent"
-          onClick={Option.map(
-            panel().parent,
-            (id) => () => props.selectPanel(id),
-          ).pipe(Option.getOrUndefined)}
-        >
-          {Option.map(panel().parent, (id) =>
-            Panel.getNode(props.tree, { id }).pipe(
-              Effect.map((panel) => panel.dbgName),
-              Effect.runSync,
-            ),
-          ).pipe(Option.getOrElse(() => "null"))}
-        </PropertyEditor.Button>
+        <Switch>
+          <MatchTag on={panel()} tag="leaf">
+            {(leaf) => {
+              return (
+                <PropertyEditor.String
+                  key="Title"
+                  value={leaf().title}
+                  onUpdate={(title) => {
+                    Panel.Node.Leaf.update(props.setTree, {
+                      id: leaf().id,
+                      props: { title },
+                    }).pipe(Effect.runSync);
+                  }}
+                />
+              );
+            }}
+          </MatchTag>
+          <MatchTag on={panel()} tag="parent">
+            {(parent) => {
+              return (
+                <>
+                  <PropertyEditor.Enum
+                    key="Layout"
+                    value={parent().layout}
+                    options={["vertical", "horizontal"]}
+                    onChange={(value) => {
+                      Panel.Node.Parent.update(props.setTree, {
+                        id: parent().id,
+                        props: {
+                          layout: value as Panel.Layout,
+                        },
+                      }).pipe(Effect.runSync);
+                    }}
+                  />
 
-        <PropertyEditor.Enum
-          key="Layout"
-          value={panel().layout}
-          options={["vertical", "horizontal"]}
-          onChange={(value) => {
-            Panel.updateNode(props.setTree, {
-              id: panel().id,
-              props: {
-                layout: value as Panel.Layout,
-              },
-            }).pipe(Effect.runSync);
-          }}
-        />
+                  <PropertyEditor.Array
+                    key="Children"
+                    items={Array.from(parent().children).map((id) =>
+                      Panel.Node.get(props.tree, { id }).pipe(
+                        Effect.map((panel) => panel),
+                        Effect.runSync,
+                      ),
+                    )}
+                    previewCount={3}
+                    preview={(item) => (
+                      <Button
+                        as="span"
+                        size="small"
+                        color="aqua"
+                        class="h-full pt-1 text-xs/tight w-20 overflow-hidden whitespace-nowrap text-ellipsis text-left text-nowrap"
+                        onClick={() => props.selectPanel(item.id)}
+                      >
+                        {item.id.uuid}
+                      </Button>
+                    )}
+                    render={(item) => (
+                      <Button
+                        size="small"
+                        color="aqua"
+                        class="h-full pt-1 text-xs/tight"
+                        onClick={() => props.selectPanel(item.id)}
+                      >
+                        {item.id.uuid}
+                      </Button>
+                    )}
+                    // last={() => (
+                    //   <PropertyEditor.AddString
+                    //     placeholder="new child name"
+                    //     defaultValue="new child"
+                    //     onSubmit={(name) => {
+                    //       Effect.gen(function* () {
+                    //         const newChildId = yield* Panel.createNode(
+                    //           props.setTree,
+                    //           {
+                    //             dbgName: name,
+                    //           },
+                    //         );
+                    //         yield* Panel.addChild(props.setTree, {
+                    //           parentId: panel().id,
+                    //           newChildId,
+                    //         });
+                    //       }).pipe(Effect.runSync);
+                    //     }}
+                    //   />
+                    // )}
+                  />
 
-        <PropertyEditor.Array
-          key="Children"
-          items={Array.from(panel().children).map((id) =>
-            Panel.getNode(props.tree, { id }).pipe(
-              Effect.map((panel) => panel),
-              Effect.runSync,
-            ),
-          )}
-          render={(item) => (
-            <Button
-              size="small"
-              color="aqua"
-              class="h-full pt-1"
-              onClick={() => props.selectPanel(item.id)}
-            >
-              {item.dbgName}
-            </Button>
-          )}
-          last={() => (
-            <PropertyEditor.AddString
-              placeholder="new child name"
-              defaultValue="new child"
-              onSubmit={(name) => {
-                Effect.gen(function* () {
-                  const newChildId = yield* Panel.createNode(props.setTree, {
-                    dbgName: name,
-                  });
-                  yield* Panel.addChild(props.setTree, {
-                    parentId: panel().id,
-                    newChildId,
-                  });
-                }).pipe(Effect.runSync);
-              }}
-            />
-          )}
-        />
+                  <PropertyEditor.Button
+                    key="redistribute children?"
+                    onClick={() =>
+                      Panel.Node.Parent.redistributeChildren(props.setTree, {
+                        parentId: parent().id,
+                      }).pipe(Effect.runSync)
+                    }
+                  >
+                    redistribute
+                  </PropertyEditor.Button>
 
-        <PropertyEditor.Button
-          key="redistribute children?"
-          onClick={() =>
-            Panel.redistributeChildren(props.setTree, { id: panel().id }).pipe(
-              Effect.runSync,
-            )
-          }
-        >
-          redistribute
-        </PropertyEditor.Button>
+                  {/*<PropertyEditor.Button
+                    key="balance children?"
+                    onClick={() =>
+                      Panel.Node.Parent.uniformChildren(props.setTree, { id: panel().id }).pipe(
+                        Effect.runSync,
+                      )
+                    }
+                  >
+                    balance
+                  </PropertyEditor.Button>*/}
 
-        <PropertyEditor.Button
-          key="balance children?"
-          onClick={() =>
-            Panel.uniformChildren(props.setTree, { id: panel().id }).pipe(
-              Effect.runSync,
-            )
-          }
-        >
-          balance
-        </PropertyEditor.Button>
-
-        <PropertyEditor.String
-          key="% of parent"
-          value={(panel().percentOfParent * 100).toFixed(2)}
-          format={(str) => str + "%"}
-          onUpdate={(update) => {
-            const num = Order.clamp(Order.number)({
-              minimum: 0,
-              maximum: 100,
-            })(parseFloat(update));
-
-            Effect.gen(function* () {
-              yield* Panel.updateNode(props.setTree, {
-                id: panel().id,
-                props: {
-                  percentOfParent: Panel.Percent(num / 100),
-                },
-              });
-
-              const parent = yield* panel().parent;
-              yield* Panel.redistributeChildren(props.setTree, {
-                id: parent,
-                exclude: [panel().id],
-              });
-            }).pipe(Effect.runSync);
-          }}
-        />
-
-        <PropertyEditor.String
-          key="Children % valid"
-          value={pipe(
-            Effect.if(panel().children.length !== 0, {
-              onFalse: () => Effect.succeed("No children"),
-              onTrue: () =>
-                Panel.validateChildrenSizes(props.tree, {
-                  id: panel().id,
-                }).pipe(
-                  Effect.flatMap(({ ok, difference }) =>
-                    Effect.if(ok, {
-                      onTrue: () => Effect.succeed("Valid"),
-                      onFalse: () =>
-                        Effect.succeed(
-                          `Invalid (${(difference * 100).toFixed(2)}%)`,
-                        ),
-                    }),
-                  ),
-                ),
-            }),
-            Effect.runSync,
-          )}
-        />
-
-        {/*<PropertyEditor.Array
-          key="Tabs"
-          items={panel().tabs}
-          render={(tab) => tab.title}
-          last={() => (
-            <PropertyEditor.AddString
-              placeholder="new tab name"
-              defaultValue="new tab"
-              onSubmit={(title) => {
-                storeUpdate(props.setTree, (tree) =>
-                  Effect.gen(function* () {
-                    const node = yield* Panel.getNode(tree, { id: panel().id });
-                    node.tabs.push({ title });
-                  }).pipe(Effect.runSync),
-                );
-              }}
-            />
-          )}
-        />*/}
+                  {/*<PropertyEditor.String
+                    key="Children % valid"
+                    value={pipe(
+                      Effect.if(parent().children.length !== 0, {
+                        onFalse: () => Effect.succeed("No children"),
+                        onTrue: () =>
+                          Panel.Node.Parent.validateChildrenSizes(props.tree, {
+                            id: panel().id,
+                          }).pipe(
+                            Effect.flatMap(({ ok, difference }) =>
+                              Effect.if(ok, {
+                                onTrue: () => Effect.succeed("Valid"),
+                                onFalse: () =>
+                                  Effect.succeed(
+                                    `Invalid (${(difference * 100).toFixed(2)}%)`,
+                                  ),
+                              }),
+                            ),
+                          ),
+                      }),
+                      Effect.runSync,
+                    )}
+                  />*/}
+                </>
+              );
+            }}
+          </MatchTag>
+        </Switch>
       </PropertyEditor>
     </div>
   );
@@ -377,7 +411,6 @@ const Inspector = (props: InspectorProps) => {
       >
         <RenderPanelPill
           tree={props.tree}
-          setTree={props.setTree}
           selectedId={props.selectedId}
           selectPanel={(id) => props.setSelectedId(Option.some(id))}
           panelId={() => props.tree.root}

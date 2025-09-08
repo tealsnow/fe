@@ -12,11 +12,12 @@ import { RenderPanels } from "./render";
 
 export const Panels3 = () => {
   const [tree, setTree] = createStore<Panel.Tree>(
-    Panel.createTree.pipe(Effect.runSync),
+    Panel.Tree.create.pipe(Effect.runSync),
   );
 
   const [selectedId, setSelectedId] = createSignal<Option.Option<Panel.ID>>(
-    Option.some(tree.root),
+    // Option.some(tree.root),
+    Option.none(),
   );
 
   const [showExplorer, setShowExplorer] = makePersisted(createSignal(true), {
@@ -32,29 +33,37 @@ export const Panels3 = () => {
   onMount(() => {
     Effect.gen(function* () {
       const root = tree.root;
+      console.log("tree:", tree);
 
-      const a = yield* Panel.createNode(setTree, {
-        dbgName: "a",
+      const a = yield* Panel.Node.Parent.create(setTree, {
         layout: "vertical",
       });
-      const b = yield* Panel.createNode(setTree, { dbgName: "b" });
-      const c = yield* Panel.createNode(setTree, { dbgName: "c" });
-      const d = yield* Panel.createNode(setTree, { dbgName: "d" });
-      const e = yield* Panel.createNode(setTree, { dbgName: "e" });
 
-      yield* Panel.addChild(setTree, { parentId: root, newChildId: a });
-      yield* Panel.addChild(setTree, { parentId: root, newChildId: e });
+      const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
+      const c = yield* Panel.Node.Leaf.create(setTree, { title: "c" });
+      const d = yield* Panel.Node.Leaf.create(setTree, { title: "d" });
+      const e = yield* Panel.Node.Leaf.create(setTree, { title: "e" });
 
-      yield* Panel.addChild(setTree, { parentId: a, newChildId: b });
-      yield* Panel.addChild(setTree, { parentId: a, newChildId: c });
-      yield* Panel.addChild(setTree, { parentId: a, newChildId: d });
+      yield* Panel.Node.Parent.addChild(setTree, {
+        parentId: root,
+        childId: a,
+      });
+
+      yield* Panel.Node.Parent.addChild(setTree, {
+        parentId: root,
+        childId: e,
+      });
+
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: b });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: d });
     }).pipe(Effect.runSync);
   });
 
   return (
     <div class="flex flex-col w-full h-full">
       <div class="flex flex-row h-8 border-b border-theme-border items-center p-2">
-        <div class="ml-auto flex flex-row-reverse gap-2">
+        <div class="ml-auto flex flex-row gap-2">
           <For
             each={[
               {

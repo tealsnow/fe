@@ -119,7 +119,7 @@ export const PropertyEditorRoot = (inProps: PropertyEditorRootProps) => {
 
   let tableRef!: HTMLDivElement;
 
-  const [width, setWidth] = makePersisted(createSignal(0.5), {
+  const [width, setWidth] = makePersisted(createSignal(0.7), {
     storage: sessionStorage,
     name: `property-editor-split-width-'${props.name}'`,
   });
@@ -258,6 +258,7 @@ export const PropertyEditorRoot = (inProps: PropertyEditorRootProps) => {
 export type StringPropertyProps = {
   key: string;
   value: string;
+  valueClass?: string;
   format?: (value: string) => string;
   onUpdate?: (newValue: string) => void;
 };
@@ -289,7 +290,10 @@ export const StringProperty = (props: StringPropertyProps) => {
           color={editing() ? "purple" : "blue"}
           size="small"
           disabled={props.onUpdate === undefined ? "" : undefined}
-          class="w-full h-full pt-0.5 text-sm/tight"
+          class={cn(
+            "w-full h-full pt-0.5 overflow-visible overflow-ellipsis",
+            props.valueClass,
+          )}
           title="Double click to edit" // TODO: a more app level tooltip might be nicer here
           readOnly={!editing()}
           name={props.key}
@@ -326,9 +330,10 @@ export const ButtonProperty = (props: ButtonPropertyProps) => {
 
       <Value>
         <Button
+          as="span"
           color="aqua"
           size="small"
-          class="w-full h-full pt-1"
+          class="w-full h-full pt-1 overflow-hidden whitespace-nowrap text-ellipsis min-w-0 max-w-full"
           disabled={props.onClick === undefined}
           onClick={props.onClick}
         >
