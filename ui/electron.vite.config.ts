@@ -29,17 +29,5 @@ export default defineConfig({
       },
     },
     clearScreen: false,
-    test: {
-      globals: true,
-      // environment: 'jsdom',
-      // setupFiles: "./test/setup.ts",
-      include: ["src/**/*.{test,spec}.{ts,tsx}"],
-      disableConsoleIntercept: false,
-      chaiConfig: {
-        truncateThreshold: 0,
-        showDiff: true,
-        includeStack: true,
-      },
-    },
   },
 });
