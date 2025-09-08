@@ -4,7 +4,6 @@ import {
   For,
   Index,
   Match,
-  onCleanup,
   onMount,
   Show,
   Switch,
@@ -22,9 +21,7 @@ import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
 import Button from "~/ui/components/Button";
 
 import DND from "~/dnd_tut";
-import Panels from "~/panels";
-import Panels2 from "~/panels2/panels2";
-import { Panels3 } from "~/panels3/panels3";
+import { Panels3 as Panels } from "~/panels/panels";
 
 const App = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the
@@ -76,20 +73,8 @@ const Root = () => {
 
   const [workspaceState, setWorkspaceState] = createStore<WorkspaceState>({
     workspaces: [
-      // mkWorkspace({
-      //   title: "panels4",
-      //   render: Panels4,
-      // }),
       mkWorkspace({
-        title: "panels3",
-        render: Panels3,
-      }),
-      mkWorkspace({
-        title: "panels2",
-        render: Panels2,
-      }),
-      mkWorkspace({
-        title: "panels",
+        title: "Panels",
         render: Panels,
       }),
       mkWorkspace({
@@ -119,48 +104,7 @@ const Root = () => {
   return (
     <div class="flex flex-col w-full h-full">
       <Show when={showNoise()}>
-        <svg
-          class="w-full h-full absolute inset-0 pointer-events-none"
-          style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
-        >
-          <filter id="noiseFilter" x={0} y={0} width="100%" height="100%">
-            <feTurbulence
-              type="fractalNoise"
-              // type="turbulence"
-              baseFrequency="0.32"
-              numOctaves={2}
-              stitchTiles="stitch"
-              result="turbulence"
-            />
-            <feComponentTransfer in="turbulence" result="darken">
-              <feFuncR type="linear" slope="0.8" intercept="0" />
-              <feFuncG type="linear" slope="0.8" intercept="0" />
-              <feFuncB type="linear" slope="0.8" intercept="0" />
-            </feComponentTransfer>
-            <feDisplacementMap
-              in="sourceGraphic"
-              in2="darken"
-              scale={25}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="displacement"
-            />
-            <feBlend
-              mode="multiply"
-              in="sourceGraphic"
-              in2="displacement"
-              result="multiply"
-            />
-            <feColorMatrix in="multiply" type="saturate" values="0" />
-          </filter>
-
-          <rect
-            width="100%"
-            height="100%"
-            filter="url(#noiseFilter)"
-            fill="transparent"
-          />
-        </svg>
+        <BackgroundNoise />
       </Show>
 
       <Titlebar
@@ -219,6 +163,53 @@ const Root = () => {
 
       <StatusBar />
     </div>
+  );
+};
+
+const BackgroundNoise = () => {
+  return (
+    <svg
+      class="w-full h-full absolute inset-0 pointer-events-none"
+      style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
+    >
+      <filter id="noiseFilter" x={0} y={0} width="100%" height="100%">
+        <feTurbulence
+          type="fractalNoise"
+          // type="turbulence"
+          baseFrequency="0.32"
+          numOctaves={2}
+          stitchTiles="stitch"
+          result="turbulence"
+        />
+        <feComponentTransfer in="turbulence" result="darken">
+          <feFuncR type="linear" slope="0.8" intercept="0" />
+          <feFuncG type="linear" slope="0.8" intercept="0" />
+          <feFuncB type="linear" slope="0.8" intercept="0" />
+        </feComponentTransfer>
+        <feDisplacementMap
+          in="sourceGraphic"
+          in2="darken"
+          scale={25}
+          xChannelSelector="R"
+          yChannelSelector="G"
+          result="displacement"
+        />
+        <feBlend
+          mode="multiply"
+          in="sourceGraphic"
+          in2="displacement"
+          result="multiply"
+        />
+        <feColorMatrix in="multiply" type="saturate" values="0" />
+      </filter>
+
+      <rect
+        width="100%"
+        height="100%"
+        filter="url(#noiseFilter)"
+        fill="transparent"
+      />
+    </svg>
   );
 };
 
