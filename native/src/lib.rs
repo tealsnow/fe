@@ -20,3 +20,15 @@ pub fn get_num_cpus() -> u32 {
 pub fn print_array(arr: Uint8Array) {
     println!("rust arr: '{:?}'", arr.iter());
 }
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    #[test]
+    fn test_plus_100() {
+        assert_eq!(plus_100(1), 101);
+        assert_eq!(plus_100(200), 300);
+        assert_eq!(plus_100(1000), 1100);
+    }
+}

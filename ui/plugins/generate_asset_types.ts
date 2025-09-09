@@ -1,14 +1,19 @@
-import * as path from "node:path";
-import * as fs from "node:fs";
-import * as process from "node:process";
+import path from "path";
+import fs from "fs";
+import process from "process";
 import type { Plugin } from "vite";
 import * as morph from "ts-morph";
+
 import { createLogger } from "./lib/logger";
 
-// Create logger instance
 const logger = createLogger("generate-asset-types");
 
-export default function generateAssetTypesPlugin(): Plugin {
+export type Options = {
+  assetsDir: string;
+  tsconfigPath?: string;
+};
+
+export default function generateAssetTypesPlugin(opts: Options): Plugin {
   let iconsDirWatcher: fs.FSWatcher | null = null;
 
   return {
@@ -16,23 +21,22 @@ export default function generateAssetTypesPlugin(): Plugin {
     buildStart() {
       logger.info("running plugin");
 
-      const PROJECT_ROOT = process.cwd();
+      const dir_assets = opts.assetsDir;
+      const dir_assets_icons = path.join(dir_assets, "icons");
+      const dir_assets_generated = path.join(dir_assets, "generated");
 
-      logger.info(`using PROJECT_ROOT as '${PROJECT_ROOT}'`);
-
-      const dir_app = path.join(PROJECT_ROOT, "src/renderer/src");
-      const dir_app_assets = path.join(dir_app, "assets");
-      const dir_app_assets_icons = path.join(dir_app_assets, "icons");
-      const dir_app_assets_generated = path.join(dir_app_assets, "generated");
-
-      const file_tsconfig = path.join(PROJECT_ROOT, "tsconfig.json");
+      const file_tsconfig =
+        opts.tsconfigPath ??
+        (() => {
+          const root = process.cwd();
+          return path.join(root, "tsconfig.json");
+        })();
 
       let all_dir_exists = true;
       [
-        dir_app,
-        dir_app_assets,
-        dir_app_assets_icons,
-        dir_app_assets_generated,
+        dir_assets,
+        dir_assets_icons,
+        dir_assets_generated,
         file_tsconfig,
       ].forEach((p) => {
         if (!fs.existsSync(p)) {
@@ -47,29 +51,25 @@ export default function generateAssetTypesPlugin(): Plugin {
       }
 
       // Generate types on build start
-      generateIconTypes(
-        dir_app_assets_icons,
-        dir_app_assets_generated,
-        file_tsconfig,
-      );
+      generateIconTypes(dir_assets_icons, dir_assets_generated, file_tsconfig);
 
       // Set up file watching for icons directory
       if (!iconsDirWatcher) {
         try {
           iconsDirWatcher = fs.watch(
-            dir_app_assets_icons,
+            dir_assets_icons,
             (eventType, _filename) => {
               if (eventType === "rename") {
                 logger.info("icons directory changed, regenerating types...");
                 generateIconTypes(
-                  dir_app_assets_icons,
-                  dir_app_assets_generated,
+                  dir_assets_icons,
+                  dir_assets_generated,
                   file_tsconfig,
                 );
               }
             },
           );
-          logger.info(`watching icons directory: ${dir_app_assets_icons}`);
+          logger.info(`watching icons directory: ${dir_assets_icons}`);
         } catch (error) {
           logger.error(`failed to watch icons directory: ${error}`);
         }

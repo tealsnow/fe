@@ -57,6 +57,7 @@
               #- rust
               rustc
               cargo
+              cargo-watch
               rustfmt
               clippy
               rust-analyzer
@@ -82,13 +83,15 @@
                 libgbm
               ]
             );
+            ELECTRON_OZONE_PLATFORM_HINT = "auto";
+
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           };
 
           shellHook = ''
             # pnpm install
 
-            export PATH="./node_modules/.bin:$PATH"
+            export PATH="node_modules/.bin:$PATH"
           '';
         };
       }

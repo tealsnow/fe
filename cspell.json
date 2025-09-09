@@ -28,6 +28,11 @@
     "tsafe",
     "napi",
     "cpus",
-    "hitbox"
+    "hitbox",
+    "msvc",
+    "clippy",
+    "emnapi",
+    "unmaximize",
+    "unmaximized"
   ]
 }

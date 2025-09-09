@@ -1,14 +1,19 @@
-/// <reference types="vitest" />
-import { resolve } from "path";
+import path from "path";
+
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import solid from "vite-plugin-solid";
 import solidSvg from "vite-plugin-solid-svg";
-import generateAssetTypesPlugin from "./plugins/generate_asset_types";
 import tailwindcss from "@tailwindcss/vite";
+
+import generateAssetTypesPlugin from "./plugins/generate_asset_types";
+import extraWatcher from "./plugins/extraWatcher";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [
+      externalizeDepsPlugin(),
+      extraWatcher(["../native/native.*.node"]),
+    ],
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
@@ -19,13 +24,13 @@ export default defineConfig({
       solidSvg({
         defaultAsComponent: true,
       }),
-      generateAssetTypesPlugin(),
+      generateAssetTypesPlugin({ assetsDir: "src/renderer/assets" }),
       tailwindcss(),
     ],
     resolve: {
       alias: {
-        "@renderer": resolve("src/renderer/src"),
-        "~": resolve("src/renderer/src"),
+        "@renderer": path.resolve("src/renderer"),
+        "~": path.resolve("src/renderer"),
       },
     },
     clearScreen: false,

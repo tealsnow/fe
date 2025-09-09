@@ -4,14 +4,23 @@
     "build": {
       "dependsOn": ["^build"]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
+    "lint": {},
+    "lint:watch": {},
     "test": {
       "dependsOn": ["^test"]
     },
+    "test:watch": {
+      "persistent": true
+    },
     "dev": {
       "persistent": true,
+      "cache": false
+    },
+    "dev:watch": {
+      "persistent": true,
+      "cache": false
+    },
+    "format": {
       "cache": false
     }
   }

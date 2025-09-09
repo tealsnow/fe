@@ -4,6 +4,7 @@ import { flattenArrayOfObjects } from "~/lib/flatten";
 
 import { IconKind } from "./generated/icons";
 import { cn } from "~/lib/cn";
+import { Dynamic } from "solid-js/web";
 export * from "./generated/icons";
 
 export type IconComponent = Component<JSX.SvgSVGAttributes<SVGElement>>;
@@ -36,10 +37,11 @@ export const Icon = (inProps: IconProps) => {
   const props = mergeProps(IconProps, inProps);
   const [local, rest] = splitProps(props, ["class", "kind"]);
 
-  // eslint-disable-next-line solid/reactivity
-  const I = icons[local.kind];
+  const icon = () => icons[local.kind];
+
   return (
-    <I
+    <Dynamic
+      component={icon()}
       {...rest}
       class={cn(
         local.kind !== "fe" &&

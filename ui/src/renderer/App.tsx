@@ -451,7 +451,7 @@ const NativeTest = () => {
   const numCpus = window.api.native.getNumCpus();
 
   return (
-    <div class="w-full h-full flex flex-col gap-2">
+    <div class="w-full h-full flex flex-col gap-2 p-2">
       <p>plus100: '{plus100}'</p>
       <p>greet: '{greet}'</p>
       <p>numCpus: '{numCpus}'</p>

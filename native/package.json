@@ -29,7 +29,11 @@
     "format:prettier": "prettier . -w",
     "format:rs": "cargo fmt",
     "format": "pnpm run format:prettier && pnpm run format:rs",
-    "lint": "cargo clippy"
+    "lint": "cargo clippy",
+    "lint:watch": "cargo watch --why -x clippy",
+    "dev:watch": "cargo watch --why -i index.js -i index.d.ts -- pnpm run build:debug",
+    "test": "cargo test",
+    "test:watch": "cargo watch --why -x test"
   },
   "devDependencies": {
     "@emnapi/core": "^1.4.5",

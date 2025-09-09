@@ -34,44 +34,57 @@ type TitlebarProps = {
   onNewClick: () => void;
 };
 
-type NarrowedWindow = {
-  minimize: () => Promise<void>;
-  toggleMaximize: () => Promise<void>;
-  close: () => Promise<void>;
+type WindowControls = {
+  minimize: () => void;
+  toggleMaximize: () => void;
+  close: () => void;
 };
+const WindowControls = (): WindowControls => ({
+  minimize: () => {
+    window.electron.ipcRenderer.send("window/minimize");
+  },
+  toggleMaximize: () => {
+    window.electron.ipcRenderer.send("window/toggleMaximize");
+  },
+  close: () => {
+    window.electron.ipcRenderer.send("window/close");
+  },
+});
 
 // @TODO: when there is overflow scroll to the appropriate tab when focused
 const Titlebar = (props: TitlebarProps) => {
-  let win: NarrowedWindow | null = null;
-  win = {
-    minimize: async () => {
-      window.electron.ipcRenderer.send("window/minimize");
-    },
-    toggleMaximize: async () => {
-      window.electron.ipcRenderer.send("window/toggleMaximize");
-    },
-    close: async () => {
-      window.electron.ipcRenderer.send("window/close");
-    },
-  };
+  const [windowMaximized, setWindowMaximized] = createSignal(
+    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
+  );
 
-  const windowButtons: WindowButton[] = win
-    ? [
-        {
-          icon: "window_minimize",
-          onClick: win.minimize,
-        },
-        {
-          // @TODO: change icon on maximize state
-          icon: "window_restore",
-          onClick: win.toggleMaximize,
-        },
-        {
-          icon: "close",
-          onClick: win.close,
-        },
-      ]
-    : [];
+  onMount(() => {
+    window.electron.ipcRenderer.on("on window/maximized", () => {
+      setWindowMaximized(true);
+    });
+    window.electron.ipcRenderer.on("on window/unmaximized", () => {
+      setWindowMaximized(false);
+    });
+  });
+
+  const windowControls = WindowControls();
+  const windowButtons = (): WindowButton[] =>
+    windowControls
+      ? [
+          {
+            icon: () => "window_minimize",
+            onClick: windowControls.minimize,
+          },
+          {
+            icon: () =>
+              windowMaximized() ? "window_restore" : "window_maximize",
+            onClick: windowControls.toggleMaximize,
+          },
+          {
+            icon: () => "close",
+            onClick: windowControls.close,
+          },
+        ]
+      : [];
 
   const [draggingItem, setDraggingItem] = createSignal<string | undefined>(
     undefined,
@@ -211,11 +224,9 @@ const Titlebar = (props: TitlebarProps) => {
         </div>
       </div>
 
-      <div class="h-full grow window-drag" />
-
       {/* Right-aligned content */}
       <div class="flex h-full">
-        <For each={windowButtons}>
+        <For each={windowButtons()}>
           {(button) => (
             <div
               class="hover:bg-theme-icon-base-fill
@@ -223,7 +234,7 @@ const Titlebar = (props: TitlebarProps) => {
                 items-center justify-center hover:cursor-pointer"
               onClick={button.onClick}
             >
-              <Icon kind={button.icon} class="size-4" />
+              <Icon kind={button.icon()} class="size-4" />
             </div>
           )}
         </For>
@@ -233,7 +244,7 @@ const Titlebar = (props: TitlebarProps) => {
 };
 
 type WindowButton = {
-  icon: IconKind;
+  icon: () => IconKind;
   onClick: () => void;
 };
 
