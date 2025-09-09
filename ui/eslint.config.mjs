@@ -28,7 +28,12 @@ export default tseslint.config(
       "no-debugger": "warn", // What am I not allowed to debug my code?
       "require-yield": "off", // Effect generators
       "@typescript-eslint/explicit-function-return-type": "off", // nope
-      "solid/reactivity": ["warn"],
+      "solid/reactivity": [
+        "warn",
+        {
+          customReactiveFunctions: ["cn"],
+        },
+      ],
     },
   },
 );

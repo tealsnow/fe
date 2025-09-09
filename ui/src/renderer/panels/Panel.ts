@@ -7,8 +7,18 @@ import { SetStoreFunction } from "solid-js/store";
 import { PickOptional } from "~/lib/type_helpers";
 import { EmptyJsx } from "~/lib/emptyJsx";
 import { storeUpdate } from "~/lib/SignalObject";
+import OptionGetOrFail from "~/lib/OptionGetOrFail";
 
 export namespace ID {
+  // @NOTE: please take careful note not to compare ids by themselves
+  //   i.e. `id1 === id2` rather use `id1.uuid === id2.uuid`
+  //   otherwise they will always result in false
+  //
+  //   Heed my warning, I have lost many hours debugging issues caused by this
+  //   God a wish I could overload the equality operator,
+  //   why does the simple way not work, its not that the tags are not equal
+  //   the `JSON.stringify` will be literally be exactly the same so why
+
   export type IDBase = string & Brand.Brand<"NodeID">;
   export const IDBase = Brand.refined<IDBase>(
     (s) => uuid.validate(s),
@@ -192,6 +202,36 @@ export namespace Node {
         const node = yield* Node.getOrError(tree, { id });
         tree.nodes[id.uuid] = { ...node, ...props };
         yield* Effect.succeed(void {});
+      }),
+    );
+
+  export const reParent = (
+    setTree: SetTree,
+    { id, newParentId }: { id: ID; newParentId: ID.Parent },
+  ): Effect.Effect<void, NodeNotInTreeError | NodeHasNoParentError> =>
+    storeUpdate(setTree, (tree) =>
+      Effect.gen(function* () {
+        const node = yield* Node.getOrError(tree, { id });
+
+        const oldParentId = yield* OptionGetOrFail(
+          node.parent,
+          () => new NodeHasNoParentError({ id }),
+        );
+        const oldParent = yield* Node.Parent.getOrError(tree, {
+          id: oldParentId,
+        });
+
+        oldParent.children = oldParent.children.filter(
+          (childId) => childId.uuid !== id.uuid,
+        );
+
+        const newParent = yield* Node.Parent.getOrError(tree, {
+          id: newParentId,
+        });
+
+        newParent.children.push(id);
+
+        node.parent = Option.some(newParentId);
       }),
     );
 
@@ -444,14 +484,16 @@ export namespace Node {
   ): Effect.Effect<void, NodeNotInTreeError | CannotDeleteRootError> =>
     storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
-        if (id === tree.root) yield* Effect.fail(new CannotDeleteRootError());
+        if (id === tree.root) return Effect.fail(new CannotDeleteRootError());
 
         const node = yield* Node.getOrError(tree, { id });
         const parentId = Option.getOrUndefined(node.parent);
 
         if (removeFromParent && parentId) {
           const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
-          parent.children = parent.children.filter((childId) => childId !== id);
+          parent.children = parent.children.filter(
+            (childId) => childId.uuid !== id.uuid,
+          );
           node.parent = Option.none();
           yield* Node.Parent.redistributeChildren(setTree, { parentId });
         }
@@ -508,10 +550,11 @@ export namespace Node {
 
         delete tree.nodes[id.uuid];
 
-        yield* Effect.succeed(void {});
+        return Effect.succeed(void {});
       }),
     );
 
+  /** @deprecated */
   export const setPercentOfParent = (
     setTree: SetTree,
     { id, percent }: { id: ID; percent: Percent },
@@ -575,6 +618,14 @@ export class NodeAlreadyHasParentError extends Data.TaggedError(
   id: ID;
 }> {
   message: string = `Node (${this.id.uuid}) already has a parent`;
+}
+
+export class NodeHasNoParentError extends Data.TaggedError(
+  "NodeHasNoParentError",
+)<{
+  id: ID;
+}> {
+  message: string = `Node (${this.id.uuid}) has no parent`;
 }
 
 export class CannotDeleteRootError extends Data.TaggedError(

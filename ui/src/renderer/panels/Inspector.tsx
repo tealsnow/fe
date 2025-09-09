@@ -41,6 +41,12 @@ export type RenderPanelPillProps = {
 export const RenderPanelPill = (props: RenderPanelPillProps) => {
   const panel = () => getPanel(props.tree, props.panelId());
 
+  const selected = () =>
+    Option.getOrElse(
+      Option.map(props.selectedId(), (id) => id === props.panelId()),
+      () => false,
+    );
+
   return (
     <>
       <div class="flex flex-row my-0.5">
@@ -52,7 +58,7 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
 
         <Button
           color="orange"
-          highlighted={Option.getOrNull(props.selectedId()) === props.panelId()}
+          highlighted={selected()}
           onClick={(event) => {
             event.stopPropagation();
             props.selectPanel(props.panelId());
@@ -64,15 +70,10 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
 
       <MapOption on={Panel.Node.$as("parent")(panel())}>
         {(parent) => {
-          console.log("rendering children");
-          console.log("children: ", parent().children);
           return (
             <div class="flex flex-col">
               <For each={parent().children}>
                 {(childId) => {
-                  console.log("rendering single child");
-                  console.log("childId:", childId);
-                  console.log("parent:", parent().id);
                   return (
                     <RenderPanelPill
                       {...props}
@@ -186,7 +187,17 @@ const PanelInspector = (props: PanelInspectorProps) => {
                       props.deselectPanel();
                       yield* Panel.Node.destroy(props.setTree, { id });
                       props.selectPanel(parentId);
-                    }).pipe(Effect.runSync)
+                    }).pipe(
+                      // Effect.catchAllDefect((defect) => {
+                      //   console.error(defect);
+                      //   return Effect.succeed(void {});
+                      // }),
+                      // Effect.catchAll((err) => {
+                      //   console.error(err);
+                      //   return Effect.succeed(void {});
+                      // }),
+                      Effect.runSync,
+                    )
                   }
                 >
                   delete

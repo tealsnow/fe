@@ -29,8 +29,8 @@ export default defineConfig({
     ],
     resolve: {
       alias: {
-        "@renderer": path.resolve("src/renderer"),
         "~": path.resolve("src/renderer"),
+        "@renderer": path.resolve("src/renderer"),
       },
     },
     clearScreen: false,

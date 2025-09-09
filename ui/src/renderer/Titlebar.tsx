@@ -224,6 +224,8 @@ const Titlebar = (props: TitlebarProps) => {
         </div>
       </div>
 
+      <div class="grow h-full block window-drag" />
+
       {/* Right-aligned content */}
       <div class="flex h-full">
         <For each={windowButtons()}>

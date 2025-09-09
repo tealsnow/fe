@@ -121,7 +121,7 @@ export const PropertyEditorRoot = (inProps: PropertyEditorRootProps) => {
 
   // false positive
   // eslint-disable-next-line solid/reactivity
-  const [width, setWidth] = makePersisted(createSignal(0.7), {
+  const [width, setWidth] = makePersisted(createSignal(0.3), {
     storage: sessionStorage,
     // eslint-disable-next-line solid/reactivity
     name: `property-editor-split-width-'${props.name}'`,

@@ -39,16 +39,21 @@ export const Panels3 = () => {
     // eslint-disable-next-line solid/reactivity
     Effect.gen(function* () {
       const root = tree.root;
-      console.log("tree:", tree);
 
       const a = yield* Panel.Node.Parent.create(setTree, {
         layout: "vertical",
       });
 
       const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
-      const c = yield* Panel.Node.Leaf.create(setTree, { title: "c" });
+      const c = yield* Panel.Node.Parent.create(setTree, { layout: "tabs" });
       const d = yield* Panel.Node.Leaf.create(setTree, { title: "d" });
-      const e = yield* Panel.Node.Leaf.create(setTree, { title: "e" });
+
+      const e = yield* Panel.Node.Parent.create(setTree, {
+        layout: "tabs",
+      });
+
+      const f = yield* Panel.Node.Leaf.create(setTree, { title: "f" });
+      const g = yield* Panel.Node.Leaf.create(setTree, { title: "g" });
 
       yield* Panel.Node.Parent.addChild(setTree, {
         parentId: root,
@@ -63,6 +68,9 @@ export const Panels3 = () => {
       yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: b });
       yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
       yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: d });
+
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: f });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: g });
     }).pipe(Effect.runSync);
   });
 

@@ -24,10 +24,9 @@ import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unha
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
 import { MatchTag } from "~/lib/MatchTag";
-// import { storeUpdate } from "~/lib/SignalObject";
 
 import Button from "~/ui/components/Button";
-// import { Icon } from "~/assets/icons";
+import { Icon } from "~/assets/icons";
 
 import * as Panel from "./Panel";
 
@@ -46,59 +45,29 @@ export const RenderPanels = (props: RenderPanelsProps) => {
     // handles the actual drop and state update
     const cleanup = monitorForElements({
       onDrop: ({ source, location }) => {
-        const _ = [source, location];
-        // // @FIXME: we might need to check each drop target depending on how
-        // //   pdnd handles overlapping valid and invalid drop targets
-        // const destination = location.current.dropTargets[0];
-        // if (!destination) return;
-        // // const sourceIsTabHandleDragData = isTabHandleDragData(source.data);
-        // // const destinationIsTabBarDropData = isTabBarDropData(destination.data);
-        // if (isTabHandleDragData(source.data)) {
-        //   // we have a tab to drop
-        //   const tabHandleData = source.data;
-        //   if (isTabBarDropData(destination.data)) {
-        //     // we are dropping a tab on a tab bar
-        //     const tabBarData = destination.data;
-        //     // storeUpdate(props.setTree, (tree) =>
-        //     //   Effect.gen(function* () {
-        //     //     const dragPanel = yield* Panel.getNode(tree, {
-        //     //       id: tabHandleData.panel,
-        //     //     });
-        //     //     const dropPanel = yield* Panel.getNode(tree, {
-        //     //       id: tabBarData.panel,
-        //     //     });
-        //     //     assert(
-        //     //       dropPanel.children.length === 0,
-        //     //       "cannot drop a panel onto a non leaf panel",
-        //     //     );
-        //     //     // remove from old panel
-        //     //     dragPanel.tabs = dragPanel.tabs.filter(
-        //     //       (tab) => tab !== tabHandleData.tab,
-        //     //     );
-        //     //     // add to new panel
-        //     //     dropPanel.tabs.push(tabHandleData.tab);
-        //     //   }),
-        //     // ).pipe(Effect.runSync);
-        //   }
-        // }
-        // // if (!sourceIsTabHandleDragData || !destinationIsTabBarDropData) return;
-        // // if (!isPieceDragData(source.data)) return;
-        // // if (!isSquareDragData(destination.data)) return;
-        // // const srcData = source.data;
-        // // const dstData = destination.data;
-        // // const piece = pieces.find((p) =>
-        // //   isCoordEqual(p.location, srcData.location),
-        // // );
-        // // if (
-        // //   canMove(srcData.type, srcData.location, dstData.location, pieces) &&
-        // //   piece !== undefined
-        // // ) {
-        // //   const otherPieces = pieces.filter((p) => p !== piece);
-        // //   setPieces([
-        // //     { type: piece.type, location: dstData.location },
-        // //     ...otherPieces,
-        // //   ]);
-        // // }
+        // @FIXME: we might need to check each drop target depending on how
+        //   pdnd handles overlapping valid and invalid drop targets
+        const destination = location.current.dropTargets[0];
+        if (!destination) return;
+        if (isTabHandleDragData(source.data)) {
+          // we have a tab to drop
+          const sourceTabHandleData = source.data;
+          if (isTabBarDropData(destination.data)) {
+            // we are dropping a tab on a tab bar
+            const dropTabBarData = destination.data;
+
+            // @NOTE: this does, in fact, work for the case when the source
+            //   and destination parents are the same - it puts it to the last in the list
+            Panel.Node.reParent(props.setTree, {
+              id: sourceTabHandleData.panel,
+              newParentId: dropTabBarData.parent,
+            }).pipe(Effect.runSync);
+            return;
+          }
+
+          // @TODO: drop on another tab for reordering
+          // @TODO: drop zones within panels for tree manipulation
+        }
       },
     });
     onCleanup(() => cleanup());
@@ -129,7 +98,7 @@ export type RenderPanelProps = {
 
 export const RenderPanel = (props: RenderPanelProps) => {
   const panel = createMemo(() =>
-    Panel.Node.get(props.tree, { id: props.panelId() }) //
+    Panel.Node.getOrError(props.tree, { id: props.panelId() }) //
       .pipe(Effect.runSync),
   );
 
@@ -141,8 +110,6 @@ export const RenderPanel = (props: RenderPanelProps) => {
       class={cn(
         "flex flex-col w-full h-full outline-theme-colors-purple-border/80 -outline-offset-1",
         isSelected() && "outline",
-        // "border-theme-colors-purple-border border p-[1px]",
-        // selected() && "border-2 p-0",
       )}
       style={
         props.parentLayout === "vertical"
@@ -174,18 +141,18 @@ export const RenderPanel = (props: RenderPanelProps) => {
 
       <Switch>
         <MatchTag on={panel()} tag="leaf">
-          {(_leaf) => (
-            <div class="w-full h-full">
-              <TabBar setTree={props.setTree} panel={panel} />
-
-              {/* content */}
-            </div>
-          )}
+          {(_leaf) => <div class="w-full h-full">{/* content */}</div>}
         </MatchTag>
         <MatchTag on={panel()} tag="parent">
           {(parent) => (
             <Switch>
-              <Match when={parent().layout === "tabs"}>TODO: tabs</Match>
+              <Match when={parent().layout === "tabs"}>
+                <TabBar
+                  tree={props.tree}
+                  setTree={props.setTree}
+                  parent={parent}
+                />
+              </Match>
               <Match when={parent().layout !== "tabs"}>
                 <div
                   class={cn(
@@ -377,7 +344,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
 };
 
 export type TabBarDropData = {
-  panel: Panel.ID;
+  parent: Panel.ID.Parent;
 } & Brand.Brand<"TabBarDropData">;
 export const TabBarDropData = Brand.nominal<TabBarDropData>();
 
@@ -388,8 +355,10 @@ export const isTabBarDropData = (obj: any): obj is TabBarDropData => {
 };
 
 type TabBarProps = {
+  tree: Panel.Tree;
   setTree: Panel.SetTree;
-  panel: () => Panel.Node;
+
+  parent: () => Panel.Node.Parent;
 };
 
 const TabBar = (props: TabBarProps) => {
@@ -408,18 +377,16 @@ const TabBar = (props: TabBarProps) => {
 
       getData: () =>
         TabBarDropData({
-          panel: props.panel().id,
+          parent: props.parent().id,
         }) as any,
 
       canDrop: ({ source }) => {
-        const _ = source;
-        // if (isTabHandleDragData(source.data)) return true;
+        if (isTabHandleDragData(source.data)) return true;
 
         return false;
       },
       onDragEnter: ({ source }) => {
-        const _ = source;
-        // if (!isTabHandleDragData(source.data)) return;
+        if (!isTabHandleDragData(source.data)) return;
 
         setHasDroppable(true);
       },
@@ -437,98 +404,110 @@ const TabBar = (props: TabBarProps) => {
         hasDroppable() && "bg-theme-panel-tab-background-drop-target",
       )}
     >
-      {/*<For each={props.panel().tabs}>
-        {(tab, idx) => (
+      <For each={props.parent().children}>
+        {(panel) => (
           <TabHandle
+            tree={props.tree}
             setTree={props.setTree}
-            panel={props.panel}
-            idx={idx}
-            tab={() => tab}
+            parent={props.parent}
+            panelId={() => panel}
           />
         )}
-      </For>*/}
+      </For>
     </div>
   );
 };
 
-// export type TabHandleDragData = {
-//   // tab: Panel.Tab;
-//   panel: Panel.ID;
-// } & Brand.Brand<"TabHandleDragData">;
-// export const TabHandleDragData = Brand.nominal<TabHandleDragData>();
+export type TabHandleDragData = {
+  parent: Panel.ID.Parent;
+  panel: Panel.ID;
+} & Brand.Brand<"TabHandleDragData">;
+export const TabHandleDragData = Brand.nominal<TabHandleDragData>();
 
-// // helper because pdnd uses `Record<string, string | unknown>` for generic data
-// // making it hard to use effects brand api
-// export const isTabHandleDragData = (obj: any): obj is TabHandleDragData => {
-//   return TabHandleDragData.is(obj);
-// };
+// helper because pdnd uses `Record<string, string | unknown>` for generic data
+// making it hard to use effects brand api
+export const isTabHandleDragData = (obj: any): obj is TabHandleDragData => {
+  return TabHandleDragData.is(obj);
+};
 
-// type TabHandleProps = {
-//   setTree: Panel.SetTree;
+type TabHandleProps = {
+  tree: Panel.Tree;
+  setTree: Panel.SetTree;
 
-//   panel: () => Panel.Node;
-//   idx: () => number;
-//   tab: () => Panel.Tab;
-// };
+  parent: () => Panel.Node.Parent;
+  panelId: () => Panel.ID;
+};
 
-// const TabHandle = (props: TabHandleProps) => {
-//   const selected = () => props.idx() === props.panel().selectedPanel;
+const TabHandle = (props: TabHandleProps) => {
+  const selected = () =>
+    Option.getOrElse(
+      // false positive
+      // eslint-disable-next-line solid/reactivity
+      Option.map(props.parent().active, (active) => active === props.panelId()),
+      () => false,
+    );
 
-//   const [dragging, setDragging] = createSignal<boolean>(false);
+  const panel = () =>
+    Panel.Node.get(props.tree, { id: props.panelId() }) //
+      .pipe(Effect.runSync);
 
-//   let ref!: HTMLDivElement;
-//   onMount(() => {
-//     // setup element to be dragged
-//     // we provide some data for other listeners to get the info for
-//     // the "source"
-//     const cleanup = draggable({
-//       element: ref,
+  const [dragging, setDragging] = createSignal<boolean>(false);
 
-//       getInitialData: () =>
-//         TabHandleDragData({
-//           panel: props.panel().id,
-//           tab: props.tab(),
-//         }) as any,
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    // setup element to be dragged
+    // we provide some data for other listeners to get the info for
+    // the "source"
+    const cleanup = draggable({
+      element: ref,
 
-//       // called just before the drag,
-//       // allowing us to change how preview will look
-//       onGenerateDragPreview: () => setDragging(true),
-//       onDrop: () => setDragging(false),
-//     });
-//     onCleanup(() => cleanup());
-//   });
+      getInitialData: () =>
+        TabHandleDragData({
+          parent: props.parent().id,
+          panel: props.panelId(),
+        }) as any,
 
-//   return (
-//     <div
-//       ref={ref}
-//       class={cn(
-//         "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-0.5 group",
-//         selected() && "bg-theme-panel-tab-background-active",
-//         dragging() && "opacity-80 border-transparent",
-//       )}
-//       onClick={() =>
-//         Panel.updateNode(props.setTree, {
-//           id: props.panel().id,
-//           props: {
-//             selectedPanel: props.idx(),
-//           },
-//         }).pipe(Effect.runSync)
-//       }
-//     >
-//       <div class="size-3.5">{/* icon placeholder*/}</div>
+      // called just before the drag,
+      // allowing us to change how preview will look
+      onGenerateDragPreview: () => setDragging(true),
+      onDrop: () => setDragging(false),
+    });
+    onCleanup(() => cleanup());
+  });
 
-//       {props.tab().title}
+  return (
+    <div
+      ref={ref}
+      class={cn(
+        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group",
+        selected() && "bg-theme-panel-tab-background-active",
+        dragging() && "opacity-80 border-transparent",
+      )}
+      onClick={() =>
+        Panel.Node.Parent.update(props.setTree, {
+          id: props.parent().id,
+          props: {
+            active: Option.some(props.panelId()),
+          },
+        }).pipe(Effect.runSync)
+      }
+    >
+      <div class="size-3.5">{/* icon placeholder*/}</div>
 
-//       <Button
-//         as={Icon}
-//         kind="close"
-//         variant="icon"
-//         size="icon"
-//         class={cn(
-//           "size-3.5 opacity-0 group-hover:opacity-100",
-//           dragging() && "opacity-0",
-//         )}
-//       />
-//     </div>
-//   );
-// };
+      <MapOption on={Panel.Node.$as("leaf")(panel())} fallback="<parent>">
+        {(leaf) => leaf().title}
+      </MapOption>
+
+      <Button
+        as={Icon}
+        kind="close"
+        variant="icon"
+        size="icon"
+        class={cn(
+          "size-3.5 opacity-0 group-hover:opacity-100",
+          dragging() && "opacity-0",
+        )}
+      />
+    </div>
+  );
+};
