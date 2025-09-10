@@ -207,7 +207,7 @@ export namespace Node {
 
   export const reParent = (
     setTree: SetTree,
-    { id, newParentId }: { id: ID; newParentId: ID.Parent },
+    { id, newParentId, idx }: { id: ID; newParentId: ID.Parent; idx?: number },
   ): Effect.Effect<void, NodeNotInTreeError | NodeHasNoParentError> =>
     storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
@@ -229,7 +229,11 @@ export namespace Node {
           id: newParentId,
         });
 
-        newParent.children.push(id);
+        if (idx !== undefined) {
+          newParent.children.splice(idx, 0, id);
+        } else {
+          newParent.children.push(id);
+        }
 
         node.parent = Option.some(newParentId);
       }),

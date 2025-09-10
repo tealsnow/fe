@@ -49,25 +49,23 @@ export const RenderPanels = (props: RenderPanelsProps) => {
         //   pdnd handles overlapping valid and invalid drop targets
         const destination = location.current.dropTargets[0];
         if (!destination) return;
-        if (isTabHandleDragData(source.data)) {
-          // we have a tab to drop
-          const sourceTabHandleData = source.data;
-          if (isTabBarDropData(destination.data)) {
-            // we are dropping a tab on a tab bar
-            const dropTabBarData = destination.data;
+        console.log("drop target count: ", location.current.dropTargets.length);
 
-            // @NOTE: this does, in fact, work for the case when the source
-            //   and destination parents are the same - it puts it to the last in the list
-            Panel.Node.reParent(props.setTree, {
-              id: sourceTabHandleData.panel,
-              newParentId: dropTabBarData.parent,
-            }).pipe(Effect.runSync);
-            return;
-          }
+        if (
+          isDragDataForTab(source.data) &&
+          isDropDataForTab(destination.data)
+        ) {
+          const dragForTab = source.data;
+          const dropForTab = destination.data;
 
-          // @TODO: drop on another tab for reordering
-          // @TODO: drop zones within panels for tree manipulation
+          Panel.Node.reParent(props.setTree, {
+            id: dragForTab.panel,
+            newParentId: dropForTab.parent,
+            idx: dropForTab.idx,
+          }).pipe(Effect.runSync);
         }
+
+        // @TODO: drop zones within panels for tree manipulation
       },
     });
     onCleanup(() => cleanup());
@@ -139,57 +137,278 @@ export const RenderPanel = (props: RenderPanelProps) => {
         </div>
       </Show>
 
-      <Switch>
-        <MatchTag on={panel()} tag="leaf">
-          {(_leaf) => <div class="w-full h-full">{/* content */}</div>}
-        </MatchTag>
-        <MatchTag on={panel()} tag="parent">
-          {(parent) => (
-            <Switch>
-              <Match when={parent().layout === "tabs"}>
-                <TabBar
-                  tree={props.tree}
-                  setTree={props.setTree}
-                  parent={parent}
-                />
-              </Match>
-              <Match when={parent().layout !== "tabs"}>
-                <div
-                  class={cn(
-                    "flex w-full h-full",
-                    parent().layout === "vertical" ? "flex-col" : "flex-row",
-                  )}
-                >
-                  <For each={parent().children}>
-                    {(panelId, idx) => (
-                      <>
-                        <RenderPanel
-                          tree={props.tree}
-                          setTree={props.setTree}
-                          parentLayout={parent().layout}
-                          panelId={() => panelId}
-                          selectedPanel={props.selectedPanel}
-                          selectPanel={props.selectPanel}
-                          dbgHeader={props.dbgHeader}
-                        />
-                        <Show when={idx() !== parent().children.length - 1}>
-                          <ResizeHandle
+      <div class="relative w-full h-full">
+        <Switch>
+          <MatchTag on={panel()} tag="leaf">
+            {(_leaf) => (
+              <>
+                <div class="w-full h-full">some content</div>
+              </>
+            )}
+          </MatchTag>
+          <MatchTag on={panel()} tag="parent">
+            {(parent) => (
+              <Switch>
+                <Match when={parent().layout === "tabs"}>
+                  <TabBar
+                    tree={props.tree}
+                    setTree={props.setTree}
+                    parent={parent}
+                  />
+                </Match>
+                <Match when={parent().layout !== "tabs"}>
+                  <div
+                    class={cn(
+                      "flex w-full h-full",
+                      parent().layout === "vertical" ? "flex-col" : "flex-row",
+                    )}
+                  >
+                    <For each={parent().children}>
+                      {(panelId, idx) => (
+                        <>
+                          <RenderPanel
                             tree={props.tree}
                             setTree={props.setTree}
+                            parentLayout={parent().layout}
                             panelId={() => panelId}
-                            parent={parent}
-                            idx={idx}
+                            selectedPanel={props.selectedPanel}
+                            selectPanel={props.selectPanel}
+                            dbgHeader={props.dbgHeader}
                           />
-                        </Show>
-                      </>
-                    )}
-                  </For>
-                </div>
-              </Match>
-            </Switch>
-          )}
-        </MatchTag>
-      </Switch>
+                          <Show when={idx() !== parent().children.length - 1}>
+                            <ResizeHandle
+                              tree={props.tree}
+                              setTree={props.setTree}
+                              panelId={() => panelId}
+                              parent={parent}
+                              idx={idx}
+                            />
+                          </Show>
+                        </>
+                      )}
+                    </For>
+                  </div>
+                </Match>
+              </Switch>
+            )}
+          </MatchTag>
+        </Switch>
+
+        <Show when={props.dbgHeader()}>
+          <div // overlay
+            class="absolute top-0 left-0 w-full h-full z-10 bg-theme-background/60"
+          >
+            {/**/}
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+};
+
+export type DropDataForTab = {
+  parent: Panel.ID.Parent;
+  idx?: number;
+} & Brand.Brand<"DropDataForTab">;
+export const DropDataForTab = Brand.nominal<DropDataForTab>();
+
+// helper because pdnd uses `Record<string, string | unknown>` for generic data
+// making it hard to use effects brand api
+export const isDropDataForTab = (obj: any): obj is DropDataForTab => {
+  return DropDataForTab.is(obj);
+};
+
+type TabBarProps = {
+  tree: Panel.Tree;
+  setTree: Panel.SetTree;
+
+  parent: () => Panel.Node.Parent;
+};
+
+const TabBar = (props: TabBarProps) => {
+  const [hasDroppable, setHasDroppable] = createSignal(false);
+
+  let dropZoneRef!: HTMLDivElement;
+  onMount(() => {
+    // setup this element as a place where we can drop elements
+    // we provide data for monitorForElements to learn about it from
+    // the "destination"
+    // has access to "source"s and is able to determine if they can or
+    // cannot be dropped here
+    // doesn't handle the drop itself
+    const cleanup = dropTargetForElements({
+      element: dropZoneRef,
+
+      getData: () =>
+        DropDataForTab({
+          parent: props.parent().id,
+        }) as any,
+
+      canDrop: ({ source }) => {
+        if (isDragDataForTab(source.data)) return true;
+
+        return false;
+      },
+      onDragEnter: ({ source }) => {
+        if (!isDragDataForTab(source.data)) return;
+
+        setHasDroppable(true);
+      },
+      onDragLeave: () => setHasDroppable(false),
+      onDrop: () => setHasDroppable(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  return (
+    <div
+      // ref={dropZoneRef}
+      class={cn(
+        "flex items-center px-1 w-full h-6 border-b border-theme-border",
+      )}
+    >
+      <For each={props.parent().children}>
+        {(panel, idx) => (
+          <TabHandle
+            tree={props.tree}
+            setTree={props.setTree}
+            parent={props.parent}
+            panelId={() => panel}
+            idx={idx}
+          />
+        )}
+      </For>
+      <div
+        ref={dropZoneRef}
+        class={cn(
+          "h-full grow",
+          hasDroppable() && "bg-theme-panel-tab-background-drop-target",
+        )}
+      />
+    </div>
+  );
+};
+
+export type DragDataForTab = {
+  parent: Panel.ID.Parent;
+  panel: Panel.ID;
+} & Brand.Brand<"DragDataForTab">;
+export const DragDataForTab = Brand.nominal<DragDataForTab>();
+
+// helper because pdnd uses `Record<string, string | unknown>` for generic data
+// making it hard to use effect's brand api
+export const isDragDataForTab = (obj: any): obj is DragDataForTab => {
+  return DragDataForTab.is(obj);
+};
+
+type TabHandleProps = {
+  tree: Panel.Tree;
+  setTree: Panel.SetTree;
+
+  parent: () => Panel.Node.Parent;
+  panelId: () => Panel.ID;
+  idx: () => number;
+};
+
+const TabHandle = (props: TabHandleProps) => {
+  const selected = () =>
+    Option.getOrElse(
+      // false positive
+      // eslint-disable-next-line solid/reactivity
+      Option.map(props.parent().active, (active) => active === props.panelId()),
+      () => false,
+    );
+
+  const panel = () =>
+    Panel.Node.get(props.tree, { id: props.panelId() }) //
+      .pipe(Effect.runSync);
+
+  const [dragging, setDragging] = createSignal<boolean>(false);
+  const [hasDroppable, setHasDroppable] = createSignal<boolean>(false);
+
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    // setup element to be dragged
+    // we provide some data for other listeners to get the info for
+    // the "source"
+    const draggableCleanup = draggable({
+      element: ref,
+
+      getInitialData: () =>
+        DragDataForTab({
+          parent: props.parent().id,
+          panel: props.panelId(),
+        }) as any,
+
+      // called just before the drag,
+      // allowing us to change how preview will look
+      onGenerateDragPreview: () => setDragging(true),
+      onDrop: () => setDragging(false),
+    });
+
+    const droppableCleanup = dropTargetForElements({
+      element: ref,
+
+      getData: () =>
+        DropDataForTab({
+          parent: props.parent().id,
+          idx: props.idx(),
+        }) as any,
+
+      canDrop: ({ source }) => {
+        if (isDragDataForTab(source.data)) return true;
+
+        return false;
+      },
+      onDragEnter: ({ source }) => {
+        if (!isDragDataForTab(source.data)) return;
+
+        setHasDroppable(true);
+      },
+      onDragLeave: () => setHasDroppable(false),
+      onDrop: () => setHasDroppable(false),
+    });
+
+    onCleanup(() => {
+      draggableCleanup();
+      droppableCleanup();
+    });
+  });
+
+  return (
+    <div
+      ref={ref}
+      class={cn(
+        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group",
+        selected() && "bg-theme-panel-tab-background-active",
+        dragging() && "opacity-60 border-transparent",
+        hasDroppable() && "bg-theme-panel-tab-background-drop-target",
+      )}
+      onClick={() =>
+        Panel.Node.Parent.update(props.setTree, {
+          id: props.parent().id,
+          props: {
+            active: Option.some(props.panelId()),
+          },
+        }).pipe(Effect.runSync)
+      }
+    >
+      <div class="size-3.5">{/* icon placeholder*/}</div>
+
+      <MapOption on={Panel.Node.$as("leaf")(panel())} fallback="<parent>">
+        {(leaf) => leaf().title}
+      </MapOption>
+
+      <Button
+        as={Icon}
+        kind="close"
+        variant="icon"
+        size="icon"
+        class={cn(
+          "size-3.5 opacity-0 group-hover:opacity-100",
+          dragging() && "opacity-0",
+        )}
+      />
     </div>
   );
 };
@@ -327,187 +546,18 @@ const ResizeHandle = (props: ResizeHandleProps) => {
               cursor: ns-resize;
               width: 100%;
               height: 7px;
-              top: -2px;
+              top: -3px;
               `
               : `
               cursor: ew-resize;
               height: 100%;
               width: 7px;
-              left: -2px;
+              left: -3px;
               `}
           }
         `,
       )}
       style={{}}
     />
-  );
-};
-
-export type TabBarDropData = {
-  parent: Panel.ID.Parent;
-} & Brand.Brand<"TabBarDropData">;
-export const TabBarDropData = Brand.nominal<TabBarDropData>();
-
-// helper because pdnd uses `Record<string, string | unknown>` for generic data
-// making it hard to use effects brand api
-export const isTabBarDropData = (obj: any): obj is TabBarDropData => {
-  return TabBarDropData.is(obj);
-};
-
-type TabBarProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
-  parent: () => Panel.Node.Parent;
-};
-
-const TabBar = (props: TabBarProps) => {
-  const [hasDroppable, setHasDroppable] = createSignal(false);
-
-  let ref!: HTMLDivElement;
-  onMount(() => {
-    // setup this element as a place where we can drop elements
-    // we provide data for monitorForElements to learn about it from
-    // the "destination"
-    // has access to "source"s and is able to determine if they can or
-    // cannot be dropped here
-    // doesn't handle the drop itself
-    const cleanup = dropTargetForElements({
-      element: ref,
-
-      getData: () =>
-        TabBarDropData({
-          parent: props.parent().id,
-        }) as any,
-
-      canDrop: ({ source }) => {
-        if (isTabHandleDragData(source.data)) return true;
-
-        return false;
-      },
-      onDragEnter: ({ source }) => {
-        if (!isTabHandleDragData(source.data)) return;
-
-        setHasDroppable(true);
-      },
-      onDragLeave: () => setHasDroppable(false),
-      onDrop: () => setHasDroppable(false),
-    });
-    onCleanup(() => cleanup());
-  });
-
-  return (
-    <div
-      ref={ref}
-      class={cn(
-        "flex items-center px-1 w-full h-6 border-b border-theme-border",
-        hasDroppable() && "bg-theme-panel-tab-background-drop-target",
-      )}
-    >
-      <For each={props.parent().children}>
-        {(panel) => (
-          <TabHandle
-            tree={props.tree}
-            setTree={props.setTree}
-            parent={props.parent}
-            panelId={() => panel}
-          />
-        )}
-      </For>
-    </div>
-  );
-};
-
-export type TabHandleDragData = {
-  parent: Panel.ID.Parent;
-  panel: Panel.ID;
-} & Brand.Brand<"TabHandleDragData">;
-export const TabHandleDragData = Brand.nominal<TabHandleDragData>();
-
-// helper because pdnd uses `Record<string, string | unknown>` for generic data
-// making it hard to use effects brand api
-export const isTabHandleDragData = (obj: any): obj is TabHandleDragData => {
-  return TabHandleDragData.is(obj);
-};
-
-type TabHandleProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
-  parent: () => Panel.Node.Parent;
-  panelId: () => Panel.ID;
-};
-
-const TabHandle = (props: TabHandleProps) => {
-  const selected = () =>
-    Option.getOrElse(
-      // false positive
-      // eslint-disable-next-line solid/reactivity
-      Option.map(props.parent().active, (active) => active === props.panelId()),
-      () => false,
-    );
-
-  const panel = () =>
-    Panel.Node.get(props.tree, { id: props.panelId() }) //
-      .pipe(Effect.runSync);
-
-  const [dragging, setDragging] = createSignal<boolean>(false);
-
-  let ref!: HTMLDivElement;
-  onMount(() => {
-    // setup element to be dragged
-    // we provide some data for other listeners to get the info for
-    // the "source"
-    const cleanup = draggable({
-      element: ref,
-
-      getInitialData: () =>
-        TabHandleDragData({
-          parent: props.parent().id,
-          panel: props.panelId(),
-        }) as any,
-
-      // called just before the drag,
-      // allowing us to change how preview will look
-      onGenerateDragPreview: () => setDragging(true),
-      onDrop: () => setDragging(false),
-    });
-    onCleanup(() => cleanup());
-  });
-
-  return (
-    <div
-      ref={ref}
-      class={cn(
-        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group",
-        selected() && "bg-theme-panel-tab-background-active",
-        dragging() && "opacity-80 border-transparent",
-      )}
-      onClick={() =>
-        Panel.Node.Parent.update(props.setTree, {
-          id: props.parent().id,
-          props: {
-            active: Option.some(props.panelId()),
-          },
-        }).pipe(Effect.runSync)
-      }
-    >
-      <div class="size-3.5">{/* icon placeholder*/}</div>
-
-      <MapOption on={Panel.Node.$as("leaf")(panel())} fallback="<parent>">
-        {(leaf) => leaf().title}
-      </MapOption>
-
-      <Button
-        as={Icon}
-        kind="close"
-        variant="icon"
-        size="icon"
-        class={cn(
-          "size-3.5 opacity-0 group-hover:opacity-100",
-          dragging() && "opacity-0",
-        )}
-      />
-    </div>
   );
 };

@@ -43,6 +43,8 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
 
   const selected = () =>
     Option.getOrElse(
+      // false positive
+      // eslint-disable-next-line solid/reactivity
       Option.map(props.selectedId(), (id) => id === props.panelId()),
       () => false,
     );

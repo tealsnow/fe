@@ -52,8 +52,11 @@ export const Panels3 = () => {
         layout: "tabs",
       });
 
-      const f = yield* Panel.Node.Leaf.create(setTree, { title: "f" });
-      const g = yield* Panel.Node.Leaf.create(setTree, { title: "g" });
+      const p = yield* Panel.Node.Leaf.create(setTree, { title: "p" });
+      const q = yield* Panel.Node.Leaf.create(setTree, { title: "q" });
+      const r = yield* Panel.Node.Leaf.create(setTree, { title: "r" });
+      const s = yield* Panel.Node.Leaf.create(setTree, { title: "s" });
+      const t = yield* Panel.Node.Leaf.create(setTree, { title: "t" });
 
       yield* Panel.Node.Parent.addChild(setTree, {
         parentId: root,
@@ -69,8 +72,12 @@ export const Panels3 = () => {
       yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
       yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: d });
 
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: f });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: g });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: p });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: q });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: r });
+
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: s });
+      yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: t });
     }).pipe(Effect.runSync);
   });
 
