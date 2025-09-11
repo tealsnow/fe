@@ -76,7 +76,53 @@ export const Percent = Brand.refined<Percent>(
   (n) => Brand.error(`Expected ${n} to be a percentage`),
 );
 
-export type Layout = "vertical" | "horizontal" | "tabs";
+// export type Layout = "vertical" | "horizontal" | "tabs";
+
+export namespace Layout {
+  export type SplitDirection = "vertical" | "horizontal";
+
+  export type Map = {
+    split: { direction: SplitDirection; children: ID[] };
+    tabs: { children: ID.Leaf[] };
+  };
+  export type Tag = keyof Map;
+
+  export type TaggedMap = {
+    [K in Tag]: { readonly _tag: K } & Map[K];
+  };
+
+  export type Of<K extends Tag> = TaggedMap[K];
+
+  export type Split = Of<"split">;
+  export type Tabs = Of<"tabs">;
+
+  export const Split = (
+    direction: SplitDirection,
+    children: ID[] = [],
+  ): Split => ({
+    _tag: "split",
+    direction,
+    children,
+  });
+  export const Tabs = (children: ID.Leaf[] = []): Tabs => ({
+    _tag: "tabs",
+    children,
+  });
+
+  export const $is =
+    <T extends Tag>(tag: T) =>
+    (layout: Layout): layout is Of<T> => {
+      return layout._tag === tag;
+    };
+
+  export const $as =
+    <T extends Tag>(tag: T) =>
+    (layout: Layout): Option.Option<TaggedMap[T]> => {
+      if ($is(tag)(layout)) return Option.some(layout);
+      return Option.none();
+    };
+}
+export type Layout = Layout.TaggedMap[Layout.Tag];
 
 export namespace Node {
   export namespace Data {
@@ -95,13 +141,11 @@ export namespace Node {
       id: ID.Parent;
       layout?: Layout;
       active?: Option.Option<ID>;
-      children?: ID[];
     };
     export const ParentProps = (): Required<PickOptional<ParentProps>> =>
       ({
-        layout: "horizontal",
+        layout: Layout.Split("horizontal"),
         active: Option.none(),
-        children: [],
         ...Common(),
       }) as const;
     export type Parent = Required<ParentProps>;
@@ -124,8 +168,7 @@ export namespace Node {
     leaf: Data.Leaf;
   };
   export type Tag = keyof Map;
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  tsafe.assert<tsafe.Equals<Tag, ID.Tag>>;
+  tsafe.assert<tsafe.Equals<Tag, ID.Tag>>();
 
   export type TaggedMap = {
     [K in keyof Map]: { readonly _tag: K } & Map[K];
@@ -135,10 +178,8 @@ export namespace Node {
 
   export type Parent = Of<"parent">;
   export type Leaf = Of<"leaf">;
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  tsafe.assert<tsafe.Extends<Parent, Node>>;
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  tsafe.assert<tsafe.Extends<Leaf, Node>>;
+  tsafe.assert<tsafe.Extends<Parent, Node>>();
+  tsafe.assert<tsafe.Extends<Leaf, Node>>();
 
   export const $is =
     <T extends Tag>(tag: T) =>
@@ -207,7 +248,11 @@ export namespace Node {
 
   export const reParent = (
     setTree: SetTree,
-    { id, newParentId, idx }: { id: ID; newParentId: ID.Parent; idx?: number },
+    {
+      id,
+      newParentId,
+      idx,
+    }: { id: ID.Leaf; newParentId: ID.Parent; idx?: number },
   ): Effect.Effect<void, NodeNotInTreeError | NodeHasNoParentError> =>
     storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
@@ -221,7 +266,7 @@ export namespace Node {
           id: oldParentId,
         });
 
-        oldParent.children = oldParent.children.filter(
+        oldParent.layout.children = oldParent.layout.children.filter(
           (childId) => childId.uuid !== id.uuid,
         );
 
@@ -230,10 +275,20 @@ export namespace Node {
         });
 
         if (idx !== undefined) {
-          newParent.children.splice(idx, 0, id);
+          newParent.layout.children.splice(idx, 0, id);
         } else {
-          newParent.children.push(id);
+          newParent.layout.children.push(id);
         }
+
+        if (
+          Option.map(
+            oldParent.active,
+            (active) => active.uuid === id.uuid,
+          ).pipe(Option.getOrElse(() => false))
+        ) {
+          oldParent.active = Option.none();
+        }
+        newParent.active = Option.some(id);
 
         node.parent = Option.some(newParentId);
       }),
@@ -304,16 +359,24 @@ export namespace Node {
           const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
           const newChild = yield* Node.getOrError(tree, { id: newChildId });
 
+          if (ID.$is("parent")(newChildId) && Layout.$is("tabs")(parent.layout))
+            return Effect.fail(
+              new CannotAddParentToTabsLayout({
+                addingTo: parentId,
+                child: newChildId,
+              }),
+            );
+
           if (Option.isSome(newChild.parent))
-            yield* Effect.fail(
+            return Effect.fail(
               new NodeAlreadyHasParentError({ id: newChildId }),
             );
 
-          const n = parent.children.length;
+          const n = parent.layout.children.length;
           newChild.parent = Option.some(parentId);
 
           let sum = 0;
-          for (const childId of parent.children) {
+          for (const childId of parent.layout.children) {
             const child = yield* Node.getOrError(tree, {
               id: childId,
               parentId,
@@ -326,17 +389,27 @@ export namespace Node {
             Order.clamp(Order.number)({ minimum: 0, maximum: 1 }),
           );
 
+          const pushChild = () => {
+            if (ID.$is("parent")(newChildId)) {
+              tsafe.assert(!tsafe.is<Layout.Tabs>(parent.layout));
+              parent.layout.children.push(newChildId);
+            } else {
+              parent.layout.children.push(newChildId);
+            }
+          };
+
           if (sum <= 0) {
             if (n === 0) {
               newChild.percentOfParent = Percent(1);
-              parent.children.push(newChildId);
-              // return Effect.void;
-              return yield* Effect.succeed(void {});
+
+              pushChild();
+
+              return Effect.succeed(void {});
             }
 
             const each = (1 - pNew) / n;
 
-            for (const childId of parent.children) {
+            for (const childId of parent.layout.children) {
               const child = yield* Node.getOrError(tree, {
                 id: childId,
                 parentId,
@@ -345,15 +418,14 @@ export namespace Node {
             }
 
             newChild.percentOfParent = Percent(pNew);
-            parent.children.push(newChildId);
+            pushChild();
 
-            // return Effect.void;
-            return yield* Effect.succeed(void {});
+            return Effect.succeed(void {});
           }
 
           const scale = (1 - pNew) / sum;
 
-          for (const childId of parent.children) {
+          for (const childId of parent.layout.children) {
             const child = yield* Node.getOrError(tree, {
               id: childId,
               parentId,
@@ -362,9 +434,9 @@ export namespace Node {
           }
 
           newChild.percentOfParent = Percent(pNew);
-          parent.children.push(newChildId);
+          pushChild();
 
-          return yield* Effect.succeed(void {});
+          return Effect.succeed(void {});
         }),
       );
 
@@ -376,14 +448,16 @@ export namespace Node {
         Effect.gen(function* () {
           const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
 
-          const n = parent.children.length;
+          const n = parent.layout.children.length;
           if (n === 0) return Effect.void;
 
-          const children = yield* Effect.forEach(parent.children, (childId) =>
-            Node.getOrError(tree, {
-              id: childId,
-              parentId: parent.id,
-            }),
+          const children = yield* Effect.forEach(
+            parent.layout.children,
+            (childId) =>
+              Node.getOrError(tree, {
+                id: childId,
+                parentId: parent.id,
+              }),
           );
 
           // Partition into fixed and adjustable
@@ -495,7 +569,7 @@ export namespace Node {
 
         if (removeFromParent && parentId) {
           const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
-          parent.children = parent.children.filter(
+          parent.layout.children = parent.layout.children.filter(
             (childId) => childId.uuid !== id.uuid,
           );
           node.parent = Option.none();
@@ -503,7 +577,7 @@ export namespace Node {
         }
 
         if (Node.$is("parent")(node)) {
-          yield* Effect.forEach(node.children, (childId) =>
+          yield* Effect.forEach(node.layout.children, (childId) =>
             pipe(
               Option.isSome(Node.get(tree, { id: childId })),
               Effect.succeed,
@@ -522,7 +596,7 @@ export namespace Node {
             ),
           );
 
-          for (const childId of node.children) {
+          for (const childId of node.layout.children) {
             yield* destroy(setTree, {
               id: childId,
               removeFromParent: false,
@@ -636,4 +710,13 @@ export class CannotDeleteRootError extends Data.TaggedError(
   "CannotDeleteRootError",
 )<{}> {
   message: string = "Cannot delete root panel";
+}
+
+export class CannotAddParentToTabsLayout extends Data.TaggedError(
+  "CannotAddParentToTabsLayout",
+)<{
+  addingTo: ID.Parent;
+  child: ID.Parent;
+}> {
+  message: string = `Cannot add child (with id '${this.child.uuid}') which is a parent to a parent (with id '${this.addingTo.uuid}') which has a tabs layout`;
 }

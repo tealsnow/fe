@@ -2,7 +2,6 @@ import {
   createMemo,
   createSignal,
   For,
-  Match,
   onCleanup,
   onMount,
   Show,
@@ -11,7 +10,7 @@ import {
 import { css } from "solid-styled-components";
 import { MapOption } from "solid-effect";
 
-import { Brand, Effect, Option, Order } from "effect";
+import { Data, Effect, Match, Option, Order } from "effect";
 
 import {
   draggable,
@@ -75,7 +74,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
     <RenderPanel
       tree={props.tree}
       setTree={props.setTree}
-      parentLayout="vertical"
+      splitDirection={() => "vertical"}
       panelId={() => props.tree.root}
       selectPanel={props.selectPanel}
       selectedPanel={props.selectedPanel}
@@ -87,7 +86,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
 export type RenderPanelProps = {
   tree: Panel.Tree;
   setTree: Panel.SetTree;
-  parentLayout: Panel.Layout;
+  splitDirection: () => Panel.Layout.SplitDirection;
   panelId: () => Panel.ID;
   selectedPanel: () => Option.Option<Panel.ID>;
   selectPanel: (id: Panel.ID) => void;
@@ -109,17 +108,17 @@ export const RenderPanel = (props: RenderPanelProps) => {
         "flex flex-col w-full h-full outline-theme-colors-purple-border/80 -outline-offset-1",
         isSelected() && "outline",
       )}
-      style={
-        props.parentLayout === "vertical"
-          ? {
-              width: "100%",
-              height: panel().percentOfParent * 100 + "%",
-            }
-          : {
-              height: "100%",
-              width: panel().percentOfParent * 100 + "%",
-            }
-      }
+      style={Match.value(props.splitDirection()).pipe(
+        Match.when("vertical", () => ({
+          width: "100%",
+          height: panel().percentOfParent * 100 + "%",
+        })),
+        Match.when("horizontal", () => ({
+          height: "100%",
+          width: panel().percentOfParent * 100 + "%",
+        })),
+        Match.exhaustive,
+      )}
     >
       <Show when={props.dbgHeader()}>
         <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border border-theme-colors-orange-border overflow-clip">
@@ -149,57 +148,109 @@ export const RenderPanel = (props: RenderPanelProps) => {
           <MatchTag on={panel()} tag="parent">
             {(parent) => (
               <Switch>
-                <Match when={parent().layout === "tabs"}>
-                  <TabBar
-                    tree={props.tree}
-                    setTree={props.setTree}
-                    parent={parent}
-                  />
-                </Match>
-                <Match when={parent().layout !== "tabs"}>
-                  <div
-                    class={cn(
-                      "flex w-full h-full",
-                      parent().layout === "vertical" ? "flex-col" : "flex-row",
-                    )}
-                  >
-                    <For each={parent().children}>
-                      {(panelId, idx) => (
-                        <>
-                          <RenderPanel
-                            tree={props.tree}
-                            setTree={props.setTree}
-                            parentLayout={parent().layout}
-                            panelId={() => panelId}
-                            selectedPanel={props.selectedPanel}
-                            selectPanel={props.selectPanel}
-                            dbgHeader={props.dbgHeader}
-                          />
-                          <Show when={idx() !== parent().children.length - 1}>
-                            <ResizeHandle
+                <MatchTag on={parent().layout} tag="tabs">
+                  {(layout) => (
+                    <TabBar
+                      tree={props.tree}
+                      setTree={props.setTree}
+                      parent={parent}
+                      layout={layout}
+                    />
+                  )}
+                </MatchTag>
+                <MatchTag on={parent().layout} tag="split">
+                  {(split) => (
+                    <div
+                      class={cn(
+                        "flex w-full h-full",
+                        Match.value(props.splitDirection()).pipe(
+                          Match.when("vertical", () => "flex-row"),
+                          Match.when("horizontal", () => "flex-col"),
+                          Match.exhaustive,
+                        ),
+                      )}
+                    >
+                      <For each={split().children}>
+                        {(panelId, idx) => (
+                          <>
+                            <RenderPanel
                               tree={props.tree}
                               setTree={props.setTree}
+                              splitDirection={() => split().direction}
                               panelId={() => panelId}
-                              parent={parent}
-                              idx={idx}
+                              selectedPanel={props.selectedPanel}
+                              selectPanel={props.selectPanel}
+                              dbgHeader={props.dbgHeader}
                             />
-                          </Show>
-                        </>
-                      )}
-                    </For>
-                  </div>
-                </Match>
+                            <Show when={idx() !== split().children.length - 1}>
+                              <ResizeHandle
+                                tree={props.tree}
+                                setTree={props.setTree}
+                                panelId={() => panelId}
+                                splitDirection={() => split().direction}
+                                parent={parent}
+                                idx={idx}
+                              />
+                            </Show>
+                          </>
+                        )}
+                      </For>
+                    </div>
+                  )}
+                </MatchTag>
               </Switch>
             )}
           </MatchTag>
         </Switch>
 
-        <Show when={props.dbgHeader()}>
-          <div // overlay
-            class="absolute top-0 left-0 w-full h-full z-10 bg-theme-background/60"
+        <Show when={false}>
+          <Switch>
+            <MatchTag on={panel()} tag="parent">
+              {(parent) => (
+                <Show when={parent().layout._tag !== "tabs"}>
+                  <div class="absolute top-0 left-0 w-full h-full z-10 grid grid-cols-[2rem_1fr_4rem_1fr_2rem] grid-rows-[2rem_1fr_4rem_1fr_2rem]">
+                    {/* left - add split left */}
+                    <div class="w-full h-full col-1 row-3 bg-green-500" />
+                    {/* right - add split right */}
+                    <div class="w-full h-full col-5 row-3 bg-green-500" />
+                    {/* top - add split top */}
+                    <div class="w-full h-full col-3 row-1 bg-green-500" />
+                    {/* bottom - add split top */}
+                    <div class="w-full h-full col-3 row-5 bg-green-500" />
+                  </div>
+                </Show>
+              )}
+            </MatchTag>
+          </Switch>
+
+          <Show
+            when={
+              // Read as if parent has no children or layout is tabs or is a leaf
+              Option.map(
+                Panel.Node.$as("parent")(panel()),
+                (parent) =>
+                  parent.layout.children.length == 0 ||
+                  parent.layout._tag === "tabs",
+              ).pipe(Option.getOrElse(() => false)) ||
+              Panel.Node.$is("leaf")(panel())
+            }
           >
-            {/**/}
-          </div>
+            <div class="absolute top-0 left-0 w-full h-full z-10 grid grid-cols-[2rem_1fr_6rem_1fr_2rem] grid-rows-[2rem_1fr_6rem_1fr_2rem]">
+              <div class="w-full h-full col-3 row-3 grid grid-cols-3 grid-rows-3">
+                {/* middle - add tab or make tabbed */}
+                <div class="w-full h-full col-2 row-2 bg-red-600" />
+
+                {/* left - split panel left */}
+                <div class="w-full h-full col-1 row-2 bg-red-300" />
+                {/* right - split panel right */}
+                <div class="w-full h-full col-3 row-2 bg-red-300" />
+                {/* top - split panel top */}
+                <div class="w-full h-full col-2 row-1 bg-red-300" />
+                {/* bottom - split panel top */}
+                <div class="w-full h-full col-2 row-3 bg-red-300" />
+              </div>
+            </div>
+          </Show>
         </Show>
       </div>
     </div>
@@ -207,15 +258,14 @@ export const RenderPanel = (props: RenderPanelProps) => {
 };
 
 export type DropDataForTab = {
-  parent: Panel.ID.Parent;
-  idx?: number;
-} & Brand.Brand<"DropDataForTab">;
-export const DropDataForTab = Brand.nominal<DropDataForTab>();
+  readonly _tag: "DropDataForTab";
+  readonly parent: Panel.ID.Parent;
+  readonly idx?: number;
+};
+export const DropDataForTab = Data.tagged<DropDataForTab>("DropDataForTab");
 
-// helper because pdnd uses `Record<string, string | unknown>` for generic data
-// making it hard to use effects brand api
 export const isDropDataForTab = (obj: any): obj is DropDataForTab => {
-  return DropDataForTab.is(obj);
+  return obj._tag === "DropDataForTab";
 };
 
 type TabBarProps = {
@@ -223,6 +273,7 @@ type TabBarProps = {
   setTree: Panel.SetTree;
 
   parent: () => Panel.Node.Parent;
+  layout: () => Panel.Layout.Tabs;
 };
 
 const TabBar = (props: TabBarProps) => {
@@ -267,7 +318,7 @@ const TabBar = (props: TabBarProps) => {
         "flex items-center px-1 w-full h-6 border-b border-theme-border",
       )}
     >
-      <For each={props.parent().children}>
+      <For each={props.layout().children}>
         {(panel, idx) => (
           <TabHandle
             tree={props.tree}
@@ -290,15 +341,14 @@ const TabBar = (props: TabBarProps) => {
 };
 
 export type DragDataForTab = {
-  parent: Panel.ID.Parent;
-  panel: Panel.ID;
-} & Brand.Brand<"DragDataForTab">;
-export const DragDataForTab = Brand.nominal<DragDataForTab>();
+  readonly _tag: "DragDataForTab";
+  readonly parent: Panel.ID.Parent;
+  readonly panel: Panel.ID.Leaf;
+};
+export const DragDataForTab = Data.tagged<DragDataForTab>("DragDataForTab");
 
-// helper because pdnd uses `Record<string, string | unknown>` for generic data
-// making it hard to use effect's brand api
 export const isDragDataForTab = (obj: any): obj is DragDataForTab => {
-  return DragDataForTab.is(obj);
+  return obj._tag === "DragDataForTab";
 };
 
 type TabHandleProps = {
@@ -306,7 +356,7 @@ type TabHandleProps = {
   setTree: Panel.SetTree;
 
   parent: () => Panel.Node.Parent;
-  panelId: () => Panel.ID;
+  panelId: () => Panel.ID.Leaf;
   idx: () => number;
 };
 
@@ -319,8 +369,8 @@ const TabHandle = (props: TabHandleProps) => {
       () => false,
     );
 
-  const panel = () =>
-    Panel.Node.get(props.tree, { id: props.panelId() }) //
+  const tab = () =>
+    Panel.Node.Leaf.get(props.tree, { id: props.panelId() }) //
       .pipe(Effect.runSync);
 
   const [dragging, setDragging] = createSignal<boolean>(false);
@@ -379,9 +429,10 @@ const TabHandle = (props: TabHandleProps) => {
     <div
       ref={ref}
       class={cn(
-        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group",
+        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group cursor-pointer",
         selected() && "bg-theme-panel-tab-background-active",
-        dragging() && "opacity-60 border-transparent",
+        dragging() &&
+          "opacity-60 outline-theme-border -outline-offset-1 outline",
         hasDroppable() && "bg-theme-panel-tab-background-drop-target",
       )}
       onClick={() =>
@@ -393,17 +444,16 @@ const TabHandle = (props: TabHandleProps) => {
         }).pipe(Effect.runSync)
       }
     >
-      <div class="size-3.5">{/* icon placeholder*/}</div>
+      <div class="size-3.5" />
 
-      <MapOption on={Panel.Node.$as("leaf")(panel())} fallback="<parent>">
-        {(leaf) => leaf().title}
-      </MapOption>
+      {tab().title}
 
       <Button
         as={Icon}
         kind="close"
         variant="icon"
         size="icon"
+        noOnClickToOnMouseDown
         class={cn(
           "size-3.5 opacity-0 group-hover:opacity-100",
           dragging() && "opacity-0",
@@ -417,6 +467,7 @@ type ResizeHandleProps = {
   tree: Panel.Tree;
   setTree: Panel.SetTree;
   panelId: () => Panel.ID;
+  splitDirection: () => Panel.Layout.SplitDirection;
 
   parent: () => Panel.Node.Parent;
   idx: () => number;
@@ -444,7 +495,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
           const nodeId = props.panelId();
           const node = yield* Panel.Node.get(props.tree, { id: nodeId });
 
-          const nextNodeId = parent.children[props.idx() + 1];
+          const nextNodeId = parent.layout.children[props.idx() + 1];
           // we should never rendered after be the last one
           assert(
             nextNodeId !== undefined,
@@ -457,14 +508,18 @@ const ResizeHandle = (props: ResizeHandleProps) => {
           const parentRect = resizeRef.parentElement?.getBoundingClientRect();
           assert(parentRect !== undefined);
 
-          const parentLayout = parent.layout;
+          const split = Option.getOrThrow(
+            Panel.Layout.$as("split")(parent.layout),
+          );
           const parentSize =
-            parentLayout === "vertical" ? parentRect.height : parentRect.width;
+            split.direction === "vertical"
+              ? parentRect.height
+              : parentRect.width;
           const size = parentSize * node.percentOfParent;
           const nextSize = parentSize * nextNode.percentOfParent;
 
           return {
-            parentLayout,
+            split,
             parentSize,
             size,
             nextSize,
@@ -477,7 +532,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
         // false positive
         // eslint-disable-next-line solid/reactivity
         Effect.gen(function* () {
-          const parentLayout = source.data.parentLayout as Panel.Layout;
+          const split = source.data.split as Panel.Layout.Split;
           const parentSize = source.data.parentSize as number;
           const size = source.data.size as number;
           const nextSize = source.data.nextSize as number;
@@ -485,7 +540,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
           const nextNodeId = source.data.nextNodeId as Panel.ID;
 
           const delta =
-            parentLayout === "vertical"
+            split.direction === "vertical"
               ? location.current.input.clientY - location.initial.input.clientY
               : location.current.input.clientX - location.initial.input.clientX;
 
@@ -534,14 +589,14 @@ const ResizeHandle = (props: ResizeHandleProps) => {
       ref={resizeRef}
       class={cn(
         "relative bg-theme-border transition-colors hover:bg-theme-deemphasis",
-        props.parent().layout === "vertical"
+        props.splitDirection() === "vertical"
           ? "h-[1px] w-full"
           : "w-[1px] h-full",
         css`
           &::before {
             content: "";
             position: absolute;
-            ${props.parent().layout === "vertical"
+            ${props.splitDirection() === "vertical"
               ? `
               cursor: ns-resize;
               width: 100%;

@@ -74,7 +74,7 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
         {(parent) => {
           return (
             <div class="flex flex-col">
-              <For each={parent().children}>
+              <For each={parent().layout.children}>
                 {(childId) => {
                   return (
                     <RenderPanelPill
@@ -230,23 +230,34 @@ const PanelInspector = (props: PanelInspectorProps) => {
             {(parent) => {
               return (
                 <>
-                  <PropertyEditor.Enum
-                    key="Layout"
-                    value={parent().layout}
-                    options={["vertical", "horizontal"]}
-                    onChange={(value) => {
-                      Panel.Node.Parent.update(props.setTree, {
-                        id: parent().id,
-                        props: {
-                          layout: value as Panel.Layout,
-                        },
-                      }).pipe(Effect.runSync);
-                    }}
-                  />
+                  <Switch>
+                    <MatchTag on={parent().layout} tag="split">
+                      {(split) => (
+                        <PropertyEditor.Enum
+                          key="Split direction"
+                          value={split().direction}
+                          options={["vertical", "horizontal"]}
+                          onChange={(value) => {
+                            Panel.Node.Parent.update(props.setTree, {
+                              id: parent().id,
+                              props: {
+                                layout: {
+                                  _tag: "split",
+                                  direction:
+                                    value as Panel.Layout.SplitDirection,
+                                  children: split().children,
+                                },
+                              },
+                            }).pipe(Effect.runSync);
+                          }}
+                        />
+                      )}
+                    </MatchTag>
+                  </Switch>
 
                   <PropertyEditor.Array
                     key="Children"
-                    items={Array.from(parent().children).map((id) =>
+                    items={Array.from(parent().layout.children).map((id) =>
                       Panel.Node.get(props.tree, { id }).pipe(
                         Effect.map((panel) => panel),
                         Effect.runSync,

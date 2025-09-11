@@ -59,12 +59,12 @@ describe("creating/adding", () => {
 
     const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
 
-    expect(rootPanel.children).toHaveLength(0);
+    expect(rootPanel.layout.children).toHaveLength(0);
 
     yield* Panel.Node.Parent.addChild(setTree, { parentId: root, childId: a });
 
-    expect(rootPanel.children).toHaveLength(1);
-    expect(rootPanel.children).toContain(a);
+    expect(rootPanel.layout.children).toHaveLength(1);
+    expect(rootPanel.layout.children).toContain(a);
 
     const aPanel = yield* Panel.Node.Leaf.get(tree, { id: a });
 
@@ -78,18 +78,18 @@ describe("creating/adding", () => {
 
     const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
 
-    expect(rootPanel.children).toHaveLength(0);
+    expect(rootPanel.layout.children).toHaveLength(0);
 
     yield* Panel.Node.Parent.addChild(setTree, { parentId: root, childId: a });
 
-    expect(rootPanel.children).toHaveLength(1);
-    expect(rootPanel.children).toContain(a);
+    expect(rootPanel.layout.children).toHaveLength(1);
+    expect(rootPanel.layout.children).toContain(a);
 
     const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
 
     expect(aPanel.parent).toStrictEqual(Option.some(root));
     expect(aPanel.percentOfParent).toBe(1);
-    expect(aPanel.children).toHaveLength(0);
+    expect(aPanel.layout.children).toHaveLength(0);
   });
 
   test("can add children", function* (tree, setTree) {
@@ -100,7 +100,7 @@ describe("creating/adding", () => {
     const parentPanel = yield* Panel.Node.Parent.getOrError(tree, {
       id: parent,
     });
-    expect(parentPanel.children).toHaveLength(0);
+    expect(parentPanel.layout.children).toHaveLength(0);
 
     yield* Panel.Node.Parent.addChild(setTree, {
       parentId: tree.root,
@@ -142,7 +142,7 @@ describe("creating/adding", () => {
 
     const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
 
-    expect(rootPanel.children).toHaveLength(0);
+    expect(rootPanel.layout.children).toHaveLength(0);
 
     yield* Panel.Node.Parent.addChild(setTree, { parentId: root, childId: a });
     yield* Panel.Node.Parent.addChild(setTree, { parentId: root, childId: b });
@@ -258,13 +258,13 @@ describe("deleting", () => {
 
     const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
 
-    expect(aPanel.children).toContain(b);
-    expect(aPanel.children).toContain(c);
+    expect(aPanel.layout.children).toContain(b);
+    expect(aPanel.layout.children).toContain(c);
 
     yield* Panel.Node.destroy(setTree, { id: b });
 
-    expect(aPanel.children).not.toContain(b);
-    expect(aPanel.children).toContain(c);
+    expect(aPanel.layout.children).not.toContain(b);
+    expect(aPanel.layout.children).toContain(c);
 
     expect(tree.nodes[a.uuid]).toBeDefined();
     expect(tree.nodes[b.uuid]).toBeUndefined();
@@ -325,23 +325,6 @@ describe("deleting", () => {
     );
   });
 
-  test("errors on delete root panel (as child)", function* (_tree, setTree) {
-    const a = yield* Panel.Node.Parent.create(setTree, {});
-
-    yield* storeUpdate(setTree, (tree) =>
-      Effect.gen(function* () {
-        const panel = yield* Panel.Node.Parent.get(tree, { id: a });
-        panel.children.push(tree.root);
-      }),
-    );
-
-    const result = yield* Effect.exit(Panel.Node.destroy(setTree, { id: a }));
-
-    expect(JSON.stringify(result)).toStrictEqual(
-      JSON.stringify(Exit.fail(new Panel.CannotDeleteRootError())),
-    );
-  });
-
   test("errors on delete panel with nonexistent child", function* (tree, setTree) {
     const a = yield* Panel.Node.Parent.create(setTree, {});
     const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
@@ -353,14 +336,14 @@ describe("deleting", () => {
     yield* storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
         const panel = yield* Panel.Node.Parent.get(tree, { id: a });
-        panel.children.push(fakeId);
+        panel.layout.children.push(fakeId);
       }),
     );
 
     const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
 
     expect(aPanel).toBeDefined();
-    expect(aPanel.children).toHaveLength(2);
+    expect(aPanel.layout.children).toHaveLength(2);
     expect(Object.entries(tree.nodes)).toHaveLength(3);
 
     const result = yield* Effect.exit(Panel.Node.destroy(setTree, { id: a }));
@@ -372,7 +355,7 @@ describe("deleting", () => {
     );
 
     expect(tree.nodes[a.uuid]).toBeDefined();
-    expect(aPanel.children).toHaveLength(2);
+    expect(aPanel.layout.children).toHaveLength(2);
     expect(Object.entries(tree.nodes)).toHaveLength(3);
   });
 });

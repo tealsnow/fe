@@ -16,7 +16,6 @@ export const Panels3 = () => {
   );
 
   const [selectedId, setSelectedId] = createSignal<Option.Option<Panel.ID>>(
-    // Option.some(tree.root),
     Option.none(),
   );
 
@@ -41,15 +40,17 @@ export const Panels3 = () => {
       const root = tree.root;
 
       const a = yield* Panel.Node.Parent.create(setTree, {
-        layout: "vertical",
+        layout: Panel.Layout.Split("vertical"),
       });
 
       const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
-      const c = yield* Panel.Node.Parent.create(setTree, { layout: "tabs" });
+      const c = yield* Panel.Node.Parent.create(setTree, {
+        layout: Panel.Layout.Tabs(),
+      });
       const d = yield* Panel.Node.Leaf.create(setTree, { title: "d" });
 
       const e = yield* Panel.Node.Parent.create(setTree, {
-        layout: "tabs",
+        layout: Panel.Layout.Tabs(),
       });
 
       const p = yield* Panel.Node.Leaf.create(setTree, { title: "p" });
