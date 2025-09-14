@@ -54,9 +54,6 @@ export const RenderPanels = (props: RenderPanelsProps) => {
   onMount(() => {
     /* eslint-disable solid/reactivity */
 
-    // orchestrates the whole dnd system
-    // has access to both "source" and "destination"
-    // handles the actual drop and state update
     const cleanup = monitorForElements({
       onDrop: ({ source, location }) => {
         // @FIXME: we might need to check each drop target depending on how
@@ -85,11 +82,11 @@ export const RenderPanels = (props: RenderPanelsProps) => {
             {
               source: (source) => isDragDataForTab(source),
               destination: (destination) =>
-                isDropDataForSplitManip(destination),
+                isDropDataForSplitManipCenter(destination),
             },
-            ({ source: dragForTab, destination: dropForSplitManip }) => {
+            ({ source: dragForTab, destination: dropForSplitManipCenter }) => {
               const handleDropMiddle = () =>
-                Match.value(dropForSplitManip.panel).pipe(
+                Match.value(dropForSplitManipCenter.panelId).pipe(
                   Match.tag("parent", (parentId) =>
                     // dropping in the middle of an existing parent
                     // we know it already is in a tab layout or otherwise
@@ -131,7 +128,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                   const newParentId = yield* Panel.Node.promoteToParent(
                     props.setTree,
                     {
-                      id: dropForSplitManip.panel,
+                      id: dropForSplitManipCenter.panelId,
                       layout: Panel.Layout.Split({ direction: splitDirection }),
                     },
                   );
@@ -148,9 +145,9 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                   });
                 });
 
-              return Match.value(dropForSplitManip.kind).pipe(
+              return Match.value(dropForSplitManipCenter.kind).pipe(
                 // we are dropping a tab on the center,
-                //  adding it to the tab list
+                // adding it to the tab list
                 Match.when("center-middle", () => handleDropMiddle()),
                 // we are dropping the tab onto the center-{dir}
                 // we create a new parent with the panel as a child
@@ -162,6 +159,84 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                 Match.exhaustive,
               );
             },
+          ),
+          Match.when(
+            {
+              source: (source) => isDragDataForTab(source),
+              destination: (destination) =>
+                isDropDataForSplitManipEdge(destination),
+            },
+            ({ source: dragForTab, destination: dropForSplitManipEdge }) =>
+              Effect.gen(function* () {
+                const parent = yield* Panel.Node.Parent.getOrError(props.tree, {
+                  parentId: dropForSplitManipEdge.parentId,
+                });
+
+                assert(
+                  !Panel.Layout.$is("tabs")(parent.layout),
+                  "unreachable: shouldn't get a edge manip for tab layout panel",
+                );
+                const layout = parent.layout;
+
+                const handleEdge = (
+                  mainAxis: Panel.Layout.SplitDirection,
+                  begin: boolean,
+                ) =>
+                  Match.value(layout.direction).pipe(
+                    // put the dropped panel at the beginning of the children
+                    Match.when(mainAxis, () =>
+                      Panel.Node.reParent(props.setTree, {
+                        id: dragForTab.panel,
+                        newParentId: parent.id,
+                        idx: begin ? 0 : undefined,
+                      }),
+                    ),
+                    // make a new parent with mainAxis layout with the panel
+                    // as the first child
+                    Match.when(
+                      // Effect cannot understand that this is the opposite of
+                      // the mainAxis, and thus gives us an error
+                      // The any is to suppress that - it does work as intended
+                      Panel.Layout.crossDirection(mainAxis) as any,
+                      () =>
+                        Effect.gen(function* () {
+                          const newParentId = yield* Panel.Node.promoteToParent(
+                            props.setTree,
+                            {
+                              id: parent.id,
+                              layout: Panel.Layout.Split({
+                                direction: mainAxis,
+                              }),
+                            },
+                          );
+
+                          yield* Panel.Node.reParent(props.setTree, {
+                            id: dragForTab.panel,
+                            newParentId: newParentId,
+                            idx: begin ? 0 : undefined,
+                          });
+                        }),
+                    ),
+                    Match.exhaustive,
+                  );
+
+                // prettier-ignore
+                yield* Match.value(dropForSplitManipEdge.kind).pipe(
+                  Match.when("edge-left", () =>
+                    handleEdge("horizontal", true),
+                  ),
+                  Match.when("edge-right", () =>
+                    handleEdge("horizontal", false),
+                  ),
+                  Match.when("edge-top", () =>
+                    handleEdge("vertical", true),
+                  ),
+                  Match.when("edge-bottom", () =>
+                    handleEdge("vertical", false),
+                  ),
+                  Match.exhaustive,
+                );
+              }),
           ),
           Match.orElse(() => Effect.void),
           effectEdgeRunSync,
@@ -480,8 +555,8 @@ type PanelDropOverlayProps = {
   panel: () => Panel.Node;
 };
 
-type CenterOverlayHandles = {
-  [k in SplitManipCenterKind]: {
+type OverlayHandles = {
+  [k in SplitManipKind]: {
     ref: HTMLDivElement | undefined;
     hasDrop: Accessor<boolean>;
     setHasDrop: Setter<boolean>;
@@ -489,33 +564,48 @@ type CenterOverlayHandles = {
 };
 
 const PanelDropOverlay = (props: PanelDropOverlayProps) => {
-  const centerHandles: CenterOverlayHandles = SplitManipCenterKind.reduce(
-    (acc, kind) => {
-      const [hasDrop, setHasDrop] = createSignal(false);
-      acc[kind] = {
-        ref: undefined,
-        hasDrop,
-        setHasDrop,
-      };
-      return acc;
-    },
-    {} as CenterOverlayHandles,
-  );
+  const handles: OverlayHandles = SplitManipKind.reduce((acc, kind) => {
+    const [hasDrop, setHasDrop] = createSignal(false);
+    acc[kind] = {
+      ref: undefined,
+      hasDrop,
+      setHasDrop,
+    };
+    return acc;
+  }, {} as OverlayHandles);
 
   onMount(() => {
     const cleanups: CleanupFn[] = [];
 
-    for (const kind of SplitManipCenterKind) {
-      const handle = centerHandles[kind];
+    for (const kind of SplitManipKind) {
+      const handle = handles[kind];
       if (handle.ref) {
         const cleanup = dropTargetForElements({
           element: handle.ref,
 
-          getData: () =>
-            DropDataForSplitManip({
-              panel: props.panel().id,
-              kind,
-            }) as any,
+          getData: () => {
+            if (isSplitManipKindCenter(kind)) {
+              return DropDataForSplitManipCenter({
+                panelId: props.panel().id,
+                kind,
+              }) as any;
+            } else {
+              const panelId = props.panel().id;
+              assert(
+                isSplitManipKindEdge(kind),
+                "unreachable: if it is not a center kind it must be an edge kind",
+              );
+              assert(
+                Panel.ID.$is("parent")(panelId),
+                "unreachable: panel must be a parent for edge split manip",
+              );
+
+              return DropDataForSplitManipEdge({
+                parentId: panelId,
+                kind,
+              }) as any;
+            }
+          },
 
           canDrop: ({ source }) => {
             if (isDragDataForTab(source.data)) return true;
@@ -538,37 +628,39 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
 
   return (
     <>
-      <Switch>
-        <MatchTag on={props.panel()} tag="parent">
-          {(parent) => (
-            <Switch>
-              <MatchTag on={parent().layout} tag="split">
-                {(_split) => (
-                  <div
-                    class={cn(
-                      "absolute top-0 left-0 w-full h-full z-10",
-                      "grid grid-cols-[2rem_1fr_4rem_1fr_2rem] grid-rows-[2rem_1fr_4rem_1fr_2rem]",
-                      "pointer-events-none",
-                    )}
-                  >
-                    {/* left - append split left */}
-                    <div class="w-full h-full col-1 row-3 bg-green-500" />
-
-                    {/* right - append split right */}
-                    <div class="w-full h-full col-5 row-3 bg-green-500" />
-
-                    {/* top - append split top */}
-                    <div class="w-full h-full col-3 row-1 bg-green-500" />
-
-                    {/* bottom - append split bottom */}
-                    <div class="w-full h-full col-3 row-5 bg-green-500" />
-                  </div>
-                )}
-              </MatchTag>
-            </Switch>
+      <Show
+        when={Option.flatMap(
+          Panel.Node.$as("parent")(props.panel()),
+          (parent) => Panel.Layout.$as("split")(parent.layout),
+        ).pipe(Option.getOrElse(() => false))}
+      >
+        <div
+          class={cn(
+            "absolute top-0 left-0 w-full h-full z-10",
+            "grid grid-cols-[2rem_1fr_4rem_1fr_2rem] grid-rows-[2rem_1fr_4rem_1fr_2rem]",
+            "pointer-events-none",
           )}
-        </MatchTag>
-      </Switch>
+        >
+          <For each={SplitManipKindEdge}>
+            {(kind) => (
+              <div
+                ref={handles[kind].ref}
+                class={cn(
+                  "w-full h-full col-1 row-3 bg-green-500 pointer-events-auto",
+                  handles[kind].hasDrop() && "opacity-10",
+                  Match.value(kind).pipe(
+                    Match.when("edge-left", () => "col-1 row-3"),
+                    Match.when("edge-right", () => "col-5 row-3"),
+                    Match.when("edge-top", () => "col-3 row-1"),
+                    Match.when("edge-bottom", () => "col-3 row-5"),
+                    Match.exhaustive,
+                  ),
+                )}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
 
       <Show
         when={
@@ -590,13 +682,13 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
           )}
         >
           <div class="w-full h-full col-3 row-3 grid grid-cols-3 grid-rows-3">
-            <For each={SplitManipCenterKind}>
+            <For each={SplitManipKindCenter}>
               {(kind) => (
                 <div
-                  ref={centerHandles[kind].ref}
+                  ref={handles[kind].ref}
                   class={cn(
                     "w-full h-full bg-red-300 pointer-events-auto",
-                    centerHandles[kind].hasDrop() && "opacity-10",
+                    handles[kind].hasDrop() && "opacity-10",
                     kind === "center-middle" && "bg-red-600",
                     Match.value(kind).pipe(
                       Match.when("center-middle", () => "col-2 row-2"),
@@ -630,12 +722,6 @@ const TabBar = (props: TabBarProps) => {
 
   let dropZoneRef!: HTMLDivElement;
   onMount(() => {
-    // setup this element as a place where we can drop elements
-    // we provide data for monitorForElements to learn about it from
-    // the "destination"
-    // has access to "source"s and is able to determine if they can or
-    // cannot be dropped here
-    // doesn't handle the drop itself
     const cleanup = dropTargetForElements({
       element: dropZoneRef,
 
@@ -961,28 +1047,59 @@ export const isDropDataForTab = (obj: any): obj is DropDataForTab => {
   return obj._tag === "DropDataForTab";
 };
 
-const SplitManipCenterKind = [
+const SplitManipKindCenter = [
   "center-middle",
   "center-left",
   "center-right",
   "center-top",
   "center-bottom",
 ] as const;
-type SplitManipCenterKind = (typeof SplitManipCenterKind)[number];
-
-type SplitManipKind = SplitManipCenterKind;
-
-type DropDataForSplitManip = {
-  readonly _tag: "DropDataForSplitManip";
-  readonly panel: Panel.ID;
-  readonly kind: SplitManipKind;
+const isSplitManipKindCenter = (kind: string): kind is SplitManipKindCenter => {
+  return SplitManipKindCenter.includes(kind as any);
 };
-export const DropDataForSplitManip = Data.tagged<DropDataForSplitManip>(
-  "DropDataForSplitManip",
-);
+type SplitManipKindCenter = (typeof SplitManipKindCenter)[number];
 
-export const isDropDataForSplitManip = (
+const SplitManipKindEdge = [
+  "edge-left",
+  "edge-right",
+  "edge-top",
+  "edge-bottom",
+] as const;
+const isSplitManipKindEdge = (kind: string): kind is SplitManipKindEdge => {
+  return SplitManipKindEdge.includes(kind as any);
+};
+type SplitManipKindEdge = (typeof SplitManipKindEdge)[number];
+
+const SplitManipKind = [
+  ...SplitManipKindCenter,
+  ...SplitManipKindEdge,
+] as const;
+type SplitManipKind = SplitManipKindCenter | SplitManipKindEdge;
+
+type DropDataForSplitManipCenter = {
+  readonly _tag: "DropDataForSplitManipCenter";
+  readonly panelId: Panel.ID;
+  readonly kind: SplitManipKindCenter;
+};
+const DropDataForSplitManipCenter = Data.tagged<DropDataForSplitManipCenter>(
+  "DropDataForSplitManipCenter",
+);
+const isDropDataForSplitManipCenter = (
   obj: any,
-): obj is DropDataForSplitManip => {
-  return obj._tag === "DropDataForSplitManip";
+): obj is DropDataForSplitManipCenter => {
+  return obj._tag === "DropDataForSplitManipCenter";
+};
+
+type DropDataForSplitManipEdge = {
+  readonly _tag: "DropDataForSplitManipEdge";
+  readonly parentId: Panel.ID.Parent;
+  readonly kind: SplitManipKindEdge;
+};
+const DropDataForSplitManipEdge = Data.tagged<DropDataForSplitManipEdge>(
+  "DropDataForSplitManipEdge",
+);
+const isDropDataForSplitManipEdge = (
+  obj: any,
+): obj is DropDataForSplitManipEdge => {
+  return obj._tag === "DropDataForSplitManipEdge";
 };

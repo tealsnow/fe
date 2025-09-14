@@ -76,10 +76,11 @@ export const Percent = Brand.refined<Percent>(
   (n) => Brand.error(`Expected ${n} to be a percentage`),
 );
 
-// export type Layout = "vertical" | "horizontal" | "tabs";
-
 export namespace Layout {
   export type SplitDirection = "vertical" | "horizontal";
+
+  export const crossDirection = (direction: SplitDirection): SplitDirection =>
+    direction === "vertical" ? "horizontal" : "vertical";
 
   export type Map = {
     split: {
@@ -260,6 +261,12 @@ export namespace Node {
       }),
     );
 
+  /**
+   * re-parents a node, removing it from its parent if any and adding it to the
+   * given
+   *
+   * If no `idx` is given it will append otherwise insert it at the `idx`
+   */
   export const reParent = (
     setTree: SetTree,
     {
@@ -324,10 +331,6 @@ export namespace Node {
         yield* Node.Parent.redistributeChildren(setTree, {
           parentId: newParentId,
         });
-
-        console.log(
-          `id: ${id.uuid}, oldParentId: ${oldParentId.uuid}, newParentId: ${newParentId.uuid}`,
-        );
 
         // collapse nested unary parents
         if (oldParent.layout.children.length === 1) {

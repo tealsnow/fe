@@ -29,6 +29,9 @@ export default tseslint.config(
       "require-yield": "off", // Effect generators
       "@typescript-eslint/explicit-function-return-type": "off", // nope
       "solid/reactivity": ["warn"],
+      // gets in the way during dev and well its pretty easy to tell if a
+      // function is empty + just putting a comment in it stops the error
+      "@typescript-eslint/no-empty-function": "off",
     },
   },
 );
