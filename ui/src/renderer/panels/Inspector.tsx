@@ -127,7 +127,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
         >
           <span class="text-xs">
             {Option.map(panel().parent, (id) =>
-              Panel.Node.Parent.getOrError(props.tree, { id }).pipe(
+              Panel.Node.Parent.getOrError(props.tree, { parentId: id }).pipe(
                 Effect.map((panel) => panel.id.uuid),
                 Effect.runSync,
               ),

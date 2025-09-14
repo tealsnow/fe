@@ -25,7 +25,7 @@ import { cn } from "~/lib/cn";
 import Button from "~/ui/components/Button";
 
 import DND from "~/dnd_tut";
-import { Panels3 as Panels } from "~/panels/panels";
+import { Panels } from "~/panels/panels";
 
 const App = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the

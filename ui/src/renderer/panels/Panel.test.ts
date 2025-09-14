@@ -57,7 +57,7 @@ describe("creating/adding", () => {
     const root = tree.root;
     const a = yield* Panel.Node.Leaf.create(setTree, { title: "a" });
 
-    const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
+    const rootPanel = yield* Panel.Node.Parent.get(tree, { parentId: root });
 
     expect(rootPanel.layout.children).toHaveLength(0);
 
@@ -76,7 +76,7 @@ describe("creating/adding", () => {
     const root = tree.root;
     const a = yield* Panel.Node.Parent.create(setTree, {});
 
-    const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
+    const rootPanel = yield* Panel.Node.Parent.get(tree, { parentId: root });
 
     expect(rootPanel.layout.children).toHaveLength(0);
 
@@ -85,7 +85,7 @@ describe("creating/adding", () => {
     expect(rootPanel.layout.children).toHaveLength(1);
     expect(rootPanel.layout.children).toContain(a);
 
-    const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
+    const aPanel = yield* Panel.Node.Parent.get(tree, { parentId: a });
 
     expect(aPanel.parent).toStrictEqual(Option.some(root));
     expect(aPanel.percentOfParent).toBe(1);
@@ -98,7 +98,7 @@ describe("creating/adding", () => {
     const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
 
     const parentPanel = yield* Panel.Node.Parent.getOrError(tree, {
-      id: parent,
+      parentId: parent,
     });
     expect(parentPanel.layout.children).toHaveLength(0);
 
@@ -140,7 +140,7 @@ describe("creating/adding", () => {
       percentOfParent: Panel.Percent(0.5),
     });
 
-    const rootPanel = yield* Panel.Node.Parent.get(tree, { id: root });
+    const rootPanel = yield* Panel.Node.Parent.get(tree, { parentId: root });
 
     expect(rootPanel.layout.children).toHaveLength(0);
 
@@ -256,7 +256,7 @@ describe("deleting", () => {
     yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: b });
     yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
 
-    const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
+    const aPanel = yield* Panel.Node.Parent.get(tree, { parentId: a });
 
     expect(aPanel.layout.children).toContain(b);
     expect(aPanel.layout.children).toContain(c);
@@ -335,12 +335,12 @@ describe("deleting", () => {
 
     yield* storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
-        const panel = yield* Panel.Node.Parent.get(tree, { id: a });
+        const panel = yield* Panel.Node.Parent.get(tree, { parentId: a });
         panel.layout.children.push(fakeId);
       }),
     );
 
-    const aPanel = yield* Panel.Node.Parent.get(tree, { id: a });
+    const aPanel = yield* Panel.Node.Parent.get(tree, { parentId: a });
 
     expect(aPanel).toBeDefined();
     expect(aPanel.layout.children).toHaveLength(2);

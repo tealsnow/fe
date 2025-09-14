@@ -82,8 +82,14 @@ export namespace Layout {
   export type SplitDirection = "vertical" | "horizontal";
 
   export type Map = {
-    split: { direction: SplitDirection; children: ID[] };
-    tabs: { children: ID.Leaf[] };
+    split: {
+      children: ID[];
+      direction: SplitDirection;
+    };
+    tabs: {
+      children: ID.Leaf[];
+      active: Option.Option<ID.Leaf>;
+    };
   };
   export type Tag = keyof Map;
 
@@ -96,17 +102,27 @@ export namespace Layout {
   export type Split = Of<"split">;
   export type Tabs = Of<"tabs">;
 
-  export const Split = (
-    direction: SplitDirection,
-    children: ID[] = [],
-  ): Split => ({
-    _tag: "split",
+  export const Split = ({
+    children = [],
     direction,
+  }: {
+    children?: ID[];
+    direction: SplitDirection;
+  }): Split => ({
+    _tag: "split",
     children,
+    direction,
   });
-  export const Tabs = (children: ID.Leaf[] = []): Tabs => ({
+  export const Tabs = ({
+    children = [],
+    active = Option.none(),
+  }: {
+    children?: ID.Leaf[];
+    active?: Option.Option<ID.Leaf>;
+  } = {}): Tabs => ({
     _tag: "tabs",
     children,
+    active,
   });
 
   export const $is =
@@ -140,12 +156,10 @@ export namespace Node {
     export type ParentProps = Common & {
       id: ID.Parent;
       layout?: Layout;
-      active?: Option.Option<ID>;
     };
     export const ParentProps = (): Required<PickOptional<ParentProps>> =>
       ({
-        layout: Layout.Split("horizontal"),
-        active: Option.none(),
+        layout: Layout.Split({ direction: "horizontal" }),
         ...Common(),
       }) as const;
     export type Parent = Required<ParentProps>;
@@ -153,11 +167,11 @@ export namespace Node {
     export type LeafProps = Common & {
       id: ID.Leaf;
       title: string;
-      content?: () => JSX.Element;
+      content?: Option.Option<() => JSX.Element>;
     };
     export const LeafProps = (): Required<PickOptional<LeafProps>> =>
       ({
-        content: EmptyJsx,
+        content: Option.none(),
         ...Common(),
       }) as const;
     export type Leaf = Required<LeafProps>;
@@ -216,7 +230,7 @@ export namespace Node {
 
   export const getOrError = (
     tree: Tree,
-    { id, parentId }: { id: ID; parentId?: ID.Parent },
+    { id, gettingParentId: parentId }: { id: ID; gettingParentId?: ID.Parent },
   ): Effect.Effect<Node, NodeNotInTreeError> =>
     Effect.gen(function* () {
       const node = get(tree, { id });
@@ -253,7 +267,10 @@ export namespace Node {
       newParentId,
       idx,
     }: { id: ID.Leaf; newParentId: ID.Parent; idx?: number },
-  ): Effect.Effect<void, NodeNotInTreeError | NodeHasNoParentError> =>
+  ): Effect.Effect<
+    void,
+    NodeNotInTreeError | NodeHasNoParentError | CannotDeleteRootError
+  > =>
     storeUpdate(setTree, (tree) =>
       Effect.gen(function* () {
         const node = yield* Node.getOrError(tree, { id });
@@ -263,36 +280,210 @@ export namespace Node {
           () => new NodeHasNoParentError({ id }),
         );
         const oldParent = yield* Node.Parent.getOrError(tree, {
-          id: oldParentId,
+          parentId: oldParentId,
         });
 
+        const newParent = yield* Node.Parent.getOrError(tree, {
+          parentId: newParentId,
+        });
+
+        // remove from old parent
         oldParent.layout.children = oldParent.layout.children.filter(
           (childId) => childId.uuid !== id.uuid,
         );
 
-        const newParent = yield* Node.Parent.getOrError(tree, {
-          id: newParentId,
-        });
-
+        // add to new parent
         if (idx !== undefined) {
           newParent.layout.children.splice(idx, 0, id);
         } else {
           newParent.layout.children.push(id);
         }
-
-        if (
-          Option.map(
-            oldParent.active,
-            (active) => active.uuid === id.uuid,
-          ).pipe(Option.getOrElse(() => false))
-        ) {
-          oldParent.active = Option.none();
-        }
-        newParent.active = Option.some(id);
-
         node.parent = Option.some(newParentId);
+
+        // update active
+        if (Layout.$is("tabs")(oldParent.layout)) {
+          const tabs = oldParent.layout;
+
+          if (
+            Option.map(tabs.active, (active) => active.uuid === id.uuid).pipe(
+              Option.getOrElse(() => false),
+            )
+          ) {
+            tabs.active = Option.none();
+          }
+        }
+        if (Layout.$is("tabs")(newParent.layout)) {
+          const tabs = newParent.layout;
+          tabs.active = Option.some(id);
+        }
+
+        // fix children %
+        yield* Node.Parent.redistributeChildren(setTree, {
+          parentId: oldParentId,
+        });
+        yield* Node.Parent.redistributeChildren(setTree, {
+          parentId: newParentId,
+        });
+
+        console.log(
+          `id: ${id.uuid}, oldParentId: ${oldParentId.uuid}, newParentId: ${newParentId.uuid}`,
+        );
+
+        // collapse nested unary parents
+        if (oldParent.layout.children.length === 1) {
+          const childId = oldParent.layout.children[0];
+          Match.value(childId).pipe(
+            Match.tag("parent", (parentId) =>
+              Effect.gen(function* () {
+                const child = yield* Node.Parent.getOrError(tree, { parentId });
+                if (child.layout.children.length === 0) {
+                  yield* Node.destroy(setTree, { id: childId });
+                }
+              }),
+            ),
+            Match.tag("leaf", (leafId) =>
+              Effect.gen(function* () {
+                if (!Option.isSome(oldParent.parent)) return;
+
+                yield* Node.reParent(setTree, {
+                  id: leafId,
+                  newParentId: oldParent.parent.value,
+                });
+              }),
+            ),
+            Match.exhaustive,
+          );
+        }
       }),
     );
+
+  /**
+   * Replaces a panel with the given panel.
+   *
+   * The new panel will be removed from its parent if it has one
+   * and the replaced panel will loose its parent
+   */
+  export const replaceWith = (
+    setTree: SetTree,
+    { toReplace, with: replacement }: { toReplace: ID; with: ID },
+  ): Effect.Effect<void, NodeNotInTreeError | NodeHasNoParentError> =>
+    storeUpdate(setTree, (tree) =>
+      Effect.gen(function* () {
+        const toReplacePanel = yield* Node.getOrError(tree, { id: toReplace });
+        const replacementPanel = yield* Node.getOrError(tree, {
+          id: replacement,
+        });
+
+        if (Option.isNone(toReplacePanel.parent))
+          return new NodeHasNoParentError({ id: toReplace });
+
+        const toReplacePanelParentId = toReplacePanel.parent.value;
+        const toReplacePanelParent = yield* Node.Parent.getOrError(tree, {
+          parentId: toReplacePanelParentId,
+        });
+
+        // remove replacement from parent
+        if (Option.isSome(replacementPanel.parent)) {
+          const replacementPanelParentId = replacementPanel.parent.value;
+          const replacementPanelParent = yield* Node.Parent.getOrError(tree, {
+            parentId: replacementPanelParentId,
+          });
+
+          replacementPanelParent.layout.children =
+            replacementPanelParent.layout.children.filter(
+              (childId) => childId.uuid !== replacement.uuid,
+            );
+
+          yield* Node.Parent.redistributeChildren(setTree, {
+            parentId: replacementPanelParentId,
+          });
+
+          replacementPanel.parent = Option.none();
+        }
+
+        // remove old panel from it parent - inserting new
+        const percentOfParent = toReplacePanel.percentOfParent;
+        replacementPanel.percentOfParent = percentOfParent;
+        toReplacePanel.percentOfParent = Percent(1);
+
+        toReplacePanelParent.layout.children.splice(
+          toReplacePanelParent.layout.children.findIndex(
+            (childId) => childId.uuid === toReplace.uuid,
+          ),
+          1,
+          replacementPanel.id,
+        );
+
+        toReplacePanel.parent = Option.none();
+        replacementPanel.parent = Option.some(toReplacePanelParentId);
+
+        return Effect.succeed(void {});
+      }),
+    );
+
+  // export const swapWith = (
+  //   setTree: SetTree,
+  //   { oldId: swapOut, newId: swapIn }: { oldId: ID; newId: ID },
+  // ): Effect.Effect<void, NodeNotInTreeError> =>
+  //   storeUpdate(setTree, (tree) =>
+  //     Effect.gen(function* () {
+  //       const outPanel = yield* Node.getOrError(tree, { id: swapOut });
+  //       const inPanel = yield* Node.getOrError(tree, { id: swapIn });
+
+  //       if (Option.isNone(outPanel.parent))
+  //         return new NodeHasNoParentError({ id: swapOut });
+
+  //       const outParentPanelId = outPanel.parent.value;
+  //       const outPanelParentPanel = yield* Node.Parent.getOrError(tree, {
+  //         parentId: outParentPanelId,
+  //       });
+
+  //       // remove the to swap in panel from its parent
+  //       if (Option.isSome(inPanel.parent)) {
+  //         const inPanelParentId = inPanel.parent.value;
+  //         const inPanelParentPanel = yield* Node.Parent.getOrError(tree, {
+  //           parentId: inPanelParentId,
+  //         });
+
+  //         inPanelParentPanel.layout.children =
+  //           inPanelParentPanel.layout.children.filter((id) => id !== swapIn);
+
+  //         yield* Node.Parent.redistributeChildren(setTree, {
+  //           parentId: inPanelParentId,
+  //         });
+  //       }
+
+  //       // TODO: unfinished
+  //     }),
+  //   );
+
+  export const promoteToParent = (
+    setTree: SetTree,
+    { id, layout }: { id: ID; layout: Layout },
+  ): Effect.Effect<ID.Parent, NodeNotInTreeError | NodeHasNoParentError> =>
+    Effect.gen(function* () {
+      const newParentId = yield* Node.Parent.create(setTree, {
+        layout: layout,
+      });
+
+      yield* Node.replaceWith(setTree, {
+        toReplace: id,
+        with: newParentId,
+      });
+
+      yield* Node.Parent.addChild(setTree, {
+        parentId: newParentId,
+        childId: id,
+      }).pipe(
+        Effect.catchTag("NodeAlreadyHasParentError", () =>
+          Effect.dieMessage(
+            "unreachable: promoted panel should not have a parent since Node.replaceWith should have removed it",
+          ),
+        ),
+      );
+
+      return newParentId;
+    });
 
   export namespace Parent {
     export const init = (props: Node.ParentProps) =>
@@ -319,16 +510,22 @@ export namespace Node {
 
     export const get = (
       tree: Tree,
-      { id }: { id: ID.Parent },
+      { parentId: id }: { parentId: ID.Parent },
     ): Option.Option<Node.Parent> =>
       Option.flatMap(Node.get(tree, { id }), Node.$as("parent"));
 
     export const getOrError = (
       tree: Tree,
-      { id, parentId }: { id: ID.Parent; parentId?: ID.Parent },
+      {
+        parentId: id,
+        gettingParentId,
+      }: { parentId: ID.Parent; gettingParentId?: ID.Parent },
     ): Effect.Effect<Node.Parent, NodeNotInTreeError> =>
       Effect.gen(function* () {
-        const node = yield* Node.getOrError(tree, { id, parentId });
+        const node = yield* Node.getOrError(tree, {
+          id,
+          gettingParentId,
+        });
         return yield* Effect.succeed(
           Option.getOrThrow(Node.$as("parent")(node)),
         );
@@ -341,7 +538,7 @@ export namespace Node {
       storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           // debugger;
-          const node = yield* Node.Parent.getOrError(tree, { id });
+          const node = yield* Node.Parent.getOrError(tree, { parentId: id });
           tree.nodes[id.uuid] = { ...node, ...props };
           yield* Effect.succeed(void {});
         }),
@@ -356,7 +553,9 @@ export namespace Node {
           // This keep the ratio of sizes of existing panels while adding
           // a new one still trying to honor its percent
 
-          const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
+          const parent = yield* Node.Parent.getOrError(tree, {
+            parentId: parentId,
+          });
           const newChild = yield* Node.getOrError(tree, { id: newChildId });
 
           if (ID.$is("parent")(newChildId) && Layout.$is("tabs")(parent.layout))
@@ -379,7 +578,7 @@ export namespace Node {
           for (const childId of parent.layout.children) {
             const child = yield* Node.getOrError(tree, {
               id: childId,
-              parentId,
+              gettingParentId: parentId,
             });
             sum += child.percentOfParent;
           }
@@ -412,7 +611,7 @@ export namespace Node {
             for (const childId of parent.layout.children) {
               const child = yield* Node.getOrError(tree, {
                 id: childId,
-                parentId,
+                gettingParentId: parentId,
               });
               child.percentOfParent = Percent(each);
             }
@@ -428,7 +627,7 @@ export namespace Node {
           for (const childId of parent.layout.children) {
             const child = yield* Node.getOrError(tree, {
               id: childId,
-              parentId,
+              gettingParentId: parentId,
             });
             child.percentOfParent = Percent(child.percentOfParent * scale);
           }
@@ -446,7 +645,9 @@ export namespace Node {
     ): Effect.Effect<void, NodeNotInTreeError> =>
       storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
-          const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
+          const parent = yield* Node.Parent.getOrError(tree, {
+            parentId: parentId,
+          });
 
           const n = parent.layout.children.length;
           if (n === 0) return Effect.void;
@@ -456,7 +657,7 @@ export namespace Node {
             (childId) =>
               Node.getOrError(tree, {
                 id: childId,
-                parentId: parent.id,
+                gettingParentId: parent.id,
               }),
           );
 
@@ -533,7 +734,10 @@ export namespace Node {
       { id, parentId }: { id: ID.Leaf; parentId?: ID.Parent },
     ): Effect.Effect<Node.Leaf, NodeNotInTreeError> =>
       Effect.gen(function* () {
-        const node = yield* Node.getOrError(tree, { id, parentId });
+        const node = yield* Node.getOrError(tree, {
+          id,
+          gettingParentId: parentId,
+        });
         return Option.getOrThrow(Node.$as("leaf")(node));
       });
 
@@ -568,7 +772,9 @@ export namespace Node {
         const parentId = Option.getOrUndefined(node.parent);
 
         if (removeFromParent && parentId) {
-          const parent = yield* Node.Parent.getOrError(tree, { id: parentId });
+          const parent = yield* Node.Parent.getOrError(tree, {
+            parentId: parentId,
+          });
           parent.layout.children = parent.layout.children.filter(
             (childId) => childId.uuid !== id.uuid,
           );

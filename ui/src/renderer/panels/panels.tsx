@@ -2,15 +2,28 @@ import { createStore } from "solid-js/store";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 
-import { Effect, Option } from "effect";
+import { Effect, Exit, Option } from "effect";
 
 import { cn } from "~/lib/cn";
 
 import * as Panel from "./Panel";
 import Inspector from "./Inspector";
 import { RenderPanels } from "./render";
+import { TextInputLozenge } from "~/ui/components/Lozenge";
 
-export const Panels3 = () => {
+export const effectEdgeRunSync = <A, E>(effect: Effect.Effect<A, E>): A => {
+  const exit = Effect.runSyncExit(effect);
+
+  if (Exit.isFailure(exit)) {
+    const msg = `failure in effectEdgeRunSync: '${exit.cause}'`;
+    console.error(msg);
+    throw new Error(msg);
+  }
+
+  return exit.value;
+};
+
+export const Panels = () => {
   const [tree, setTree] = createStore<Panel.Tree>(
     Panel.Tree.create.pipe(Effect.runSync),
   );
@@ -40,20 +53,41 @@ export const Panels3 = () => {
       const root = tree.root;
 
       const a = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Split("vertical"),
+        layout: Panel.Layout.Split({ direction: "vertical" }),
       });
 
       const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
       const c = yield* Panel.Node.Parent.create(setTree, {
         layout: Panel.Layout.Tabs(),
       });
-      const d = yield* Panel.Node.Leaf.create(setTree, { title: "d" });
-
+      const d = yield* Panel.Node.Parent.create(setTree, {
+        layout: Panel.Layout.Split({ direction: "horizontal" }),
+      });
       const e = yield* Panel.Node.Parent.create(setTree, {
         layout: Panel.Layout.Tabs(),
       });
+      const f = yield* Panel.Node.Leaf.create(setTree, { title: "f" });
+      const g = yield* Panel.Node.Parent.create(setTree, {
+        layout: Panel.Layout.Split({ direction: "vertical" }),
+      });
 
-      const p = yield* Panel.Node.Leaf.create(setTree, { title: "p" });
+      yield* Panel.Node.Parent.addChild(setTree, {
+        parentId: d,
+        childId: f,
+      });
+      yield* Panel.Node.Parent.addChild(setTree, {
+        parentId: d,
+        childId: g,
+      });
+
+      const p = yield* Panel.Node.Leaf.create(setTree, {
+        title: "p",
+        content: Option.some(() => (
+          <div class="w-full h-full p-2">
+            <TextInputLozenge color="purple" />
+          </div>
+        )),
+      });
       const q = yield* Panel.Node.Leaf.create(setTree, { title: "q" });
       const r = yield* Panel.Node.Leaf.create(setTree, { title: "r" });
       const s = yield* Panel.Node.Leaf.create(setTree, { title: "s" });
@@ -79,7 +113,7 @@ export const Panels3 = () => {
 
       yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: s });
       yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: t });
-    }).pipe(Effect.runSync);
+    }).pipe(effectEdgeRunSync);
   });
 
   return (
@@ -121,8 +155,8 @@ export const Panels3 = () => {
       <div class="flex h-full w-full">
         <div
           class={cn(
-            "h-full border-r border-theme-border",
-            showExplorer() ? "w-[60%]" : "w-full",
+            "h-full border-theme-border",
+            showExplorer() ? "border-r w-[60%]" : "w-full",
           )}
         >
           <RenderPanels
@@ -149,4 +183,4 @@ export const Panels3 = () => {
   );
 };
 
-export default Panels3;
+export default Panels;
