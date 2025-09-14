@@ -33,6 +33,7 @@
     "clippy",
     "emnapi",
     "unmaximize",
-    "unmaximized"
+    "unmaximized",
+    "Manip"
   ]
 }

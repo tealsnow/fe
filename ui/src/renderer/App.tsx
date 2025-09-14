@@ -20,6 +20,8 @@ import ThemeProvider from "~/ThemeProvider";
 import Titlebar from "~/Titlebar";
 import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
 
+import { cn } from "~/lib/cn";
+
 import Button from "~/ui/components/Button";
 
 import DND from "~/dnd_tut";
@@ -37,7 +39,7 @@ const App = () => {
   theming.applyTheme(theming.defaultTheme);
 
   return (
-    <ThemeProvider theme={theming.defaultTheme}>
+    <ThemeProvider theme={theming.defaultTheme} class="w-screen h-screen">
       <NotificationProvider>
         <Root />
       </NotificationProvider>
@@ -112,13 +114,32 @@ const Root = () => {
     activeIndex: 0,
   });
 
+  const [windowMaximized, setWindowMaximized] = createSignal(
+    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
+  );
+
+  onMount(() => {
+    window.electron.ipcRenderer.on("on window/maximized", () => {
+      setWindowMaximized(true);
+    });
+    window.electron.ipcRenderer.on("on window/unmaximized", () => {
+      setWindowMaximized(false);
+    });
+  });
+
   return (
-    <div class="flex flex-col w-full h-full">
+    <div
+      class={cn(
+        "flex flex-col w-full h-full",
+        !windowMaximized() && "border border-theme-border",
+      )}
+    >
       <Show when={showNoise()}>
         <BackgroundNoise />
       </Show>
 
       <Titlebar
+        windowMaximized={windowMaximized}
         workspaces={workspaceState.workspaces}
         activeIndex={workspaceState.activeIndex}
         onReorder={(oldIdx, newIdx) => {
@@ -158,7 +179,7 @@ const Root = () => {
         }}
       />
 
-      <div class="box-border grow overflow-y-auto">
+      <div class="flex flex-col grow overflow-hidden">
         <Switch fallback={<div>{/* @TODO */}</div>}>
           <For each={workspaceState.workspaces}>
             {(workspace, index) => {
@@ -421,7 +442,7 @@ const Colors = () => {
 
 const ThemeShowcase = () => {
   return (
-    <div class="flex-col">
+    <div class="flex-col overflow-auto w-full">
       <Colors />
       <Index each={theming.themeDescFlat}>
         {(item) => {

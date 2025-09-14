@@ -1,5 +1,8 @@
 import { useContext } from "solid-js";
 import { createContext, ParentProps } from "solid-js";
+
+import { cn } from "~/lib/cn";
+
 import Theme, { themeCssStyles } from "~/Theme";
 
 type ThemeContext = {
@@ -15,7 +18,8 @@ export const useTheme = () => {
 };
 
 export type ThemeProviderProps = ParentProps<{
-  theme: Theme;
+  theme?: Theme;
+  class?: string;
 }>;
 
 const ThemeProvider = (props: ThemeProviderProps) => {
@@ -23,10 +27,18 @@ const ThemeProvider = (props: ThemeProviderProps) => {
 
   const prevContext = useContext(ThemeContext);
 
+  const theme = (): Theme => {
+    if (props.theme) return props.theme;
+    if (prevContext) return prevContext.theme();
+    throw new Error(
+      "Attempt to use theme provider without passing a theme or a parent theme provider context",
+    );
+  };
+
   return (
     <ThemeContext.Provider
       value={{
-        theme: () => props.theme,
+        theme: () => theme(),
         rootElement: () =>
           // keep the actual root no matter which theme context we are in
           prevContext !== undefined ? prevContext.rootElement() : ref,
@@ -34,8 +46,8 @@ const ThemeProvider = (props: ThemeProviderProps) => {
     >
       <div
         ref={ref}
-        style={themeCssStyles(props.theme)}
-        class="bg-theme-background text-theme-text h-screen w-screen"
+        style={themeCssStyles(theme())}
+        class={cn("bg-theme-background text-theme-text", props.class)}
       >
         {props.children}
       </div>

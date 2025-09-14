@@ -26,6 +26,7 @@ declare module "solid-js" {
 }
 
 type TitlebarProps = {
+  windowMaximized: () => boolean;
   workspaces: Workspace[];
   activeIndex: number | undefined;
   onReorder: (oldIdx: number, newIdx: number) => void;
@@ -53,19 +54,6 @@ const WindowControls = (): WindowControls => ({
 
 // @TODO: when there is overflow scroll to the appropriate tab when focused
 const Titlebar = (props: TitlebarProps) => {
-  const [windowMaximized, setWindowMaximized] = createSignal(
-    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
-  );
-
-  onMount(() => {
-    window.electron.ipcRenderer.on("on window/maximized", () => {
-      setWindowMaximized(true);
-    });
-    window.electron.ipcRenderer.on("on window/unmaximized", () => {
-      setWindowMaximized(false);
-    });
-  });
-
   const windowControls = WindowControls();
   const windowButtons = (): WindowButton[] =>
     windowControls
@@ -76,7 +64,7 @@ const Titlebar = (props: TitlebarProps) => {
           },
           {
             icon: () =>
-              windowMaximized() ? "window_restore" : "window_maximize",
+              props.windowMaximized() ? "window_restore" : "window_maximize",
             onClick: windowControls.toggleMaximize,
           },
           {
