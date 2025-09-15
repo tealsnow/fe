@@ -288,7 +288,7 @@ export const RenderPanelUnderSplit = (props: RenderPanelProps) => {
     <div
       ref={panelRef}
       class={cn(
-        "flex flex-col w-full h-full outline-theme-colors-purple-border/80 -outline-offset-1",
+        "flex flex-col outline-theme-colors-purple-border/80 -outline-offset-1",
         isSelected() && "outline",
       )}
       style={Match.value(props.parentSplitDirection()).pipe(
@@ -303,8 +303,9 @@ export const RenderPanelUnderSplit = (props: RenderPanelProps) => {
         Match.exhaustive,
       )}
       data-panel-id={props.panelId().uuid}
+      data-panel-tag={props.panelId()._tag}
     >
-      <div class="relative w-full h-full">
+      <div class="flex grow relative overflow-hidden">
         <Switch>
           <MatchTag on={panel()} tag="leaf">
             {(leaf) => <RenderPanelLeaf leaf={leaf} />}
@@ -375,7 +376,7 @@ const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
   });
 
   return (
-    <div class="flex flex-col w-full h-full overflow-hidden">
+    <div class="flex flex-col grow overflow-hidden">
       <PanelTitlebar ref={ref} class="pl-2">
         {props.leaf().title}
       </PanelTitlebar>
@@ -417,7 +418,7 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
   const { tree } = usePanelContext();
 
   return (
-    <div class="flex flex-col w-full h-full">
+    <div class="flex flex-col grow overflow-hidden">
       <MapOption on={props.node().titlebar}>
         {(titlebar) => <PanelTitlebar>{titlebar()({})}</PanelTitlebar>}
       </MapOption>
@@ -425,13 +426,13 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
       <Switch>
         <MatchTag on={props.node().layout} tag="tabs">
           {(tabs) => (
-            <div class="grow flex flex-col">
+            <div class="flex flex-col grow overflow-hidden">
               <TabBar parent={props.node} tabs={tabs} />
 
               <MapOption
                 on={tabs().active}
                 fallback={
-                  <div class="w-full h-full flex items-center justify-center">
+                  <div class="flex grow items-center justify-center">
                     no tab selected
                   </div>
                 }
@@ -452,7 +453,7 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
             return (
               <div
                 class={cn(
-                  "flex w-full h-full",
+                  "flex grow overflow-hidden",
                   Match.value(split().direction).pipe(
                     Match.when("vertical", () => "flex-col"),
                     Match.when("horizontal", () => "flex-row"),
@@ -463,7 +464,7 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
                 <Show
                   when={split().children.length > 0}
                   fallback={
-                    <div class="flex w-full h-full items-center justify-center">
+                    <div class="flex grow items-center justify-center">
                       No children
                     </div>
                   }
@@ -504,12 +505,12 @@ const RenderLeafContent = (props: RenderLeafContentProps) => {
     <MapOption
       on={props.leaf().content}
       fallback={
-        <div class="w-full h-full flex items-center justify-center">
-          no content
-        </div>
+        <div class="flex grow items-center justify-center">no content</div>
       }
     >
-      {(content) => <div class="w-full overflow-hidden">{content()({})}</div>}
+      {(content) => (
+        <div class="flex flex-col grow overflow-auto">{content()({})}</div>
+      )}
     </MapOption>
   );
 };
@@ -599,7 +600,7 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
       >
         <div
           class={cn(
-            "absolute top-0 left-0 w-full h-full z-10",
+            "w-full h-full absolute top-0 left-0 z-10",
             "grid",
             "grid-cols-[2rem_1fr_4rem_1fr_2rem]",
             "grid-rows-[2rem_1fr_4rem_1fr_2rem]",
@@ -632,7 +633,7 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
                 <div
                   ref={handles[kind].ref}
                   class={cn(
-                    "w-full h-full col-1 row-3 bg-green-500 pointer-events-auto",
+                    "bg-green-500 pointer-events-auto",
                     handles[kind].hasDrop() && "opacity-10",
                     Match.value(kind).pipe(
                       Match.when("edge-left", () => "col-1 row-3"),
@@ -663,18 +664,18 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
       >
         <div
           class={cn(
-            "absolute top-0 left-0 w-full h-full z-10",
+            "absolute w-full h-full top-0 left-0  z-10",
             "grid grid-cols-[2rem_1fr_6rem_1fr_2rem] grid-rows-[2rem_1fr_6rem_1fr_2rem]",
             "pointer-events-none",
           )}
         >
-          <div class="w-full h-full col-3 row-3 grid grid-cols-3 grid-rows-3">
+          <div class=" col-3 row-3 grid grid-cols-3 grid-rows-3">
             <For each={SplitManipKindCenter}>
               {(kind) => (
                 <div
                   ref={handles[kind].ref}
                   class={cn(
-                    "w-full h-full bg-red-300 pointer-events-auto",
+                    " bg-red-300 pointer-events-auto",
                     handles[kind].hasDrop() && "opacity-10",
                     kind === "center-middle" && "bg-red-600",
                     Match.value(kind).pipe(
@@ -826,11 +827,11 @@ const TabHandle = (props: TabHandleProps) => {
     <div
       ref={ref}
       class={cn(
-        "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group cursor-pointer",
+        "flex items-center h-full pr-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group cursor-pointer",
         selected() && "bg-theme-panel-tab-background-active",
         hasDroppable() && "bg-theme-panel-tab-background-drop-target",
       )}
-      onClick={() =>
+      onMouseDown={() =>
         Panel.Node.Parent.update(setTree, {
           id: props.parent().id,
           props: {

@@ -1,33 +1,38 @@
 import {
-  createEffect,
-  createRoot,
   createSignal,
-  For,
-  Index,
-  Match,
+  onCleanup,
   onMount,
   Show,
-  Switch,
+  For,
+  Accessor,
+  createContext,
+  useContext,
+  ParentProps,
+  Index,
 } from "solid-js";
-import { createStore } from "solid-js/store";
+
+import { Effect, Option } from "effect";
+
+import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
+import { cn } from "~/lib/cn";
+
+import {
+  NotificationProvider,
+  notify,
+  notifyPromise,
+} from "~/lib/notifications";
+import * as theming from "~/Theme";
+import ThemeProvider from "~/ThemeProvider";
 
 import { Icon, IconKind, iconKinds } from "~/assets/icons";
 
-import { NotificationProvider, notify, notifyPromise } from "~/notifications";
-import StatusBar, { statusBar } from "~/StatusBar";
-import * as theming from "~/Theme";
-import ThemeProvider from "~/ThemeProvider";
-import Titlebar from "~/Titlebar";
-import { mkTestWorkspace, mkWorkspace, WorkspaceState } from "~/Workspace";
-
-import { cn } from "~/lib/cn";
-
 import Button from "~/ui/components/Button";
 
-import DND from "~/dnd_tut";
-import { PanelsRoot } from "~/panels/panels";
+import PanelsRoot from "~/panels/panels";
+import { PanelContextProvider, usePanelContext } from "./panels/PanelContext";
+import * as Panel from "~/panels/Panel";
 
-const App = () => {
+export const App = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the
   //  document globally. This is mostly just for the toasts, since they
   //  are built with normal css.
@@ -39,162 +44,161 @@ const App = () => {
   theming.applyTheme(theming.defaultTheme);
 
   return (
-    <ThemeProvider theme={theming.defaultTheme} class="w-screen h-screen">
-      <NotificationProvider>
-        <Root />
-      </NotificationProvider>
-    </ThemeProvider>
+    <WindowContextProvider>
+      <ThemeProvider theme={theming.defaultTheme} class="w-screen h-screen">
+        <NotificationProvider>
+          <PanelContextProvider initialTitlebar={Titlebar}>
+            <Root />
+          </PanelContextProvider>
+        </NotificationProvider>
+      </ThemeProvider>
+    </WindowContextProvider>
   );
 };
 
 const Root = () => {
   const [showNoise, setShowNoise] = createSignal(true);
 
-  onMount(() => {
-    const bell = statusBar.createItem({
-      id: "fe.notifications",
-      alignment: "right",
-      kind: "button",
-    });
-    bell.content = () => <Icon kind="bell" class="size-4" />;
-    bell.onClick = () => {
-      notify("yo ho ho");
-    };
-
-    const showNoiseBtn = statusBar.createItem({
-      id: "fe.showNoise",
-      alignment: "left",
-      kind: "button",
-    });
-    createEffect(() => {
-      // eslint-disable-next-line solid/reactivity
-      showNoiseBtn.content = () => {
-        const kind: IconKind = showNoise()
-          ? "window_restore"
-          : "window_maximize";
-        return <Icon kind={kind} class="size-4" />;
-      };
-      showNoiseBtn.onClick = () => {
-        setShowNoise((b) => !b);
-      };
-    });
-  });
-
-  const [workspaceState, setWorkspaceState] = createStore<WorkspaceState>({
-    workspaces: [
-      // mkWorkspace({
-      //   title: "Panels",
-      //   render: Panels,
-      // }),
-      mkWorkspace({
-        title: "Native Test",
-        render: NativeTest,
-      }),
-      mkWorkspace({
-        title: "Theme Showcase",
-        render: ThemeShowcase,
-      }),
-      mkWorkspace({
-        title: "Dnd2",
-        render: DND,
-      }),
-      mkWorkspace({
-        title: "Notifications",
-        render: Notifications,
-      }),
-      mkWorkspace({
-        title: "Icons",
-        render: Icons,
-      }),
-      mkWorkspace({
-        title: "Stores",
-        render: Stores,
-      }),
-    ],
-    activeIndex: 0,
-  });
-
-  const [windowMaximized, setWindowMaximized] = createSignal(
-    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
-  );
+  const windowCtx = useWindowContext();
 
   onMount(() => {
-    window.electron.ipcRenderer.on("on window/maximized", () => {
-      setWindowMaximized(true);
-    });
-    window.electron.ipcRenderer.on("on window/unmaximized", () => {
-      setWindowMaximized(false);
-    });
+    // setupDebugPanels();
+    // return;
+
+    const { tree, setTree } = usePanelContext();
+
+    Effect.gen(function* () {
+      const root = tree.root;
+
+      const tabs = yield* Panel.Node.Parent.create(
+        setTree,
+        {
+          layout: Panel.Layout.Tabs(),
+        },
+        { addTo: root },
+      );
+
+      yield* Panel.Node.Leaf.create(
+        setTree,
+        {
+          title: "dbg",
+          content: Option.some(() => (
+            <div class="flex flex-col p-2">
+              <Button
+                class="w-fit"
+                onClick={() => {
+                  setShowNoise((old) => !old);
+                }}
+              >
+                toggle background noise
+              </Button>
+            </div>
+          )),
+        },
+        { addTo: tabs },
+      );
+
+      yield* Panel.Node.Leaf.create(
+        setTree,
+        {
+          title: "native test",
+          content: Option.some(NativeTest),
+        },
+        { addTo: tabs },
+      );
+      yield* Panel.Node.Leaf.create(
+        setTree,
+        {
+          title: "theme showcase",
+          content: Option.some(ThemeShowcase),
+        },
+        { addTo: tabs },
+      );
+      yield* Panel.Node.Leaf.create(
+        setTree,
+        {
+          title: "notifications",
+          content: Option.some(Notifications),
+        },
+        { addTo: tabs },
+      );
+      yield* Panel.Node.Leaf.create(
+        setTree,
+        {
+          title: "icons",
+          content: Option.some(Icons),
+        },
+        { addTo: tabs },
+      );
+    }).pipe(effectEdgeRunSync);
   });
 
   return (
     <div
       class={cn(
         "flex flex-col w-full h-full",
-        !windowMaximized() && "border border-theme-border",
+        !windowCtx.maximized() && "border border-theme-border",
       )}
     >
       <Show when={showNoise()}>
         <BackgroundNoise />
       </Show>
 
-      <Titlebar
-        windowMaximized={windowMaximized}
-        workspaces={workspaceState.workspaces}
-        activeIndex={workspaceState.activeIndex}
-        onReorder={(oldIdx, newIdx) => {
-          setWorkspaceState("workspaces", (prev) => {
-            const items = [...prev];
-            const [moved] = items.splice(oldIdx, 1);
-            items.splice(newIdx, 0, moved);
-            return items;
-          });
-          setWorkspaceState("activeIndex", newIdx);
-        }}
-        onActiveIndexChange={(index) => setWorkspaceState("activeIndex", index)}
-        onCloseClick={(index) => {
-          if (index === workspaceState.activeIndex) {
-            if (workspaceState.workspaces.length === 0) {
-              setWorkspaceState("activeIndex", undefined);
-            } else if (workspaceState.activeIndex === 0) {
-              setWorkspaceState("activeIndex", 0);
-            } else {
-              setWorkspaceState("activeIndex", (prev) => prev! - 1);
-            }
-          }
+      <PanelsRoot />
 
-          setWorkspaceState("workspaces", (prev) => {
-            const newTabs = [...prev];
-            newTabs.splice(index, 1); // discard
-            return newTabs;
-          });
-        }}
-        onNewClick={() => {
-          const newIdx = workspaceState.workspaces.length;
-          setWorkspaceState("workspaces", (prev) => [
-            ...prev,
-            mkTestWorkspace("new tab"),
-          ]);
-          setWorkspaceState("activeIndex", newIdx);
-        }}
-      />
-
-      <div class="flex flex-col grow overflow-hidden">
-        <Switch fallback={<div>{/* @TODO */}</div>}>
-          <For each={workspaceState.workspaces}>
-            {(workspace, index) => {
-              return (
-                <Match when={workspaceState.activeIndex === index()}>
-                  {workspace.render({})}
-                </Match>
-              );
-            }}
-          </For>
-        </Switch>
-      </div>
-
-      <StatusBar />
+      {/*<StatusBar />*/}
     </div>
+  );
+};
+
+type TitlebarProps = {};
+const Titlebar = (_props: TitlebarProps) => {
+  type WindowButton = {
+    icon: () => IconKind;
+    onClick: () => void;
+  };
+
+  const windowCtx = useWindowContext();
+
+  const windowButtons = (): WindowButton[] => [
+    {
+      icon: () => "window_minimize",
+      onClick: windowCtx.minimize,
+    },
+    {
+      icon: () =>
+        windowCtx.maximized() ? "window_restore" : "window_maximize",
+      onClick: windowCtx.toggleMaximize,
+    },
+    {
+      icon: () => "close",
+      onClick: windowCtx.close,
+    },
+  ];
+
+  return (
+    <>
+      <div class="flex flex-row h-full w-full items-center window-drag">
+        <Icon kind="fe" class="size-4 mx-1" />
+
+        <div class="grow h-full block" />
+
+        <div class="flex h-full -window-drag">
+          <For each={windowButtons()}>
+            {(button) => (
+              <div
+                class="hover:bg-theme-icon-base-fill
+                active:bg-theme-icon-active-fill inline-flex h-full w-8
+                items-center justify-center hover:cursor-pointer"
+                onClick={button.onClick}
+              >
+                <Icon kind={button.icon()} class="size-4" />
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    </>
   );
 };
 
@@ -242,6 +246,147 @@ const BackgroundNoise = () => {
         fill="transparent"
       />
     </svg>
+  );
+};
+
+export type WindowContext = {
+  maximized: Accessor<boolean>;
+  minimize: () => void;
+  toggleMaximize: () => void;
+  close: () => void;
+};
+export const WindowContext = createContext<WindowContext>();
+export const useWindowContext = (): WindowContext => {
+  const ctx = useContext(WindowContext);
+  if (!ctx)
+    throw new Error(
+      "Cannot use useWindowContext outside of a WindowContextProvider",
+    );
+  return ctx;
+};
+export type WindowContextProviderProps = ParentProps<{}>;
+export const WindowContextProvider = (props: WindowContextProviderProps) => {
+  const [maximized, setMaximized] = createSignal(
+    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
+  );
+
+  onMount(() => {
+    const cleanups: (() => void)[] = [];
+    cleanups.push(
+      window.electron.ipcRenderer.on("on window/maximized", () =>
+        setMaximized(true),
+      ),
+    );
+    cleanups.push(
+      window.electron.ipcRenderer.on("on window/unmaximized", () =>
+        setMaximized(false),
+      ),
+    );
+    onCleanup(() => cleanups.map((fn) => fn()));
+  });
+
+  return (
+    <WindowContext.Provider
+      value={{
+        maximized,
+        minimize: () => window.electron.ipcRenderer.send("window/minimize"),
+        toggleMaximize: () =>
+          window.electron.ipcRenderer.send("window/toggleMaximize"),
+        close: () => window.electron.ipcRenderer.send("window/close"),
+      }}
+    >
+      {props.children}
+    </WindowContext.Provider>
+  );
+};
+
+const NativeTest = () => {
+  const plus100 = window.api.native.plus100(5);
+  const greet = window.api.native.greet("world");
+  const numCpus = window.api.native.getNumCpus();
+
+  return (
+    <div class="flex flex-col gap-2 p-2 w-fit">
+      <p>plus100: '{plus100}'</p>
+      <p>greet: '{greet}'</p>
+      <p>numCpus: '{numCpus}'</p>
+
+      <Button
+        onClick={() =>
+          window.api.native.printArray(new Uint8Array([1, 2, 3, 4, 5]))
+        }
+      >
+        Print array
+      </Button>
+
+      <Button onClick={() => window.electron.ipcRenderer.send("ping")}>
+        ipc test (ping)
+      </Button>
+
+      <Button onClick={() => window.electron.ipcRenderer.send("reload")}>
+        ipc reload
+      </Button>
+
+      {/*<Button onClick={() => window.electron.ipcRenderer.send("restart")}>
+        ipc restart
+      </Button>*/}
+    </div>
+  );
+};
+
+const Colors = () => {
+  return (
+    <div class="flex flex-row justify-evenly text-center">
+      <Index each={theming.colors}>
+        {(color) => {
+          return (
+            <div
+              class="m-1 flex size-16 flex-grow flex-row content-center
+                items-center justify-center gap-2 border-2 shadow-md"
+              style={{
+                background: `var(--theme-colors-${color()}-background)`,
+                "border-color": `var(--theme-colors-${color()}-border)`,
+              }}
+            >
+              <div
+                class="size-5 border-2"
+                style={{
+                  background: `var(--theme-colors-${color()}-base)`,
+                  "border-color": `var(--theme-colors-${color()}-border)`,
+                }}
+              />
+              {color()}
+            </div>
+          );
+        }}
+      </Index>
+    </div>
+  );
+};
+
+const ThemeShowcase = () => {
+  return (
+    <div class="flex-col overflow-auto w-full">
+      <Colors />
+      <Index each={theming.themeDescFlat}>
+        {(item) => {
+          return (
+            <div
+              class="m-1 flex flex-row items-center gap-2 border border-black
+                p-1"
+            >
+              <div
+                class="size-6 border border-black"
+                style={{
+                  background: `var(--theme-${item().join("-")})`,
+                }}
+              />
+              <p class="font-mono">{item().join("-")}</p>
+            </div>
+          );
+        }}
+      </Index>
+    </div>
   );
 };
 
@@ -327,69 +472,6 @@ const Notifications = () => {
   );
 };
 
-const personStore = createRoot(
-  () =>
-    // cspell:disable
-    // eslint-disable-next-line solid/reactivity
-    createStore({
-      name: {
-        first: "Brandon",
-        last: "Sanderson",
-      },
-      age: 45,
-      books: [
-        { title: "The Final Empire", series: "Mistborn", kind: "Novel" },
-        { title: "Oathbringer", series: "Stormlight", kind: "Novel" },
-        { title: "Secret History", series: "Mistborn", kind: "Novela" },
-      ],
-    }),
-  // cspell:enable
-);
-
-const Stores = () => {
-  const [person, setPerson] = personStore;
-
-  // cspell:disable
-  const addPrefixes = () => {
-    setPerson(
-      "books",
-      (b) => b.series == "Mistborn",
-      "title",
-      (old) => `Mistborn: ${old}`,
-    );
-  };
-  // cspell:enable
-
-  return (
-    <div class="flex flex-col gap-3">
-      <div>
-        <p>first name: {person.name.first}</p>
-        <p>last name: {person.name.last}</p>
-      </div>
-
-      <For each={person.books}>
-        {(book) => (
-          <div>
-            <h2 class="text-xl">{book.title}</h2>
-            <h3 class="text-lg">{book.series}</h3>
-            <h4>{book.kind}</h4>
-          </div>
-        )}
-      </For>
-
-      <Button onClick={addPrefixes}>update books</Button>
-
-      <Button
-        onClick={() => {
-          setPerson("name", "last", "bar");
-        }}
-      >
-        change last name
-      </Button>
-    </div>
-  );
-};
-
 const Icons = () => {
   return (
     <div class="flex flex-row flex-wrap justify-evenly text-center">
@@ -406,95 +488,6 @@ const Icons = () => {
           );
         }}
       </Index>
-    </div>
-  );
-};
-
-const Colors = () => {
-  return (
-    <div class="flex flex-row justify-evenly text-center">
-      <Index each={theming.colors}>
-        {(color) => {
-          return (
-            <div
-              class="m-1 flex size-16 flex-grow flex-row content-center
-                items-center justify-center gap-2 border-2 shadow-md"
-              style={{
-                background: `var(--theme-colors-${color()}-background)`,
-                "border-color": `var(--theme-colors-${color()}-border)`,
-              }}
-            >
-              <div
-                class="size-5 border-2"
-                style={{
-                  background: `var(--theme-colors-${color()}-base)`,
-                  "border-color": `var(--theme-colors-${color()}-border)`,
-                }}
-              />
-              {color()}
-            </div>
-          );
-        }}
-      </Index>
-    </div>
-  );
-};
-
-const ThemeShowcase = () => {
-  return (
-    <div class="flex-col overflow-auto w-full">
-      <Colors />
-      <Index each={theming.themeDescFlat}>
-        {(item) => {
-          return (
-            <div
-              class="m-1 flex flex-row items-center gap-2 border border-black
-                p-1"
-            >
-              <div
-                class="size-6 border border-black"
-                style={{
-                  background: `var(--theme-${item().join("-")})`,
-                }}
-              />
-              <p class="font-mono">{item().join("-")}</p>
-            </div>
-          );
-        }}
-      </Index>
-    </div>
-  );
-};
-
-const NativeTest = () => {
-  const plus100 = window.api.native.plus100(5);
-  const greet = window.api.native.greet("world");
-  const numCpus = window.api.native.getNumCpus();
-
-  return (
-    <div class="w-full h-full flex flex-col gap-2 p-2">
-      <p>plus100: '{plus100}'</p>
-      <p>greet: '{greet}'</p>
-      <p>numCpus: '{numCpus}'</p>
-
-      <Button
-        onClick={() =>
-          window.api.native.printArray(new Uint8Array([1, 2, 3, 4, 5]))
-        }
-      >
-        Print array
-      </Button>
-
-      <Button onClick={() => window.electron.ipcRenderer.send("ping")}>
-        ipc test (ping)
-      </Button>
-
-      <Button onClick={() => window.electron.ipcRenderer.send("reload")}>
-        ipc reload
-      </Button>
-      <Button onClick={() => window.electron.ipcRenderer.send("restart")}>
-        ipc restart
-      </Button>
     </div>
   );
 };

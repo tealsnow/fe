@@ -513,20 +513,42 @@ export namespace Node {
         ...props,
       }));
 
-    export const create = (
+    export function create(
       setTree: SetTree,
       props: Omit<Node.ParentProps, "id">,
-    ): Effect.Effect<ID.Parent> =>
-      storeUpdate(setTree, (tree) =>
+    ): Effect.Effect<ID.Parent>;
+
+    export function create(
+      setTree: SetTree,
+      props: Omit<Node.ParentProps, "id">,
+      { addTo }: { addTo: ID.Parent },
+    ): Effect.Effect<ID.Parent, NodeNotInTreeError | NodeAlreadyHasParentError>;
+
+    export function create(
+      setTree: SetTree,
+      props: Omit<Node.ParentProps, "id">,
+      { addTo }: { addTo?: ID.Parent } = {},
+    ): Effect.Effect<
+      ID.Parent,
+      NodeNotInTreeError | NodeAlreadyHasParentError
+    > {
+      return storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           const id = yield* ID.create.Parent;
 
           const parent = yield* init({ id, ...props });
           tree.nodes[id.uuid] = parent;
 
+          if (addTo)
+            yield* Node.Parent.addChild(setTree, {
+              parentId: addTo,
+              childId: id,
+            });
+
           return id;
         }),
       );
+    }
 
     export const get = (
       tree: Tree,
@@ -749,6 +771,7 @@ export namespace Node {
       return storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           const id = yield* ID.create.Leaf;
+
           const leaf = yield* init({ id, ...props });
           tree.nodes[id.uuid] = leaf;
 
@@ -910,10 +933,8 @@ export type SetTree = SetStoreFunction<Tree>;
 export namespace Tree {
   export const create = ({
     titlebar,
-    layout,
   }: {
     titlebar?: Component;
-    layout?: Layout;
   }): Effect.Effect<Tree> =>
     Effect.andThen(ID.create.Parent, (id) => ({
       root: id,
@@ -927,7 +948,6 @@ export namespace Tree {
             top: false,
             bottom: false,
           },
-          ...(layout ? { layout } : {}),
         }).pipe(Effect.runSync),
       },
     }));

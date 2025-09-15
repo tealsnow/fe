@@ -30,7 +30,6 @@ export const usePanelContext = (): PanelContext => {
 
 export type PanelContextProviderProps = ParentProps<{
   initialTitlebar?: Component<{}>;
-  initialLayout?: Panel.Layout;
 }>;
 export const PanelContextProvider = (props: PanelContextProviderProps) => {
   const existing = useContext(PanelContext);
@@ -39,7 +38,6 @@ export const PanelContextProvider = (props: PanelContextProviderProps) => {
   const [tree, setTree] = createStore<Panel.Tree>(
     Panel.Tree.create({
       titlebar: props.initialTitlebar,
-      layout: props.initialLayout,
     }).pipe(effectEdgeRunSync),
   );
 
