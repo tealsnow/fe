@@ -9,6 +9,7 @@ import {
   Setter,
   Show,
   Switch,
+  Ref,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { css } from "solid-styled-components";
@@ -26,20 +27,20 @@ import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/elem
 import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
+import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
 import { MatchTag } from "~/lib/MatchTag";
+import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
+
+import { Icon } from "~/assets/icons";
+import ThemeProvider, { useTheme } from "~/ThemeProvider";
+import Theme from "~/Theme";
 
 import Button from "~/ui/components/Button";
-import { Icon } from "~/assets/icons";
 
 import * as Panel from "./Panel";
-import { Ref } from "solid-js";
-import ThemeProvider, { useTheme } from "~/ThemeProvider";
-import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
-
-import { effectEdgeRunSync } from "./panels";
 
 export type RenderPanelsProps = {
   tree: Panel.Tree;
@@ -349,7 +350,7 @@ export const RenderPanel = (props: RenderPanelProps) => {
               <RenderPanelParent
                 tree={props.tree}
                 setTree={props.setTree}
-                parent={parent}
+                node={parent}
                 selectedPanel={props.selectedPanel}
                 selectPanel={props.selectPanel}
                 dbgHeader={props.dbgHeader}
@@ -366,17 +367,17 @@ export const RenderPanel = (props: RenderPanelProps) => {
   );
 };
 
-type PanelTitleProps = ParentProps<{
+type PanelTitlebarProps = ParentProps<{
   ref?: Ref<HTMLDivElement>;
   class?: string;
 }>;
 
-const PanelTitle = (props: PanelTitleProps) => {
+const PanelTitlebar = (props: PanelTitlebarProps) => {
   return (
     <div
       ref={props.ref}
       class={cn(
-        "flex items-center min-h-6 border-b border-theme-border",
+        "flex items-center h-6 border-b border-theme-border",
         props.class,
       )}
     >
@@ -391,7 +392,6 @@ type RenderPanelLeafProps = {
 
 const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
   const theme = useTheme();
-
   let ref!: HTMLDivElement;
   onMount(() => {
     const cleanup = draggable({
@@ -405,21 +405,13 @@ const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
 
       onGenerateDragPreview: ({ nativeSetDragImage }) => {
         setCustomNativeDragPreview({
-          getOffset: pointerOutsideOfPreview({
-            x: "calc(var(--spacing) * 2)",
-            y: "calc(var(--spacing) * 2)",
-          }),
-          render: ({ container }) => {
-            solidRender(() => {
-              return (
-                <ThemeProvider theme={theme.theme()}>
-                  <PanelTitle class="px-1 min-w-12 border border-theme-border">
-                    {props.leaf().title}
-                  </PanelTitle>
-                </ThemeProvider>
-              );
-            }, container);
-          },
+          getOffset: tabNativeDragPreviewOffset(),
+          render: ({ container }) =>
+            renderTabNativeDragPreview({
+              container,
+              theme: theme.theme(),
+              title: props.leaf().title,
+            }),
           nativeSetDragImage,
         });
       },
@@ -428,14 +420,37 @@ const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
   });
 
   return (
-    <div class="w-full h-full">
-      <PanelTitle ref={ref} class="pl-2 border-b">
+    <div class="flex flex-col w-full h-full">
+      <PanelTitlebar ref={ref} class="pl-2 border-b">
         {props.leaf().title}
-      </PanelTitle>
-      <div class="flex w-full h-full items-center justify-center">
-        some content
-      </div>
+      </PanelTitlebar>
+      <div class="flex grow items-center justify-center">some content</div>
     </div>
+  );
+};
+
+const tabNativeDragPreviewOffset = () =>
+  pointerOutsideOfPreview({
+    x: "calc(var(--spacing) * 2)",
+    y: "calc(var(--spacing) * 2)",
+  });
+
+const renderTabNativeDragPreview = (props: {
+  container: HTMLElement;
+  theme: Theme;
+  title: string;
+}) => {
+  solidRender(
+    () => (
+      <ThemeProvider theme={props.theme}>
+        <PanelTitlebar class="px-3.5 border border-theme-border">
+          {props.title}
+        </PanelTitlebar>
+      </ThemeProvider>
+    ),
+    // false positive - is not reactive
+    // eslint-disable-next-line solid/reactivity
+    props.container,
   );
 };
 
@@ -443,7 +458,7 @@ type RenderPanelParentProps = {
   tree: Panel.Tree;
   setTree: Panel.SetTree;
 
-  parent: () => Panel.Node.Parent;
+  node: () => Panel.Node.Parent;
 
   selectedPanel: () => Option.Option<Panel.ID>;
   selectPanel: (id: Panel.ID) => void;
@@ -453,101 +468,107 @@ type RenderPanelParentProps = {
 
 const RenderPanelParent = (props: RenderPanelParentProps) => {
   return (
-    <Switch>
-      <MatchTag on={props.parent().layout} tag="tabs">
-        {(tabs) => (
-          <div class="w-full h-full flex flex-col">
-            <TabBar
-              tree={props.tree}
-              setTree={props.setTree}
-              parent={props.parent}
-              tabs={tabs}
-            />
+    <div class="flex flex-col w-full h-full">
+      <MapOption on={props.node().titlebar}>
+        {(titlebar) => <PanelTitlebar>{titlebar()({})}</PanelTitlebar>}
+      </MapOption>
 
-            <MapOption
-              on={tabs().active}
-              fallback={
-                <div class="w-full h-full flex items-center justify-center">
-                  no tab selected
-                </div>
-              }
-            >
-              {(activeId) => {
-                const active = () =>
-                  Panel.Node.Leaf.getOrError(props.tree, { id: activeId() }) //
-                    .pipe(effectEdgeRunSync);
+      <Switch>
+        <MatchTag on={props.node().layout} tag="tabs">
+          {(tabs) => (
+            <div class="w-full h-full flex flex-col">
+              <TabBar
+                tree={props.tree}
+                setTree={props.setTree}
+                parent={props.node}
+                tabs={tabs}
+              />
 
-                return (
-                  <MapOption
-                    on={active().content}
-                    fallback={
-                      <div class="w-full h-full flex items-center justify-center">
-                        no content
-                      </div>
-                    }
-                  >
-                    {(content) => (
-                      <div class="w-full h-full">{content()()}</div>
-                    )}
-                  </MapOption>
-                );
-              }}
-            </MapOption>
-          </div>
-        )}
-      </MatchTag>
-      <MatchTag on={props.parent().layout} tag="split">
-        {(split) => {
-          return (
-            <div
-              class={cn(
-                "flex w-full h-full",
-                Match.value(split().direction).pipe(
-                  Match.when("vertical", () => "flex-col"),
-                  Match.when("horizontal", () => "flex-row"),
-                  Match.exhaustive,
-                ),
-              )}
-            >
-              <Show
-                when={split().children.length > 0}
+              <MapOption
+                on={tabs().active}
                 fallback={
-                  <div class="flex w-full h-full items-center justify-center">
-                    No children
+                  <div class="w-full h-full flex items-center justify-center">
+                    no tab selected
                   </div>
                 }
               >
-                <For each={split().children}>
-                  {(panelId, idx) => (
-                    <>
-                      <RenderPanel
-                        tree={props.tree}
-                        setTree={props.setTree}
-                        parentSplitDirection={() => split().direction}
-                        panelId={() => panelId}
-                        selectedPanel={props.selectedPanel}
-                        selectPanel={props.selectPanel}
-                        dbgHeader={props.dbgHeader}
-                      />
-                      <Show when={idx() !== split().children.length - 1}>
-                        <ResizeHandle
+                {(activeId) => {
+                  const active = () =>
+                    Panel.Node.Leaf.getOrError(props.tree, { id: activeId() }) //
+                      .pipe(effectEdgeRunSync);
+
+                  return (
+                    <MapOption
+                      on={active().content}
+                      fallback={
+                        <div class="w-full h-full flex items-center justify-center">
+                          no content
+                        </div>
+                      }
+                    >
+                      {(content) => (
+                        <div class="w-full h-full">{content()({})}</div>
+                      )}
+                    </MapOption>
+                  );
+                }}
+              </MapOption>
+            </div>
+          )}
+        </MatchTag>
+        <MatchTag on={props.node().layout} tag="split">
+          {(split) => {
+            return (
+              <div
+                class={cn(
+                  "flex w-full h-full",
+                  Match.value(split().direction).pipe(
+                    Match.when("vertical", () => "flex-col"),
+                    Match.when("horizontal", () => "flex-row"),
+                    Match.exhaustive,
+                  ),
+                )}
+              >
+                <Show
+                  when={split().children.length > 0}
+                  fallback={
+                    <div class="flex w-full h-full items-center justify-center">
+                      No children
+                    </div>
+                  }
+                >
+                  <For each={split().children}>
+                    {(panelId, idx) => (
+                      <>
+                        <RenderPanel
                           tree={props.tree}
                           setTree={props.setTree}
+                          parentSplitDirection={() => split().direction}
                           panelId={() => panelId}
-                          splitDirection={() => split().direction}
-                          parent={props.parent}
-                          idx={idx}
+                          selectedPanel={props.selectedPanel}
+                          selectPanel={props.selectPanel}
+                          dbgHeader={props.dbgHeader}
                         />
-                      </Show>
-                    </>
-                  )}
-                </For>
-              </Show>
-            </div>
-          );
-        }}
-      </MatchTag>
-    </Switch>
+                        <Show when={idx() !== split().children.length - 1}>
+                          <ResizeHandle
+                            tree={props.tree}
+                            setTree={props.setTree}
+                            panelId={() => panelId}
+                            splitDirection={() => split().direction}
+                            parent={props.node}
+                            idx={idx}
+                          />
+                        </Show>
+                      </>
+                    )}
+                  </For>
+                </Show>
+              </div>
+            );
+          }}
+        </MatchTag>
+      </Switch>
+    </div>
   );
 };
 
@@ -637,26 +658,50 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
         <div
           class={cn(
             "absolute top-0 left-0 w-full h-full z-10",
-            "grid grid-cols-[2rem_1fr_4rem_1fr_2rem] grid-rows-[2rem_1fr_4rem_1fr_2rem]",
+            "grid",
+            "grid-cols-[2rem_1fr_4rem_1fr_2rem]",
+            "grid-rows-[2rem_1fr_4rem_1fr_2rem]",
             "pointer-events-none",
           )}
         >
           <For each={SplitManipKindEdge}>
             {(kind) => (
-              <div
-                ref={handles[kind].ref}
-                class={cn(
-                  "w-full h-full col-1 row-3 bg-green-500 pointer-events-auto",
-                  handles[kind].hasDrop() && "opacity-10",
-                  Match.value(kind).pipe(
-                    Match.when("edge-left", () => "col-1 row-3"),
-                    Match.when("edge-right", () => "col-5 row-3"),
-                    Match.when("edge-top", () => "col-3 row-1"),
-                    Match.when("edge-bottom", () => "col-3 row-5"),
-                    Match.exhaustive,
+              <Show
+                when={Match.value(kind).pipe(
+                  Match.when(
+                    "edge-left",
+                    () => props.panel().edgeDropConfig.left,
                   ),
+                  Match.when(
+                    "edge-right",
+                    () => props.panel().edgeDropConfig.right,
+                  ),
+                  Match.when(
+                    "edge-top",
+                    () => props.panel().edgeDropConfig.top,
+                  ),
+                  Match.when(
+                    "edge-bottom",
+                    () => props.panel().edgeDropConfig.bottom,
+                  ),
+                  Match.exhaustive,
                 )}
-              />
+              >
+                <div
+                  ref={handles[kind].ref}
+                  class={cn(
+                    "w-full h-full col-1 row-3 bg-green-500 pointer-events-auto",
+                    handles[kind].hasDrop() && "opacity-10",
+                    Match.value(kind).pipe(
+                      Match.when("edge-left", () => "col-1 row-3"),
+                      Match.when("edge-right", () => "col-5 row-3"),
+                      Match.when("edge-top", () => "col-3 row-1"),
+                      Match.when("edge-bottom", () => "col-3 row-5"),
+                      Match.exhaustive,
+                    ),
+                  )}
+                />
+              </Show>
             )}
           </For>
         </div>
@@ -743,7 +788,7 @@ const TabBar = (props: TabBarProps) => {
   });
 
   return (
-    <PanelTitle class="px-1">
+    <PanelTitlebar class="px-1">
       <For each={props.tabs().children}>
         {(panel, idx) => (
           <TabHandle
@@ -763,7 +808,7 @@ const TabBar = (props: TabBarProps) => {
           hasDroppable() && "bg-theme-panel-tab-background-drop-target",
         )}
       />
-    </PanelTitle>
+    </PanelTitlebar>
   );
 };
 
@@ -790,9 +835,9 @@ const TabHandle = (props: TabHandleProps) => {
     Panel.Node.Leaf.get(props.tree, { id: props.panelId() }) //
       .pipe(effectEdgeRunSync);
 
-  const [dragging, setDragging] = createSignal<boolean>(false);
   const [hasDroppable, setHasDroppable] = createSignal<boolean>(false);
 
+  const theme = useTheme();
   let ref!: HTMLDivElement;
   onMount(() => {
     const cleanup = pdndCombine(
@@ -805,8 +850,18 @@ const TabHandle = (props: TabHandleProps) => {
             panel: props.panelId(),
           }) as any,
 
-        onGenerateDragPreview: () => setDragging(true),
-        onDrop: () => setDragging(false),
+        onGenerateDragPreview: ({ nativeSetDragImage }) => {
+          setCustomNativeDragPreview({
+            getOffset: tabNativeDragPreviewOffset(),
+            render: ({ container }) =>
+              renderTabNativeDragPreview({
+                container,
+                theme: theme.theme(),
+                title: tab().title,
+              }),
+            nativeSetDragImage,
+          });
+        },
       }),
       dropTargetForElements({
         element: ref,
@@ -837,8 +892,6 @@ const TabHandle = (props: TabHandleProps) => {
       class={cn(
         "flex items-center h-full px-0.5 first:border-l border-r text-xs leading-none border-theme-border bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active gap-1 group cursor-pointer",
         selected() && "bg-theme-panel-tab-background-active",
-        dragging() &&
-          "opacity-60 outline-theme-border -outline-offset-1 outline",
         hasDroppable() && "bg-theme-panel-tab-background-drop-target",
       )}
       onClick={() =>
@@ -863,10 +916,7 @@ const TabHandle = (props: TabHandleProps) => {
         variant="icon"
         size="icon"
         noOnClickToOnMouseDown
-        class={cn(
-          "size-3.5 opacity-0 group-hover:opacity-100",
-          dragging() && "opacity-0",
-        )}
+        class="size-3.5 opacity-0 group-hover:opacity-100"
       />
     </div>
   );

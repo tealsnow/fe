@@ -1,11 +1,10 @@
 import * as uuid from "uuid";
 import { Brand, Cause, Data, Effect, Match, Option, Order, pipe } from "effect";
-import { JSX } from "solid-js";
 import * as tsafe from "tsafe";
-
 import { SetStoreFunction } from "solid-js/store";
+import { Component } from "solid-js";
+
 import { PickOptional } from "~/lib/type_helpers";
-import { EmptyJsx } from "~/lib/emptyJsx";
 import { storeUpdate } from "~/lib/SignalObject";
 import OptionGetOrFail from "~/lib/OptionGetOrFail";
 
@@ -143,24 +142,42 @@ export type Layout = Layout.TaggedMap[Layout.Tag];
 
 export namespace Node {
   export namespace Data {
+    export type EdgeDropConfig = {
+      left: boolean;
+      right: boolean;
+      top: boolean;
+      bottom: boolean;
+    };
+    export const EdgeDropConfig = (): EdgeDropConfig =>
+      ({
+        left: true,
+        right: true,
+        top: true,
+        bottom: true,
+      }) as const;
+
     export type Common = {
       id: ID;
       parent?: Option.Option<ID.Parent>;
       percentOfParent?: Percent;
+      edgeDropConfig?: EdgeDropConfig;
     };
     export const Common = (): Required<PickOptional<Common>> =>
       ({
         parent: Option.none(),
         percentOfParent: Percent(1),
+        edgeDropConfig: EdgeDropConfig(),
       }) as const;
 
     export type ParentProps = Common & {
       id: ID.Parent;
       layout?: Layout;
+      titlebar?: Option.Option<Component<{}>>;
     };
     export const ParentProps = (): Required<PickOptional<ParentProps>> =>
       ({
         layout: Layout.Split({ direction: "horizontal" }),
+        titlebar: Option.none(),
         ...Common(),
       }) as const;
     export type Parent = Required<ParentProps>;
@@ -168,7 +185,7 @@ export namespace Node {
     export type LeafProps = Common & {
       id: ID.Leaf;
       title: string;
-      content?: Option.Option<() => JSX.Element>;
+      content?: Option.Option<Component<{}>>;
     };
     export const LeafProps = (): Required<PickOptional<LeafProps>> =>
       ({
@@ -871,15 +888,26 @@ export type Tree = {
 export type SetTree = SetStoreFunction<Tree>;
 
 export namespace Tree {
-  export const create: Effect.Effect<Tree, never> = Effect.andThen(
-    ID.create.Parent,
-    (id) => ({
+  export const create = ({
+    titlebar,
+  }: {
+    titlebar: Option.Option<Component>;
+  }): Effect.Effect<Tree> =>
+    Effect.andThen(ID.create.Parent, (id) => ({
       root: id,
       nodes: {
-        [id.uuid]: Node.Parent.init({ id }).pipe(Effect.runSync),
+        [id.uuid]: Node.Parent.init({
+          id,
+          titlebar,
+          edgeDropConfig: {
+            left: true,
+            right: true,
+            top: false,
+            bottom: false,
+          },
+        }).pipe(Effect.runSync),
       },
-    }),
-  );
+    }));
 }
 
 export class NodeNotInTreeError extends Data.TaggedError("NodeNotInTreeError")<{

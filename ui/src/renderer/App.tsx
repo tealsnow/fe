@@ -82,10 +82,10 @@ const Root = () => {
 
   const [workspaceState, setWorkspaceState] = createStore<WorkspaceState>({
     workspaces: [
-      mkWorkspace({
-        title: "Panels",
-        render: Panels,
-      }),
+      // mkWorkspace({
+      //   title: "Panels",
+      //   render: Panels,
+      // }),
       mkWorkspace({
         title: "Native Test",
         render: NativeTest,

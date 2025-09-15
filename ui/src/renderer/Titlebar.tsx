@@ -27,6 +27,7 @@ declare module "solid-js" {
 
 type TitlebarProps = {
   windowMaximized: () => boolean;
+
   workspaces: Workspace[];
   activeIndex: number | undefined;
   onReorder: (oldIdx: number, newIdx: number) => void;

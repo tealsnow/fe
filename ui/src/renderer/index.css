@@ -30,6 +30,10 @@
   @apply [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
 }
 
-.window-drag {
+@utility window-drag {
   app-region: drag;
+}
+
+@utility -window-drag {
+  app-region: no-drag;
 }

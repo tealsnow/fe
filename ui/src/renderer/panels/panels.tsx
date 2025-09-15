@@ -1,8 +1,8 @@
 import { createStore } from "solid-js/store";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { Component, createSignal, For, onMount, Show } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 
-import { Effect, Exit, Option } from "effect";
+import { Effect, Option } from "effect";
 
 import { cn } from "~/lib/cn";
 
@@ -10,22 +10,20 @@ import * as Panel from "./Panel";
 import Inspector from "./Inspector";
 import { RenderPanels } from "./render";
 import { TextInputLozenge } from "~/ui/components/Lozenge";
+import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
 
-export const effectEdgeRunSync = <A, E>(effect: Effect.Effect<A, E>): A => {
-  const exit = Effect.runSyncExit(effect);
-
-  if (Exit.isFailure(exit)) {
-    const msg = `failure in effectEdgeRunSync: '${exit.cause}'`;
-    console.error(msg);
-    throw new Error(msg);
-  }
-
-  return exit.value;
+export type PanelsProps = {
+  // Note: not reactive
+  titlebar?: Component<{}>;
 };
 
-export const Panels = () => {
+export const Panels = (props: PanelsProps) => {
   const [tree, setTree] = createStore<Panel.Tree>(
-    Panel.Tree.create.pipe(Effect.runSync),
+    Panel.Tree.create({
+      // intentional
+      // eslint-disable-next-line solid/reactivity
+      titlebar: Option.fromNullable(props.titlebar),
+    }).pipe(Effect.runSync),
   );
 
   const [selectedId, setSelectedId] = createSignal<Option.Option<Panel.ID>>(
@@ -34,14 +32,14 @@ export const Panels = () => {
 
   // false positive
   // eslint-disable-next-line solid/reactivity
-  const [showExplorer, setShowExplorer] = makePersisted(createSignal(true), {
+  const [showExplorer, setShowExplorer] = makePersisted(createSignal(false), {
     name: "show-panel-explorer",
     storage: sessionStorage,
   });
 
   // false positive
   // eslint-disable-next-line solid/reactivity
-  const [showDbgHeader, setShowDbgHeader] = makePersisted(createSignal(true), {
+  const [showDbgHeader, setShowDbgHeader] = makePersisted(createSignal(false), {
     name: "show-panel-debug-header",
     storage: sessionStorage,
   });
@@ -118,39 +116,41 @@ export const Panels = () => {
 
   return (
     <div class="flex flex-col w-full h-full">
-      <div class="flex flex-row h-8 border-b border-theme-border items-center p-2">
-        <div class="ml-auto flex flex-row gap-2">
-          <For
-            each={[
-              {
-                get: showExplorer,
-                set: setShowExplorer,
-                lbl: "show explorer",
-              },
-              {
-                get: showDbgHeader,
-                set: setShowDbgHeader,
-                lbl: "show debug header",
-              },
-            ]}
-          >
-            {({ get, set, lbl }) => (
-              <label class="flex flex-row gap-1">
-                <input
-                  type="checkbox"
-                  checked={get()}
-                  id={lbl}
-                  class="form-checkbox border-1 border-theme-colors-purple-border
+      <Show when={false}>
+        <div class="flex flex-row h-8 border-b border-theme-border items-center p-2">
+          <div class="ml-auto flex flex-row gap-2">
+            <For
+              each={[
+                {
+                  get: showExplorer,
+                  set: setShowExplorer,
+                  lbl: "show explorer",
+                },
+                {
+                  get: showDbgHeader,
+                  set: setShowDbgHeader,
+                  lbl: "show debug header",
+                },
+              ]}
+            >
+              {({ get, set, lbl }) => (
+                <label class="flex flex-row gap-1">
+                  <input
+                    type="checkbox"
+                    checked={get()}
+                    id={lbl}
+                    class="form-checkbox border-1 border-theme-colors-purple-border
                   bg-theme-colors-purple-background outline-0
                   checked:bg-theme-colors-purple-base ring-offset-0 ring-0"
-                  onChange={({ target: { checked } }) => set(checked)}
-                />
-                {lbl}
-              </label>
-            )}
-          </For>
+                    onChange={({ target: { checked } }) => set(checked)}
+                  />
+                  {lbl}
+                </label>
+              )}
+            </For>
+          </div>
         </div>
-      </div>
+      </Show>
 
       <div class="flex h-full w-full">
         <div
