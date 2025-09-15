@@ -35,26 +35,18 @@ import { MatchTag } from "~/lib/MatchTag";
 import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
 
 import { Icon } from "~/assets/icons";
-import ThemeProvider, { useTheme } from "~/ThemeProvider";
+import ThemeProvider, { useThemeContext } from "~/ThemeProvider";
 import Theme from "~/Theme";
 
 import Button from "~/ui/components/Button";
 
 import * as Panel from "./Panel";
+import { usePanelContext } from "./PanelContext";
 
-export type RenderPanelsProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
+export const RenderPanels = () => {
+  const { tree, setTree } = usePanelContext();
 
-  selectedPanel: () => Option.Option<Panel.ID>;
-  selectPanel: (id: Panel.ID) => void;
-  dbgHeader: () => boolean;
-};
-
-export const RenderPanels = (props: RenderPanelsProps) => {
   onMount(() => {
-    /* eslint-disable solid/reactivity */
-
     const cleanup = monitorForElements({
       onDrop: ({ source, location }) => {
         // @FIXME: we might need to check each drop target depending on how
@@ -73,7 +65,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
               destination: (destination) => isDropDataForTab(destination),
             },
             ({ source: dragForTab, destination: dropForTab }) =>
-              Panel.Node.reParent(props.setTree, {
+              Panel.Node.reParent(setTree, {
                 id: dragForTab.panel,
                 newParentId: dropForTab.parent,
                 idx: dropForTab.idx,
@@ -93,7 +85,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                     // we know it already is in a tab layout or otherwise
                     // has no children
 
-                    Panel.Node.reParent(props.setTree, {
+                    Panel.Node.reParent(setTree, {
                       id: dragForTab.panel,
                       newParentId: parentId,
                     }),
@@ -105,14 +97,14 @@ export const RenderPanels = (props: RenderPanelsProps) => {
 
                     Effect.gen(function* () {
                       const newParentId = yield* Panel.Node.promoteToParent(
-                        props.setTree,
+                        setTree,
                         {
                           id: leafId,
                           layout: Panel.Layout.Tabs(),
                         },
                       );
 
-                      yield* Panel.Node.reParent(props.setTree, {
+                      yield* Panel.Node.reParent(setTree, {
                         id: dragForTab.panel,
                         newParentId,
                       });
@@ -127,19 +119,19 @@ export const RenderPanels = (props: RenderPanelsProps) => {
               ) =>
                 Effect.gen(function* () {
                   const newParentId = yield* Panel.Node.promoteToParent(
-                    props.setTree,
+                    setTree,
                     {
                       id: dropForSplitManipCenter.panelId,
                       layout: Panel.Layout.Split({ direction: splitDirection }),
                     },
                   );
 
-                  yield* Panel.Node.setPercentOfParent(props.setTree, {
+                  yield* Panel.Node.setPercentOfParent(setTree, {
                     id: dragForTab.panel,
                     percent: Panel.Percent(1),
                   });
 
-                  yield* Panel.Node.reParent(props.setTree, {
+                  yield* Panel.Node.reParent(setTree, {
                     id: dragForTab.panel,
                     newParentId,
                     idx,
@@ -169,7 +161,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
             },
             ({ source: dragForTab, destination: dropForSplitManipEdge }) =>
               Effect.gen(function* () {
-                const parent = yield* Panel.Node.Parent.getOrError(props.tree, {
+                const parent = yield* Panel.Node.Parent.getOrError(tree, {
                   parentId: dropForSplitManipEdge.parentId,
                 });
 
@@ -186,7 +178,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                   Match.value(layout.direction).pipe(
                     // put the dropped panel at the beginning of the children
                     Match.when(mainAxis, () =>
-                      Panel.Node.reParent(props.setTree, {
+                      Panel.Node.reParent(setTree, {
                         id: dragForTab.panel,
                         newParentId: parent.id,
                         idx: begin ? 0 : undefined,
@@ -202,7 +194,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                       () =>
                         Effect.gen(function* () {
                           const newParentId = yield* Panel.Node.promoteToParent(
-                            props.setTree,
+                            setTree,
                             {
                               id: parent.id,
                               layout: Panel.Layout.Split({
@@ -211,7 +203,7 @@ export const RenderPanels = (props: RenderPanelsProps) => {
                             },
                           );
 
-                          yield* Panel.Node.reParent(props.setTree, {
+                          yield* Panel.Node.reParent(setTree, {
                             id: dragForTab.panel,
                             newParentId: newParentId,
                             idx: begin ? 0 : undefined,
@@ -245,42 +237,30 @@ export const RenderPanels = (props: RenderPanelsProps) => {
       },
     });
     onCleanup(() => cleanup());
-    /* eslint-enable solid/reactivity */
   });
 
   return (
-    <RenderPanel
-      tree={props.tree}
-      setTree={props.setTree}
+    <RenderPanelUnderSplit
       parentSplitDirection={() => "horizontal"}
-      panelId={() => props.tree.root}
-      selectPanel={props.selectPanel}
-      selectedPanel={props.selectedPanel}
-      dbgHeader={props.dbgHeader}
+      panelId={() => tree.root}
     />
   );
 };
 
 export type RenderPanelProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
   parentSplitDirection: () => Panel.Layout.SplitDirection;
   panelId: () => Panel.ID;
-  selectedPanel: () => Option.Option<Panel.ID>;
-  selectPanel: (id: Panel.ID) => void;
-
-  dbgHeader: () => boolean;
 };
 
-export const RenderPanel = (props: RenderPanelProps) => {
+export const RenderPanelUnderSplit = (props: RenderPanelProps) => {
+  const { tree, dbg } = usePanelContext();
+
   const panel = createMemo(() =>
-    Panel.Node.getOrError(props.tree, { id: props.panelId() }) //
+    Panel.Node.getOrError(tree, { id: props.panelId() }) //
       .pipe(effectEdgeRunSync),
   );
 
-  const isSelected = () =>
-    Option.getOrNull(props.selectedPanel()) === panel().id;
+  const isSelected = () => Option.getOrNull(dbg.selectedId()) === panel().id;
 
   const [panelHover, setPanelHover] = createSignal(false);
 
@@ -324,38 +304,13 @@ export const RenderPanel = (props: RenderPanelProps) => {
       )}
       data-panel-id={props.panelId().uuid}
     >
-      <Show when={props.dbgHeader()}>
-        <div class="flex flex-row w-full h-fit p-0.5 gap-1 items-center border border-theme-colors-orange-border overflow-clip">
-          <Button
-            color="orange"
-            size="small"
-            highlighted={isSelected()}
-            onClick={() => props.selectPanel(panel().id)}
-          >
-            {panel().id.uuid}
-            <MapOption on={Panel.Node.$as("leaf")(panel())}>
-              {(leaf) => <> - '{leaf().title}'</>}
-            </MapOption>
-          </Button>
-        </div>
-      </Show>
-
       <div class="relative w-full h-full">
         <Switch>
           <MatchTag on={panel()} tag="leaf">
             {(leaf) => <RenderPanelLeaf leaf={leaf} />}
           </MatchTag>
           <MatchTag on={panel()} tag="parent">
-            {(parent) => (
-              <RenderPanelParent
-                tree={props.tree}
-                setTree={props.setTree}
-                node={parent}
-                selectedPanel={props.selectedPanel}
-                selectPanel={props.selectPanel}
-                dbgHeader={props.dbgHeader}
-              />
-            )}
+            {(parent) => <RenderPanelParent node={parent} />}
           </MatchTag>
         </Switch>
 
@@ -377,7 +332,7 @@ const PanelTitlebar = (props: PanelTitlebarProps) => {
     <div
       ref={props.ref}
       class={cn(
-        "flex items-center h-6 border-b border-theme-border",
+        "flex items-center min-h-6 max-h-6 border-b border-theme-border text-xs",
         props.class,
       )}
     >
@@ -391,7 +346,7 @@ type RenderPanelLeafProps = {
 };
 
 const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
-  const theme = useTheme();
+  const theme = useThemeContext();
   let ref!: HTMLDivElement;
   onMount(() => {
     const cleanup = draggable({
@@ -420,11 +375,11 @@ const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
   });
 
   return (
-    <div class="flex flex-col w-full h-full">
-      <PanelTitlebar ref={ref} class="pl-2 border-b">
+    <div class="flex flex-col w-full h-full overflow-hidden">
+      <PanelTitlebar ref={ref} class="pl-2">
         {props.leaf().title}
       </PanelTitlebar>
-      <div class="flex grow items-center justify-center">some content</div>
+      <RenderLeafContent leaf={props.leaf} />
     </div>
   );
 };
@@ -455,18 +410,12 @@ const renderTabNativeDragPreview = (props: {
 };
 
 type RenderPanelParentProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
   node: () => Panel.Node.Parent;
-
-  selectedPanel: () => Option.Option<Panel.ID>;
-  selectPanel: (id: Panel.ID) => void;
-
-  dbgHeader: () => boolean;
 };
 
 const RenderPanelParent = (props: RenderPanelParentProps) => {
+  const { tree } = usePanelContext();
+
   return (
     <div class="flex flex-col w-full h-full">
       <MapOption on={props.node().titlebar}>
@@ -476,13 +425,8 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
       <Switch>
         <MatchTag on={props.node().layout} tag="tabs">
           {(tabs) => (
-            <div class="w-full h-full flex flex-col">
-              <TabBar
-                tree={props.tree}
-                setTree={props.setTree}
-                parent={props.node}
-                tabs={tabs}
-              />
+            <div class="grow flex flex-col">
+              <TabBar parent={props.node} tabs={tabs} />
 
               <MapOption
                 on={tabs().active}
@@ -494,23 +438,10 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
               >
                 {(activeId) => {
                   const active = () =>
-                    Panel.Node.Leaf.getOrError(props.tree, { id: activeId() }) //
+                    Panel.Node.Leaf.getOrError(tree, { id: activeId() }) //
                       .pipe(effectEdgeRunSync);
 
-                  return (
-                    <MapOption
-                      on={active().content}
-                      fallback={
-                        <div class="w-full h-full flex items-center justify-center">
-                          no content
-                        </div>
-                      }
-                    >
-                      {(content) => (
-                        <div class="w-full h-full">{content()({})}</div>
-                      )}
-                    </MapOption>
-                  );
+                  return <RenderLeafContent leaf={active} />;
                 }}
               </MapOption>
             </div>
@@ -540,19 +471,12 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
                   <For each={split().children}>
                     {(panelId, idx) => (
                       <>
-                        <RenderPanel
-                          tree={props.tree}
-                          setTree={props.setTree}
+                        <RenderPanelUnderSplit
                           parentSplitDirection={() => split().direction}
                           panelId={() => panelId}
-                          selectedPanel={props.selectedPanel}
-                          selectPanel={props.selectPanel}
-                          dbgHeader={props.dbgHeader}
                         />
                         <Show when={idx() !== split().children.length - 1}>
                           <ResizeHandle
-                            tree={props.tree}
-                            setTree={props.setTree}
                             panelId={() => panelId}
                             splitDirection={() => split().direction}
                             parent={props.node}
@@ -569,6 +493,24 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
         </MatchTag>
       </Switch>
     </div>
+  );
+};
+
+type RenderLeafContentProps = {
+  leaf: () => Panel.Node.Leaf;
+};
+const RenderLeafContent = (props: RenderLeafContentProps) => {
+  return (
+    <MapOption
+      on={props.leaf().content}
+      fallback={
+        <div class="w-full h-full flex items-center justify-center">
+          no content
+        </div>
+      }
+    >
+      {(content) => <div class="w-full overflow-hidden">{content()({})}</div>}
+    </MapOption>
   );
 };
 
@@ -755,9 +697,6 @@ const PanelDropOverlay = (props: PanelDropOverlayProps) => {
 };
 
 type TabBarProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
   parent: () => Panel.Node.Parent;
   tabs: () => Panel.Layout.Tabs;
 };
@@ -792,8 +731,6 @@ const TabBar = (props: TabBarProps) => {
       <For each={props.tabs().children}>
         {(panel, idx) => (
           <TabHandle
-            tree={props.tree}
-            setTree={props.setTree}
             parent={props.parent}
             tabs={props.tabs}
             panelId={() => panel}
@@ -813,9 +750,6 @@ const TabBar = (props: TabBarProps) => {
 };
 
 type TabHandleProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
   parent: () => Panel.Node.Parent;
   tabs: () => Panel.Layout.Tabs;
   panelId: () => Panel.ID.Leaf;
@@ -823,6 +757,12 @@ type TabHandleProps = {
 };
 
 const TabHandle = (props: TabHandleProps) => {
+  const { tree, setTree } = usePanelContext();
+
+  const tab = () =>
+    Panel.Node.Leaf.get(tree, { id: props.panelId() }) //
+      .pipe(effectEdgeRunSync);
+
   const selected = () =>
     Option.getOrElse(
       // false positive
@@ -831,13 +771,9 @@ const TabHandle = (props: TabHandleProps) => {
       () => false,
     );
 
-  const tab = () =>
-    Panel.Node.Leaf.get(props.tree, { id: props.panelId() }) //
-      .pipe(effectEdgeRunSync);
-
   const [hasDroppable, setHasDroppable] = createSignal<boolean>(false);
 
-  const theme = useTheme();
+  const theme = useThemeContext();
   let ref!: HTMLDivElement;
   onMount(() => {
     const cleanup = pdndCombine(
@@ -895,7 +831,7 @@ const TabHandle = (props: TabHandleProps) => {
         hasDroppable() && "bg-theme-panel-tab-background-drop-target",
       )}
       onClick={() =>
-        Panel.Node.Parent.update(props.setTree, {
+        Panel.Node.Parent.update(setTree, {
           id: props.parent().id,
           props: {
             layout: {
@@ -923,9 +859,6 @@ const TabHandle = (props: TabHandleProps) => {
 };
 
 type ResizeHandleProps = {
-  tree: Panel.Tree;
-  setTree: Panel.SetTree;
-
   panelId: () => Panel.ID;
   splitDirection: () => Panel.Layout.SplitDirection;
   parent: () => Panel.Node.Parent;
@@ -933,8 +866,9 @@ type ResizeHandleProps = {
 };
 
 const ResizeHandle = (props: ResizeHandleProps) => {
-  let resizeRef!: HTMLDivElement;
+  const { tree, setTree } = usePanelContext();
 
+  let resizeRef!: HTMLDivElement;
   onMount(() => {
     assert(resizeRef !== undefined);
 
@@ -952,7 +886,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
         Effect.gen(function* () {
           const parent = props.parent();
           const nodeId = props.panelId();
-          const node = yield* Panel.Node.get(props.tree, { id: nodeId });
+          const node = yield* Panel.Node.get(tree, { id: nodeId });
 
           const nextNodeId = parent.layout.children[props.idx() + 1];
           // we should never rendered after be the last one
@@ -960,7 +894,7 @@ const ResizeHandle = (props: ResizeHandleProps) => {
             nextNodeId !== undefined,
             "Trying to place a resize handle when there is no next node",
           );
-          const nextNode = yield* Panel.Node.get(props.tree, {
+          const nextNode = yield* Panel.Node.get(tree, {
             id: nextNodeId,
           });
 
@@ -988,8 +922,6 @@ const ResizeHandle = (props: ResizeHandleProps) => {
         }).pipe(effectEdgeRunSync),
 
       onDrag: ({ location, source }) =>
-        // false positive
-        // eslint-disable-next-line solid/reactivity
         Effect.gen(function* () {
           const split = source.data.split as Panel.Layout.Split;
           const parentSize = source.data.parentSize as number;
@@ -1019,13 +951,13 @@ const ResizeHandle = (props: ResizeHandleProps) => {
           const newPercent = newSize / parentSize;
           const nextNewPercent = nextNewSize / parentSize;
 
-          yield* Panel.Node.update(props.setTree, {
+          yield* Panel.Node.update(setTree, {
             id: nodeId,
             props: {
               percentOfParent: Panel.Percent(newPercent),
             },
           });
-          yield* Panel.Node.update(props.setTree, {
+          yield* Panel.Node.update(setTree, {
             id: nextNodeId,
             props: {
               percentOfParent: Panel.Percent(nextNewPercent),

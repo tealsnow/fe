@@ -5,13 +5,13 @@ import { cn } from "~/lib/cn";
 
 import Theme, { themeCssStyles } from "~/Theme";
 
-type ThemeContext = {
+export type ThemeContext = {
   theme: () => Theme;
   rootElement: () => HTMLElement;
 };
-const ThemeContext = createContext<ThemeContext>();
+export const ThemeContext = createContext<ThemeContext>();
 
-export const useTheme = () => {
+export const useThemeContext = () => {
   const theme = useContext(ThemeContext);
   if (!theme) throw new Error("useTheme must be used within a ThemeProvider");
   return theme;

@@ -1,35 +1,89 @@
-import { createStore } from "solid-js/store";
-import { Component, createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 
 import { Effect, Option } from "effect";
 
 import { cn } from "~/lib/cn";
+import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
+
+import { TextInputLozenge } from "~/ui/components/Lozenge";
 
 import * as Panel from "./Panel";
 import Inspector from "./Inspector";
 import { RenderPanels } from "./render";
-import { TextInputLozenge } from "~/ui/components/Lozenge";
-import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
+import { usePanelContext } from "./PanelContext";
 
-export type PanelsProps = {
-  // Note: not reactive
-  titlebar?: Component<{}>;
+export const setupDebugPanels = () => {
+  const { tree, setTree } = usePanelContext();
+
+  Effect.gen(function* () {
+    const root = tree.root;
+
+    const a = yield* Panel.Node.Parent.create(setTree, {
+      layout: Panel.Layout.Split({ direction: "vertical" }),
+    });
+
+    const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
+    const c = yield* Panel.Node.Parent.create(setTree, {
+      layout: Panel.Layout.Tabs(),
+    });
+    const d = yield* Panel.Node.Parent.create(setTree, {
+      layout: Panel.Layout.Split({ direction: "horizontal" }),
+    });
+    const e = yield* Panel.Node.Parent.create(setTree, {
+      layout: Panel.Layout.Tabs(),
+    });
+    const f = yield* Panel.Node.Leaf.create(setTree, { title: "f" });
+    const g = yield* Panel.Node.Parent.create(setTree, {
+      layout: Panel.Layout.Split({ direction: "vertical" }),
+    });
+
+    yield* Panel.Node.Parent.addChild(setTree, {
+      parentId: d,
+      childId: f,
+    });
+    yield* Panel.Node.Parent.addChild(setTree, {
+      parentId: d,
+      childId: g,
+    });
+
+    const p = yield* Panel.Node.Leaf.create(setTree, {
+      title: "p",
+      content: Option.some(() => (
+        <div class="w-full h-full p-2">
+          <TextInputLozenge color="purple" />
+        </div>
+      )),
+    });
+    const q = yield* Panel.Node.Leaf.create(setTree, { title: "q" });
+    const r = yield* Panel.Node.Leaf.create(setTree, { title: "r" });
+    const s = yield* Panel.Node.Leaf.create(setTree, { title: "s" });
+    const t = yield* Panel.Node.Leaf.create(setTree, { title: "t" });
+
+    yield* Panel.Node.Parent.addChild(setTree, {
+      parentId: root,
+      childId: a,
+    });
+
+    yield* Panel.Node.Parent.addChild(setTree, {
+      parentId: root,
+      childId: e,
+    });
+
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: b });
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: d });
+
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: p });
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: q });
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: r });
+
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: s });
+    yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: t });
+  }).pipe(effectEdgeRunSync);
 };
 
-export const Panels = (props: PanelsProps) => {
-  const [tree, setTree] = createStore<Panel.Tree>(
-    Panel.Tree.create({
-      // intentional
-      // eslint-disable-next-line solid/reactivity
-      titlebar: Option.fromNullable(props.titlebar),
-    }).pipe(Effect.runSync),
-  );
-
-  const [selectedId, setSelectedId] = createSignal<Option.Option<Panel.ID>>(
-    Option.none(),
-  );
-
+export const PanelsRoot = () => {
   // false positive
   // eslint-disable-next-line solid/reactivity
   const [showExplorer, setShowExplorer] = makePersisted(createSignal(false), {
@@ -37,82 +91,9 @@ export const Panels = (props: PanelsProps) => {
     storage: sessionStorage,
   });
 
-  // false positive
-  // eslint-disable-next-line solid/reactivity
-  const [showDbgHeader, setShowDbgHeader] = makePersisted(createSignal(false), {
-    name: "show-panel-debug-header",
-    storage: sessionStorage,
-  });
-
-  onMount(() => {
-    // false positive
-    // eslint-disable-next-line solid/reactivity
-    Effect.gen(function* () {
-      const root = tree.root;
-
-      const a = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Split({ direction: "vertical" }),
-      });
-
-      const b = yield* Panel.Node.Leaf.create(setTree, { title: "b" });
-      const c = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Tabs(),
-      });
-      const d = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Split({ direction: "horizontal" }),
-      });
-      const e = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Tabs(),
-      });
-      const f = yield* Panel.Node.Leaf.create(setTree, { title: "f" });
-      const g = yield* Panel.Node.Parent.create(setTree, {
-        layout: Panel.Layout.Split({ direction: "vertical" }),
-      });
-
-      yield* Panel.Node.Parent.addChild(setTree, {
-        parentId: d,
-        childId: f,
-      });
-      yield* Panel.Node.Parent.addChild(setTree, {
-        parentId: d,
-        childId: g,
-      });
-
-      const p = yield* Panel.Node.Leaf.create(setTree, {
-        title: "p",
-        content: Option.some(() => (
-          <div class="w-full h-full p-2">
-            <TextInputLozenge color="purple" />
-          </div>
-        )),
-      });
-      const q = yield* Panel.Node.Leaf.create(setTree, { title: "q" });
-      const r = yield* Panel.Node.Leaf.create(setTree, { title: "r" });
-      const s = yield* Panel.Node.Leaf.create(setTree, { title: "s" });
-      const t = yield* Panel.Node.Leaf.create(setTree, { title: "t" });
-
-      yield* Panel.Node.Parent.addChild(setTree, {
-        parentId: root,
-        childId: a,
-      });
-
-      yield* Panel.Node.Parent.addChild(setTree, {
-        parentId: root,
-        childId: e,
-      });
-
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: b });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: c });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: a, childId: d });
-
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: p });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: q });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: e, childId: r });
-
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: s });
-      yield* Panel.Node.Parent.addChild(setTree, { parentId: c, childId: t });
-    }).pipe(effectEdgeRunSync);
-  });
+  // onMount(() => {
+  //   setupDebugPanels();
+  // });
 
   return (
     <div class="flex flex-col w-full h-full">
@@ -125,11 +106,6 @@ export const Panels = (props: PanelsProps) => {
                   get: showExplorer,
                   set: setShowExplorer,
                   lbl: "show explorer",
-                },
-                {
-                  get: showDbgHeader,
-                  set: setShowDbgHeader,
-                  lbl: "show debug header",
                 },
               ]}
             >
@@ -159,23 +135,12 @@ export const Panels = (props: PanelsProps) => {
             showExplorer() ? "border-r w-[60%]" : "w-full",
           )}
         >
-          <RenderPanels
-            tree={tree}
-            setTree={setTree}
-            selectedPanel={selectedId}
-            selectPanel={(id) => setSelectedId(Option.some(id))}
-            dbgHeader={showDbgHeader}
-          />
+          <RenderPanels />
         </div>
 
         <Show when={showExplorer()}>
           <div class="w-[40%]">
-            <Inspector
-              tree={tree}
-              setTree={setTree}
-              selectedId={selectedId}
-              setSelectedId={setSelectedId}
-            />
+            <Inspector />
           </div>
         </Show>
       </div>
@@ -183,4 +148,4 @@ export const Panels = (props: PanelsProps) => {
   );
 };
 
-export default Panels;
+export default PanelsRoot;

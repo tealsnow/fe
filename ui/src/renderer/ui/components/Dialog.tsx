@@ -5,7 +5,7 @@ import * as DialogPrimitive from "@kobalte/core/dialog";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 
 import { cn } from "~/lib/cn";
-import { useTheme } from "~/ThemeProvider";
+import { useThemeContext } from "~/ThemeProvider";
 import Button, { ButtonProps } from "./Button";
 import { Icon } from "~/assets/icons";
 
@@ -15,7 +15,7 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal: Component<DialogPrimitive.DialogPortalProps> = (props) => {
   const [, rest] = splitProps(props, ["children"]);
 
-  const themeContext = useTheme();
+  const themeContext = useThemeContext();
 
   return (
     <DialogPrimitive.Portal mount={themeContext.rootElement()} {...rest}>

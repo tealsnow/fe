@@ -730,18 +730,38 @@ export namespace Node {
         ...props,
       }));
 
-    export const create = (
+    export function create(
       setTree: SetTree,
       props: Omit<Node.LeafProps, "id">,
-    ): Effect.Effect<ID.Leaf> =>
-      storeUpdate(setTree, (tree) =>
+    ): Effect.Effect<ID.Leaf>;
+
+    export function create(
+      setTree: SetTree,
+      props: Omit<Node.LeafProps, "id">,
+      { addTo }: { addTo: ID.Parent },
+    ): Effect.Effect<ID.Leaf, NodeNotInTreeError | NodeAlreadyHasParentError>;
+
+    export function create(
+      setTree: SetTree,
+      props: Omit<Node.LeafProps, "id">,
+      { addTo }: { addTo?: ID.Parent } = {},
+    ): Effect.Effect<ID.Leaf, NodeNotInTreeError | NodeAlreadyHasParentError> {
+      return storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           const id = yield* ID.create.Leaf;
           const leaf = yield* init({ id, ...props });
           tree.nodes[id.uuid] = leaf;
+
+          if (addTo)
+            yield* Node.Parent.addChild(setTree, {
+              parentId: addTo,
+              childId: id,
+            });
+
           return id;
         }),
       );
+    }
 
     export const get = (
       tree: Tree,
@@ -890,21 +910,24 @@ export type SetTree = SetStoreFunction<Tree>;
 export namespace Tree {
   export const create = ({
     titlebar,
+    layout,
   }: {
-    titlebar: Option.Option<Component>;
+    titlebar?: Component;
+    layout?: Layout;
   }): Effect.Effect<Tree> =>
     Effect.andThen(ID.create.Parent, (id) => ({
       root: id,
       nodes: {
         [id.uuid]: Node.Parent.init({
           id,
-          titlebar,
+          titlebar: Option.fromNullable(titlebar),
           edgeDropConfig: {
             left: true,
             right: true,
             top: false,
             bottom: false,
           },
+          ...(layout ? { layout } : {}),
         }).pipe(Effect.runSync),
       },
     }));
