@@ -9,6 +9,7 @@ import {
   useContext,
   ParentProps,
   Index,
+  Setter,
 } from "solid-js";
 
 import { Effect, Option } from "effect";
@@ -28,7 +29,7 @@ import { Icon, IconKind, iconKinds } from "~/assets/icons";
 
 import Button from "~/ui/components/Button";
 
-import PanelsRoot from "~/panels/panels";
+import PanelsRoot, { setupDebugPanels } from "~/panels/panels";
 import { PanelContextProvider, usePanelContext } from "./panels/PanelContext";
 import * as Panel from "~/panels/Panel";
 
@@ -82,27 +83,9 @@ const Root = () => {
         setTree,
         {
           title: "dbg",
-          content: Option.some(() => (
-            <div class="flex flex-col p-2">
-              <Button
-                class="w-fit"
-                onClick={() => {
-                  setShowNoise((old) => !old);
-                }}
-              >
-                toggle background noise
-              </Button>
-            </div>
-          )),
-        },
-        { addTo: tabs },
-      );
-
-      yield* Panel.Node.Leaf.create(
-        setTree,
-        {
-          title: "native test",
-          content: Option.some(NativeTest),
+          content: Option.some(async () => ({
+            default: () => <Dbg setShowNoise={setShowNoise} />,
+          })),
         },
         { addTo: tabs },
       );
@@ -110,23 +93,9 @@ const Root = () => {
         setTree,
         {
           title: "theme showcase",
-          content: Option.some(ThemeShowcase),
-        },
-        { addTo: tabs },
-      );
-      yield* Panel.Node.Leaf.create(
-        setTree,
-        {
-          title: "notifications",
-          content: Option.some(Notifications),
-        },
-        { addTo: tabs },
-      );
-      yield* Panel.Node.Leaf.create(
-        setTree,
-        {
-          title: "icons",
-          content: Option.some(Icons),
+          content: Option.some(async () => ({
+            default: () => <ThemeShowcase />,
+          })),
         },
         { addTo: tabs },
       );
@@ -300,74 +269,197 @@ export const WindowContextProvider = (props: WindowContextProviderProps) => {
   );
 };
 
-const NativeTest = () => {
+type DbgProps = { setShowNoise: Setter<boolean> };
+const Dbg = (props: DbgProps) => {
   const plus100 = window.api.native.plus100(5);
   const greet = window.api.native.greet("world");
   const numCpus = window.api.native.getNumCpus();
 
   return (
-    <div class="flex flex-col gap-2 p-2 w-fit">
-      <p>plus100: '{plus100}'</p>
-      <p>greet: '{greet}'</p>
-      <p>numCpus: '{numCpus}'</p>
+    <div class="flex flex-col w-full gap-2">
+      <div class="flex flex-col m-2">
+        <h3 class="text-lg underline">Settings</h3>
 
-      <Button
-        onClick={() =>
-          window.api.native.printArray(new Uint8Array([1, 2, 3, 4, 5]))
-        }
-      >
-        Print array
-      </Button>
+        <Button
+          class="w-fit"
+          onClick={() => {
+            props.setShowNoise((old) => !old);
+          }}
+        >
+          toggle background noise
+        </Button>
+      </div>
 
-      <Button onClick={() => window.electron.ipcRenderer.send("ping")}>
-        ipc test (ping)
-      </Button>
+      <hr />
 
-      <Button onClick={() => window.electron.ipcRenderer.send("reload")}>
-        ipc reload
-      </Button>
+      <div class="flex flex-col gap-2 w-fit m-2">
+        <h3 class="text-lg underline">Native Test</h3>
 
-      {/*<Button onClick={() => window.electron.ipcRenderer.send("restart")}>
+        <p>plus100: '{plus100}'</p>
+        <p>greet: '{greet}'</p>
+        <p>numCpus: '{numCpus}'</p>
+        <Button
+          onClick={() =>
+            window.api.native.printArray(new Uint8Array([1, 2, 3, 4, 5]))
+          }
+        >
+          Print array
+        </Button>
+        <Button onClick={() => window.electron.ipcRenderer.send("ping")}>
+          ipc test (ping)
+        </Button>
+        <Button onClick={() => window.electron.ipcRenderer.send("reload")}>
+          ipc reload
+        </Button>
+        {/*<Button onClick={() => window.electron.ipcRenderer.send("restart")}>
         ipc restart
       </Button>*/}
-    </div>
-  );
-};
+      </div>
 
-const Colors = () => {
-  return (
-    <div class="flex flex-row justify-evenly text-center">
-      <Index each={theming.colors}>
-        {(color) => {
-          return (
-            <div
-              class="m-1 flex size-16 flex-grow flex-row content-center
-                items-center justify-center gap-2 border-2 shadow-md"
-              style={{
-                background: `var(--theme-colors-${color()}-background)`,
-                "border-color": `var(--theme-colors-${color()}-border)`,
-              }}
-            >
-              <div
-                class="size-5 border-2"
-                style={{
-                  background: `var(--theme-colors-${color()}-base)`,
-                  "border-color": `var(--theme-colors-${color()}-border)`,
-                }}
-              />
-              {color()}
-            </div>
-          );
-        }}
-      </Index>
+      <hr />
+
+      <div class="flex flex-col m-2">
+        <h3 class="text-lg underline">Notifications</h3>
+
+        <div class="flex flex-row flex-wrap gap-2">
+          <Button onClick={() => notify("def")}>default</Button>
+
+          <Button
+            onClick={() => {
+              setTimeout(() => {
+                notify("one sec later");
+              }, 1000);
+            }}
+          >
+            in one second
+          </Button>
+
+          <Button onClick={() => notify("success", { type: "success" })}>
+            success
+          </Button>
+
+          <Button onClick={() => notify("error", { type: "error" })}>
+            error
+          </Button>
+
+          <Button onClick={() => notify("warning", { type: "warning" })}>
+            warning
+          </Button>
+
+          <Button onClick={() => notify("info", { type: "info" })}>info</Button>
+
+          <Button
+            onClick={() => {
+              notify(
+                (props) => {
+                  return (
+                    <div class="flex flex-col gap-3 px-2">
+                      <p>Are you sure?</p>
+
+                      <div class="flex flex-row gap-2">
+                        <Button
+                          color="green"
+                          size="small"
+                          onClick={() => props.notif.dismiss("yes")}
+                        >
+                          Yes
+                        </Button>
+
+                        <Button
+                          color="red"
+                          size="small"
+                          onClick={() => props.notif.dismiss("no")}
+                        >
+                          No
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                },
+                { duration: false },
+              );
+            }}
+          >
+            confirm
+          </Button>
+
+          <Button
+            onClick={() => {
+              const succeedOrFail = new Promise<void>((resolve, reject) => {
+                setTimeout(() => {
+                  const _ = Math.random() > 0.5 ? resolve() : reject();
+                }, 2000);
+              });
+              notifyPromise(succeedOrFail, {
+                pending: "Processing your request...",
+                success: "Request completed successfully!",
+                error: "Request failed. Please try again.",
+              }).catch(() => {});
+            }}
+          >
+            promise
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
 
 const ThemeShowcase = () => {
+  const Colors = () => {
+    return (
+      <div class="flex flex-row justify-evenly text-center">
+        <Index each={theming.colors}>
+          {(color) => {
+            return (
+              <div
+                class="m-1 flex size-16 flex-grow flex-row content-center
+                  items-center justify-center gap-2 border-2 shadow-md"
+                style={{
+                  background: `var(--theme-colors-${color()}-background)`,
+                  "border-color": `var(--theme-colors-${color()}-border)`,
+                }}
+              >
+                <div
+                  class="size-5 border-2"
+                  style={{
+                    background: `var(--theme-colors-${color()}-base)`,
+                    "border-color": `var(--theme-colors-${color()}-border)`,
+                  }}
+                />
+                {color()}
+              </div>
+            );
+          }}
+        </Index>
+      </div>
+    );
+  };
+
+  const Icons = () => {
+    return (
+      <div class="flex flex-row flex-wrap justify-evenly text-center">
+        <Index each={iconKinds}>
+          {(kind) => {
+            return (
+              <div
+                class="m-1 flex-grow flex-col content-center items-center
+                  justify-center rounded-sm p-2 text-xs shadow-md"
+              >
+                {kind()}
+                <Icon kind={kind()} class="size-10" />
+              </div>
+            );
+          }}
+        </Index>
+      </div>
+    );
+  };
+
   return (
     <div class="flex-col overflow-auto w-full">
       <Colors />
+      <Icons />
       <Index each={theming.themeDescFlat}>
         {(item) => {
           return (
@@ -382,108 +474,6 @@ const ThemeShowcase = () => {
                 }}
               />
               <p class="font-mono">{item().join("-")}</p>
-            </div>
-          );
-        }}
-      </Index>
-    </div>
-  );
-};
-
-const Notifications = () => {
-  return (
-    <div class="m-2 flex flex-row flex-wrap gap-2">
-      <Button onClick={() => notify("def")}>default</Button>
-
-      <Button
-        onClick={() => {
-          setTimeout(() => {
-            notify("one sec later");
-          }, 1000);
-        }}
-      >
-        in one second
-      </Button>
-
-      <Button onClick={() => notify("success", { type: "success" })}>
-        success
-      </Button>
-
-      <Button onClick={() => notify("error", { type: "error" })}>error</Button>
-
-      <Button onClick={() => notify("warning", { type: "warning" })}>
-        warning
-      </Button>
-
-      <Button onClick={() => notify("info", { type: "info" })}>info</Button>
-
-      <Button
-        onClick={() => {
-          notify(
-            (props) => {
-              return (
-                <div class="flex flex-col gap-3 px-2">
-                  <p>Are you sure?</p>
-
-                  <div class="flex flex-row gap-2">
-                    <Button
-                      color="green"
-                      size="small"
-                      onClick={() => props.notif.dismiss("yes")}
-                    >
-                      Yes
-                    </Button>
-
-                    <Button
-                      color="red"
-                      size="small"
-                      onClick={() => props.notif.dismiss("no")}
-                    >
-                      No
-                    </Button>
-                  </div>
-                </div>
-              );
-            },
-            { duration: false },
-          );
-        }}
-      >
-        confirm
-      </Button>
-
-      <Button
-        onClick={() => {
-          const succeedOrFail = new Promise<void>((resolve, reject) => {
-            setTimeout(() => {
-              const _ = Math.random() > 0.5 ? resolve() : reject();
-            }, 2000);
-          });
-          notifyPromise(succeedOrFail, {
-            pending: "Processing your request...",
-            success: "Request completed successfully!",
-            error: "Request failed. Please try again.",
-          }).catch(() => {});
-        }}
-      >
-        promise
-      </Button>
-    </div>
-  );
-};
-
-const Icons = () => {
-  return (
-    <div class="flex flex-row flex-wrap justify-evenly text-center">
-      <Index each={iconKinds}>
-        {(kind) => {
-          return (
-            <div
-              class="m-1 flex-grow flex-col content-center items-center
-                justify-center rounded-sm p-2 text-xs shadow-md"
-            >
-              {kind()}
-              <Icon kind={kind()} class="size-10" />
             </div>
           );
         }}

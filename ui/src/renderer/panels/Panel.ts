@@ -185,7 +185,7 @@ export namespace Node {
     export type LeafProps = Common & {
       id: ID.Leaf;
       title: string;
-      content?: Option.Option<Component<{}>>;
+      content?: Option.Option<() => Promise<{ default: Component<{}> }>>;
     };
     export const LeafProps = (): Required<PickOptional<LeafProps>> =>
       ({

@@ -10,6 +10,10 @@ import {
   Show,
   Switch,
   Ref,
+  ErrorBoundary,
+  lazy,
+  Suspense,
+  Index,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { css } from "solid-styled-components";
@@ -469,24 +473,24 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
                     </div>
                   }
                 >
-                  <For each={split().children}>
+                  <Index each={split().children}>
                     {(panelId, idx) => (
                       <>
                         <RenderPanelUnderSplit
                           parentSplitDirection={() => split().direction}
-                          panelId={() => panelId}
+                          panelId={() => panelId()}
                         />
-                        <Show when={idx() !== split().children.length - 1}>
+                        <Show when={idx !== split().children.length - 1}>
                           <ResizeHandle
-                            panelId={() => panelId}
+                            panelId={() => panelId()}
                             splitDirection={() => split().direction}
                             parent={props.node}
-                            idx={idx}
+                            idx={() => idx}
                           />
                         </Show>
                       </>
                     )}
-                  </For>
+                  </Index>
                 </Show>
               </div>
             );
@@ -502,16 +506,37 @@ type RenderLeafContentProps = {
 };
 const RenderLeafContent = (props: RenderLeafContentProps) => {
   return (
-    <MapOption
-      on={props.leaf().content}
-      fallback={
-        <div class="flex grow items-center justify-center">no content</div>
-      }
-    >
-      {(content) => (
-        <div class="flex flex-col grow overflow-auto">{content()({})}</div>
+    <ErrorBoundary
+      fallback={(error, reset) => (
+        <div class="flex flex-col grow items-center justify-center gap-2">
+          <p>something went wrong: '{error.message}'</p>
+          <Button color="green" onClick={reset}>
+            Try Again
+          </Button>
+        </div>
       )}
-    </MapOption>
+    >
+      <MapOption
+        on={props.leaf().content}
+        fallback={
+          <div class="flex grow items-center justify-center">no content</div>
+        }
+      >
+        {(content) => {
+          return (
+            <Suspense
+              fallback=<div class="flex grow items-center justify-center">
+                Loading...
+              </div>
+            >
+              <div class="flex flex-col grow overflow-auto">
+                {lazy(content())({})}
+              </div>
+            </Suspense>
+          );
+        }}
+      </MapOption>
+    </ErrorBoundary>
   );
 };
 
@@ -729,16 +754,16 @@ const TabBar = (props: TabBarProps) => {
 
   return (
     <PanelTitlebar class="px-1">
-      <For each={props.tabs().children}>
+      <Index each={props.tabs().children}>
         {(panel, idx) => (
           <TabHandle
             parent={props.parent}
             tabs={props.tabs}
-            panelId={() => panel}
-            idx={idx}
+            panelId={() => panel()}
+            idx={() => idx}
           />
         )}
-      </For>
+      </Index>
       <div
         ref={dropZoneRef}
         class={cn(

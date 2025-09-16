@@ -37,3 +37,7 @@
 @utility -window-drag {
   app-region: no-drag;
 }
+
+hr {
+  @apply text-theme-border;
+}
