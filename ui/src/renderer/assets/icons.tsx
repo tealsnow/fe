@@ -32,12 +32,11 @@ export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
 export const IconProps = {
   noDefaultStyles: false,
 };
-
-export const Icon = (inProps: IconProps) => {
+export const Icon: Component<IconProps> = (inProps) => {
   const props = mergeProps(IconProps, inProps);
   const [local, rest] = splitProps(props, ["class", "kind"]);
 
-  const icon = () => icons[local.kind];
+  const icon = (): IconComponent => icons[local.kind];
 
   return (
     <Dynamic

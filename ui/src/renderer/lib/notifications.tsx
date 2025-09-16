@@ -26,7 +26,9 @@ export type NotificationProviderProps = ParentProps<
   Partial<NotificationConfig>
 >;
 
-export const NotificationProvider = (props: NotificationProviderProps) => {
+export const NotificationProvider: Component<NotificationProviderProps> = (
+  props,
+) => {
   // eslint-disable-next-line solid/reactivity
   if (props.durationMs)
     // eslint-disable-next-line solid/reactivity

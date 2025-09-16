@@ -31,7 +31,9 @@ export const usePanelContext = (): PanelContext => {
 export type PanelContextProviderProps = ParentProps<{
   initialTitlebar?: Component<{}>;
 }>;
-export const PanelContextProvider = (props: PanelContextProviderProps) => {
+export const PanelContextProvider: Component<PanelContextProviderProps> = (
+  props,
+) => {
   const existing = useContext(PanelContext);
   if (existing) throw new Error("Cannot nest `PanelsContext`s");
 

@@ -506,7 +506,7 @@ export namespace Node {
     });
 
   export namespace Parent {
-    export const init = (props: Node.ParentProps) =>
+    export const init = (props: Node.ParentProps): Effect.Effect<Parent> =>
       Effect.sync<Parent>(() => ({
         _tag: "parent",
         ...Data.ParentProps(),
@@ -630,7 +630,7 @@ export namespace Node {
             Order.clamp(Order.number)({ minimum: 0, maximum: 1 }),
           );
 
-          const pushChild = () => {
+          const pushChild = (): void => {
             if (ID.$is("parent")(newChildId)) {
               tsafe.assert(!tsafe.is<Layout.Tabs>(parent.layout));
               parent.layout.children.push(newChildId);
@@ -745,7 +745,7 @@ export namespace Node {
   }
 
   export namespace Leaf {
-    export const init = (props: LeafProps) =>
+    export const init = (props: LeafProps): Effect.Effect<Leaf> =>
       Effect.sync<Leaf>(() => ({
         _tag: "leaf",
         ...Data.LeafProps(),
@@ -935,7 +935,7 @@ export namespace Tree {
     titlebar,
   }: {
     titlebar?: Component;
-  }): Effect.Effect<Tree> =>
+  } = {}): Effect.Effect<Tree> =>
     Effect.andThen(ID.create.Parent, (id) => ({
       root: id,
       nodes: {

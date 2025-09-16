@@ -14,6 +14,7 @@ import {
   lazy,
   Suspense,
   Index,
+  Component,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { css } from "solid-styled-components";
@@ -32,6 +33,7 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
+import { GetOffsetFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/public-utils/element/custom-native-drag-preview/types";
 
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
@@ -47,7 +49,7 @@ import Button from "~/ui/components/Button";
 import * as Panel from "./Panel";
 import { usePanelContext } from "./PanelContext";
 
-export const RenderPanels = () => {
+export const RenderPanels: Component = () => {
   const { tree, setTree } = usePanelContext();
 
   onMount(() => {
@@ -82,6 +84,7 @@ export const RenderPanels = () => {
                 isDropDataForSplitManipCenter(destination),
             },
             ({ source: dragForTab, destination: dropForSplitManipCenter }) => {
+              // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
               const handleDropMiddle = () =>
                 Match.value(dropForSplitManipCenter.panelId).pipe(
                   Match.tag("parent", (parentId) =>
@@ -120,6 +123,7 @@ export const RenderPanels = () => {
               const handleDir = (
                 splitDirection: Panel.Layout.SplitDirection,
                 idx: number,
+                // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
               ) =>
                 Effect.gen(function* () {
                   const newParentId = yield* Panel.Node.promoteToParent(
@@ -178,6 +182,7 @@ export const RenderPanels = () => {
                 const handleEdge = (
                   mainAxis: Panel.Layout.SplitDirection,
                   begin: boolean,
+                  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
                 ) =>
                   Match.value(layout.direction).pipe(
                     // put the dropped panel at the beginning of the children
@@ -255,8 +260,7 @@ export type RenderPanelProps = {
   parentSplitDirection: () => Panel.Layout.SplitDirection;
   panelId: () => Panel.ID;
 };
-
-export const RenderPanelUnderSplit = (props: RenderPanelProps) => {
+export const RenderPanelUnderSplit: Component<RenderPanelProps> = (props) => {
   const { tree, dbg } = usePanelContext();
 
   const panel = createMemo(() =>
@@ -264,7 +268,8 @@ export const RenderPanelUnderSplit = (props: RenderPanelProps) => {
       .pipe(effectEdgeRunSync),
   );
 
-  const isSelected = () => Option.getOrNull(dbg.selectedId()) === panel().id;
+  const isSelected = (): boolean =>
+    Option.getOrNull(dbg.selectedId()) === panel().id;
 
   const [panelHover, setPanelHover] = createSignal(false);
 
@@ -332,7 +337,7 @@ type PanelTitlebarProps = ParentProps<{
   class?: string;
 }>;
 
-const PanelTitlebar = (props: PanelTitlebarProps) => {
+const PanelTitlebar: Component<PanelTitlebarProps> = (props) => {
   return (
     <div
       ref={props.ref}
@@ -350,7 +355,7 @@ type RenderPanelLeafProps = {
   leaf: () => Panel.Node.Leaf;
 };
 
-const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
+const RenderPanelLeaf: Component<RenderPanelLeafProps> = (props) => {
   const theme = useThemeContext();
   let ref!: HTMLDivElement;
   onMount(() => {
@@ -389,7 +394,7 @@ const RenderPanelLeaf = (props: RenderPanelLeafProps) => {
   );
 };
 
-const tabNativeDragPreviewOffset = () =>
+const tabNativeDragPreviewOffset = (): GetOffsetFn =>
   pointerOutsideOfPreview({
     x: "calc(var(--spacing) * 2)",
     y: "calc(var(--spacing) * 2)",
@@ -399,7 +404,7 @@ const renderTabNativeDragPreview = (props: {
   container: HTMLElement;
   theme: Theme;
   title: string;
-}) => {
+}): void => {
   solidRender(
     () => (
       <ThemeProvider theme={props.theme}>
@@ -417,8 +422,7 @@ const renderTabNativeDragPreview = (props: {
 type RenderPanelParentProps = {
   node: () => Panel.Node.Parent;
 };
-
-const RenderPanelParent = (props: RenderPanelParentProps) => {
+const RenderPanelParent: Component<RenderPanelParentProps> = (props) => {
   const { tree } = usePanelContext();
 
   return (
@@ -442,7 +446,7 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
                 }
               >
                 {(activeId) => {
-                  const active = () =>
+                  const active = (): Panel.Node.Leaf =>
                     Panel.Node.Leaf.getOrError(tree, { id: activeId() }) //
                       .pipe(effectEdgeRunSync);
 
@@ -504,7 +508,7 @@ const RenderPanelParent = (props: RenderPanelParentProps) => {
 type RenderLeafContentProps = {
   leaf: () => Panel.Node.Leaf;
 };
-const RenderLeafContent = (props: RenderLeafContentProps) => {
+const RenderLeafContent: Component<RenderLeafContentProps> = (props) => {
   return (
     <ErrorBoundary
       fallback={(error, reset) => (
@@ -543,16 +547,15 @@ const RenderLeafContent = (props: RenderLeafContentProps) => {
 type PanelDropOverlayProps = {
   panel: () => Panel.Node;
 };
-
-type OverlayHandles = {
-  [k in SplitManipKind]: {
-    ref: HTMLDivElement | undefined;
-    hasDrop: Accessor<boolean>;
-    setHasDrop: Setter<boolean>;
+const PanelDropOverlay: Component<PanelDropOverlayProps> = (props) => {
+  type OverlayHandles = {
+    [k in SplitManipKind]: {
+      ref: HTMLDivElement | undefined;
+      hasDrop: Accessor<boolean>;
+      setHasDrop: Setter<boolean>;
+    };
   };
-};
 
-const PanelDropOverlay = (props: PanelDropOverlayProps) => {
   const handles: OverlayHandles = SplitManipKind.reduce((acc, kind) => {
     const [hasDrop, setHasDrop] = createSignal(false);
     acc[kind] = {
@@ -726,8 +729,7 @@ type TabBarProps = {
   parent: () => Panel.Node.Parent;
   tabs: () => Panel.Layout.Tabs;
 };
-
-const TabBar = (props: TabBarProps) => {
+const TabBar: Component<TabBarProps> = (props) => {
   const [hasDroppable, setHasDroppable] = createSignal(false);
 
   let dropZoneRef!: HTMLDivElement;
@@ -782,14 +784,14 @@ type TabHandleProps = {
   idx: () => number;
 };
 
-const TabHandle = (props: TabHandleProps) => {
+const TabHandle: Component<TabHandleProps> = (props) => {
   const { tree, setTree } = usePanelContext();
 
-  const tab = () =>
+  const tab = (): Panel.Node.Leaf =>
     Panel.Node.Leaf.get(tree, { id: props.panelId() }) //
       .pipe(effectEdgeRunSync);
 
-  const selected = () =>
+  const selected = (): boolean =>
     Option.getOrElse(
       // false positive
       // eslint-disable-next-line solid/reactivity
@@ -890,8 +892,7 @@ type ResizeHandleProps = {
   parent: () => Panel.Node.Parent;
   idx: () => number;
 };
-
-const ResizeHandle = (props: ResizeHandleProps) => {
+const ResizeHandle: Component<ResizeHandleProps> = (props) => {
   const { tree, setTree } = usePanelContext();
 
   let resizeRef!: HTMLDivElement;

@@ -1,5 +1,12 @@
 import { Effect, Option, Order } from "effect";
-import { createSignal, For, onCleanup, onMount, Switch } from "solid-js";
+import {
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Switch,
+  Component,
+} from "solid-js";
 import { css } from "solid-styled-components";
 import { MapOption } from "solid-effect";
 import { makePersisted } from "@solid-primitives/storage";
@@ -19,20 +26,19 @@ import PropertyEditor from "~/ui/components/PropertyEditor";
 import * as Panel from "./Panel";
 import { usePanelContext } from "./PanelContext";
 
-const getPanel = (tree: Panel.Tree, id: Panel.ID) =>
+const getPanel = (tree: Panel.Tree, id: Panel.ID): Panel.Node =>
   Panel.Node.getOrError(tree, { id }).pipe(Effect.runSync);
 
 export type RenderPanelPillProps = {
   panelId: () => Panel.ID;
   indent: number;
 };
-
-export const RenderPanelPill = (props: RenderPanelPillProps) => {
+export const RenderPanelPill: Component<RenderPanelPillProps> = (props) => {
   const { tree, dbg } = usePanelContext();
 
-  const panel = () => getPanel(tree, props.panelId());
+  const panel = (): Panel.Node => getPanel(tree, props.panelId());
 
-  const selected = () =>
+  const dbgSelected = (): boolean =>
     Option.getOrElse(
       // false positive
       // eslint-disable-next-line solid/reactivity
@@ -52,7 +58,7 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
         <Button
           color="orange"
           size="small"
-          highlighted={selected()}
+          highlighted={dbgSelected()}
           onClick={(event) => {
             event.stopPropagation();
             dbg.setSelectedId(Option.some(props.panelId()));
@@ -88,11 +94,10 @@ export const RenderPanelPill = (props: RenderPanelPillProps) => {
 type PanelInspectorProps = {
   panelId: () => Panel.ID;
 };
-
-const PanelInspector = (props: PanelInspectorProps) => {
+const PanelInspector: Component<PanelInspectorProps> = (props) => {
   const { tree, setTree, dbg } = usePanelContext();
 
-  const panel = () => getPanel(tree, props.panelId());
+  const panel = (): Panel.Node => getPanel(tree, props.panelId());
 
   const [showConfirmDelete, setShowConfirmDelete] = createSignal(false);
 
@@ -349,7 +354,7 @@ const PanelInspector = (props: PanelInspectorProps) => {
   );
 };
 
-const Inspector = () => {
+const Inspector: Component = () => {
   let componentRef!: HTMLDivElement;
   let sidePanelRef!: HTMLDivElement;
   let dividerRef!: HTMLDivElement;

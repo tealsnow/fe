@@ -224,7 +224,7 @@ export const defaultTheme = themeFromBase16(
   },
 );
 
-export const applyTheme = (theme: Theme) => {
+export const applyTheme = (theme: Theme): void => {
   themeDescFlat.map((path) => {
     const cssVarName = `--theme-${path.join("-")}`;
     // @HACK: typing escape hatch here, it does make sense if you read it
@@ -234,7 +234,7 @@ export const applyTheme = (theme: Theme) => {
   });
 };
 
-export const themeCssStyles = (theme: Theme) => {
+export const themeCssStyles = (theme: Theme): string => {
   return themeDescFlat
     .map((path) => {
       const value = path.reduce((acc, key) => (acc as any)[key], theme);
@@ -243,12 +243,12 @@ export const themeCssStyles = (theme: Theme) => {
     .join(" ");
 };
 
-const themeDescriptionCssVarNames = () =>
+const themeDescriptionCssVarNames = (): Record<string, string>[] =>
   themeDescFlat.map((p) => {
     const name = p.join("-");
     return { [`theme-${name}`]: `var(--theme-${name})` };
   });
 
-export const tailwindColorsConfig = () => {
+export const tailwindColorsConfig = (): Record<string, string> => {
   return flattenArrayOfObjects(themeDescriptionCssVarNames());
 };

@@ -10,6 +10,8 @@ import {
   JSX,
   mergeProps,
   Show,
+  Component,
+  JSXElement,
 } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 import * as uuid from "uuid";
@@ -27,7 +29,8 @@ import { Icon } from "~/assets/icons";
 import { TextInputLozenge } from "~/ui/components/Lozenge";
 import Button from "~/ui/components/Button";
 
-const Row = (props: JSX.HTMLAttributes<HTMLDivElement>) => {
+type RowProps = JSX.HTMLAttributes<HTMLDivElement>;
+const Row: Component<RowProps> = (props) => {
   return (
     <div
       {...props}
@@ -44,12 +47,10 @@ const Row = (props: JSX.HTMLAttributes<HTMLDivElement>) => {
 type KeyProps = JSX.HTMLAttributes<HTMLDivElement> & {
   noPadding?: boolean;
 };
-
 const KeyProps = {
   noPadding: false,
 };
-
-const Key = (inProps: KeyProps) => {
+const Key: Component<KeyProps> = (inProps) => {
   const props = mergeProps(KeyProps, inProps);
 
   const context = useContext(PropertyEditorContext)!;
@@ -74,7 +75,8 @@ const Key = (inProps: KeyProps) => {
   );
 };
 
-const Value = (props: JSX.HTMLAttributes<HTMLDivElement>) => {
+type ValueProps = JSX.HTMLAttributes<HTMLDivElement>;
+const Value: Component<ValueProps> = (props) => {
   return (
     <div
       {...props}
@@ -113,8 +115,9 @@ export const PropertyEditorRootProps = {
     value: "Value",
   },
 };
-
-export const PropertyEditorRoot = (inProps: PropertyEditorRootProps) => {
+export const PropertyEditorRoot: Component<PropertyEditorRootProps> = (
+  inProps,
+) => {
   const props = mergeProps(PropertyEditorRootProps, inProps);
 
   let tableRef!: HTMLDivElement;
@@ -127,7 +130,8 @@ export const PropertyEditorRoot = (inProps: PropertyEditorRootProps) => {
     name: `property-editor-split-width-'${props.name}'`,
   });
   const [widthPx, setWidthPx] = createSignal<number>(0);
-  const updateWidthPx = () => setWidthPx(width() * tableRef.clientWidth);
+  const updateWidthPx = (): number =>
+    setWidthPx(width() * tableRef.clientWidth);
   createEffect(() => updateWidthPx());
 
   const [resizing, setResizing] = createSignal(false);
@@ -265,9 +269,8 @@ export type StringPropertyProps = {
   format?: (value: string) => string;
   onUpdate?: (newValue: string) => void;
 };
-
-export const StringProperty = (props: StringPropertyProps) => {
-  const formattedValue = () =>
+export const StringProperty: Component<StringPropertyProps> = (props) => {
+  const formattedValue = (): string =>
     props.format ? props.format(props.value) : props.value;
 
   const [editing, setEditing] = createSignal(false);
@@ -326,8 +329,7 @@ export type ButtonPropertyProps = ParentProps<{
   key: string;
   onClick?: () => void;
 }>;
-
-export const ButtonProperty = (props: ButtonPropertyProps) => {
+export const ButtonProperty: Component<ButtonPropertyProps> = (props) => {
   return (
     <Row>
       <Key>{props.key}</Key>
@@ -353,14 +355,14 @@ export type EnumPropertyProps<T> = {
   value: T;
   options: T[];
   onChange: (value: T) => void;
-  render?: (value: T) => JSX.Element;
+  render?: (value: T) => JSXElement;
 };
 
 export const EnumPropertyProps = {
   render: (value: any) => <>{value}</>,
 };
 
-export const EnumProperty = <T,>(inProps: EnumPropertyProps<T>) => {
+export const EnumProperty = <T,>(inProps: EnumPropertyProps<T>): JSXElement => {
   const props = mergeProps(EnumPropertyProps, inProps);
 
   return (
@@ -390,14 +392,15 @@ export type ArrayPropertyProps<T> = {
   key: string;
   items: T[];
   previewCount?: number;
-  render: (item: T) => JSX.Element;
-  preview?: (item: T) => JSX.Element;
-  last?: () => JSX.Element;
+  render: (item: T) => JSXElement;
+  preview?: (item: T) => JSXElement;
+  last?: () => JSXElement;
 };
 
-export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>) => {
-  const preview = () => props.preview ?? props.render;
-  const previewCount = () => props.previewCount ?? 3;
+export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>): JSXElement => {
+  const preview = (): ((item: T) => JSXElement) =>
+    props.preview ?? props.render;
+  const previewCount = (): number => props.previewCount ?? 3;
 
   const context = useContext(PropertyEditorContext)!;
   onMount(() => context.setHasArray(true));
@@ -475,10 +478,10 @@ export type AddStringProps = {
   onSubmit: (value: string) => void;
 };
 
-export const AddString = (props: AddStringProps) => {
+export const AddString: Component<AddStringProps> = (props) => {
   let inputRef!: HTMLInputElement;
   const [value, setValue] = createSignal<string | null>(null);
-  const onSubmit = () => {
+  const onSubmit = (): void => {
     const val = value();
     if (!val) return;
 

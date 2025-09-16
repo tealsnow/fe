@@ -10,6 +10,7 @@ import {
   ParentProps,
   Index,
   Setter,
+  Component,
 } from "solid-js";
 
 import { Effect, Option } from "effect";
@@ -33,7 +34,7 @@ import PanelsRoot, { setupDebugPanels } from "~/panels/panels";
 import { PanelContextProvider, usePanelContext } from "./panels/PanelContext";
 import * as Panel from "~/panels/Panel";
 
-export const App = () => {
+export const App: Component = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the
   //  document globally. This is mostly just for the toasts, since they
   //  are built with normal css.
@@ -57,7 +58,7 @@ export const App = () => {
   );
 };
 
-const Root = () => {
+const Root: Component = () => {
   const [showNoise, setShowNoise] = createSignal(true);
 
   const windowCtx = useWindowContext();
@@ -120,8 +121,7 @@ const Root = () => {
   );
 };
 
-type TitlebarProps = {};
-const Titlebar = (_props: TitlebarProps) => {
+const Titlebar: Component = () => {
   type WindowButton = {
     icon: () => IconKind;
     onClick: () => void;
@@ -171,7 +171,7 @@ const Titlebar = (_props: TitlebarProps) => {
   );
 };
 
-const BackgroundNoise = () => {
+const BackgroundNoise: Component = () => {
   return (
     <svg
       class="w-full h-full absolute inset-0 pointer-events-none"
@@ -234,7 +234,9 @@ export const useWindowContext = (): WindowContext => {
   return ctx;
 };
 export type WindowContextProviderProps = ParentProps<{}>;
-export const WindowContextProvider = (props: WindowContextProviderProps) => {
+export const WindowContextProvider: Component<WindowContextProviderProps> = (
+  props,
+) => {
   const [maximized, setMaximized] = createSignal(
     window.electron.ipcRenderer.sendSync("get window/isMaximized"),
   );
@@ -270,7 +272,7 @@ export const WindowContextProvider = (props: WindowContextProviderProps) => {
 };
 
 type DbgProps = { setShowNoise: Setter<boolean> };
-const Dbg = (props: DbgProps) => {
+const Dbg: Component<DbgProps> = (props) => {
   const plus100 = window.api.native.plus100(5);
   const greet = window.api.native.greet("world");
   const numCpus = window.api.native.getNumCpus();
@@ -405,8 +407,8 @@ const Dbg = (props: DbgProps) => {
   );
 };
 
-const ThemeShowcase = () => {
-  const Colors = () => {
+const ThemeShowcase: Component = () => {
+  const Colors: Component = () => {
     return (
       <div class="flex flex-row justify-evenly text-center">
         <Index each={theming.colors}>
@@ -436,7 +438,7 @@ const ThemeShowcase = () => {
     );
   };
 
-  const Icons = () => {
+  const Icons: Component = () => {
     return (
       <div class="flex flex-row flex-wrap justify-evenly text-center">
         <Index each={iconKinds}>

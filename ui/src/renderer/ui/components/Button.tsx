@@ -1,4 +1,4 @@
-import type { JSX, ValidComponent } from "solid-js";
+import type { JSX, JSXElement, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import * as ButtonPrimitive from "@kobalte/core/button";
@@ -65,7 +65,7 @@ type ButtonProps<T extends ValidComponent = "button"> =
 
 const Button = <T extends ValidComponent = "button">(
   props: PolymorphicProps<T, ButtonProps<T>>,
-) => {
+): JSXElement => {
   const [, others] = splitProps(props as ButtonProps, [
     "size",
     "variant",
@@ -77,7 +77,7 @@ const Button = <T extends ValidComponent = "button">(
     "noOnClickToOnMouseDown",
   ]);
 
-  const color = () =>
+  const color = (): ColorKind =>
     typeof props.color === "function" ? props.color() : props.color || "aqua";
 
   // const size = local.variant === "icon" ? "icon" : local.size;
@@ -85,7 +85,7 @@ const Button = <T extends ValidComponent = "button">(
 
   // @HACK: this is a small hack to make onClick trigger with onMouseDown instead
   const othersAny = others as any;
-  const onClickToOnMouseDown = () =>
+  const onClickToOnMouseDown = (): boolean =>
     !props.noOnClickToOnMouseDown &&
     othersAny.onClick !== undefined &&
     typeof othersAny.onClick === "function";

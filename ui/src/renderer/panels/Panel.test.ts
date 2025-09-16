@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+
 import { it, expect, describe } from "@effect/vitest";
 
 import { Effect, Exit, Option } from "effect";
@@ -8,7 +10,7 @@ import { storeUpdate } from "~/lib/SignalObject";
 
 const createTreeStore = (): [Panel.Tree, Panel.SetTree] => {
   const [tree, setTree] = createStore<Panel.Tree>(
-    Panel.Tree.create.pipe(Effect.runSync),
+    Panel.Tree.create().pipe(Effect.runSync),
   );
   return [tree, setTree];
 };

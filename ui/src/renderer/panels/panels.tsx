@@ -1,19 +1,17 @@
-import { createSignal, For, Show } from "solid-js";
+import { Component, createSignal, For, Show } from "solid-js";
 import { makePersisted } from "@solid-primitives/storage";
 
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 
 import { cn } from "~/lib/cn";
 import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
-
-import { TextInputLozenge } from "~/ui/components/Lozenge";
 
 import * as Panel from "./Panel";
 import Inspector from "./Inspector";
 import { RenderPanels } from "./render";
 import { usePanelContext } from "./PanelContext";
 
-export const setupDebugPanels = () => {
+export const setupDebugPanels = (): void => {
   const { tree, setTree } = usePanelContext();
 
   Effect.gen(function* () {
@@ -49,11 +47,6 @@ export const setupDebugPanels = () => {
 
     const p = yield* Panel.Node.Leaf.create(setTree, {
       title: "p",
-      content: Option.some(() => (
-        <div class="w-full h-full p-2">
-          <TextInputLozenge color="purple" />
-        </div>
-      )),
     });
     const q = yield* Panel.Node.Leaf.create(setTree, { title: "q" });
     const r = yield* Panel.Node.Leaf.create(setTree, { title: "r" });
@@ -83,7 +76,7 @@ export const setupDebugPanels = () => {
   }).pipe(effectEdgeRunSync);
 };
 
-export const PanelsRoot = () => {
+export const PanelsRoot: Component = () => {
   // false positive
   // eslint-disable-next-line solid/reactivity
   const [showExplorer, setShowExplorer] = makePersisted(createSignal(false), {

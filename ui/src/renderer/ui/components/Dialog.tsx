@@ -1,4 +1,10 @@
-import type { Component, ComponentProps, JSX, ValidComponent } from "solid-js";
+import type {
+  Component,
+  ComponentProps,
+  JSX,
+  JSXElement,
+  ValidComponent,
+} from "solid-js";
 import { Show, splitProps } from "solid-js";
 
 import * as DialogPrimitive from "@kobalte/core/dialog";
@@ -31,7 +37,7 @@ type DialogOverlayProps<T extends ValidComponent = "div"> =
 
 const DialogOverlay = <T extends ValidComponent = "div">(
   props: PolymorphicProps<T, DialogOverlayProps<T>>,
-) => {
+): JSXElement => {
   const [, rest] = splitProps(props as DialogOverlayProps, ["class"]);
   return (
     <DialogPrimitive.Overlay
@@ -54,7 +60,7 @@ type DialogContentProps<T extends ValidComponent = "div"> =
 
 const DialogContent = <T extends ValidComponent = "div">(
   props: PolymorphicProps<T, DialogContentProps<T>>,
-) => {
+): JSXElement => {
   const [, rest] = splitProps(props as DialogContentProps, [
     "class",
     "noCloseButton",
@@ -113,7 +119,7 @@ type DialogTitleProps<T extends ValidComponent = "h2"> =
 
 const DialogTitle = <T extends ValidComponent = "h2">(
   props: PolymorphicProps<T, DialogTitleProps<T>>,
-) => {
+): JSXElement => {
   const [, rest] = splitProps(props as DialogTitleProps, ["class"]);
   return (
     <DialogPrimitive.Title
@@ -150,7 +156,7 @@ type DialogDescriptionProps<T extends ValidComponent = "p"> =
 
 const DialogDescription = <T extends ValidComponent = "p">(
   props: PolymorphicProps<T, DialogDescriptionProps<T>>,
-) => {
+): JSXElement => {
   const [, rest] = splitProps(props as DialogDescriptionProps, ["class"]);
   return (
     <DialogPrimitive.Description

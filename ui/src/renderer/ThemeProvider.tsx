@@ -1,4 +1,5 @@
 import { useContext } from "solid-js";
+import { Component } from "solid-js";
 import { createContext, ParentProps } from "solid-js";
 
 import { cn } from "~/lib/cn";
@@ -11,7 +12,7 @@ export type ThemeContext = {
 };
 export const ThemeContext = createContext<ThemeContext>();
 
-export const useThemeContext = () => {
+export const useThemeContext = (): ThemeContext => {
   const theme = useContext(ThemeContext);
   if (!theme) throw new Error("useTheme must be used within a ThemeProvider");
   return theme;
@@ -21,8 +22,7 @@ export type ThemeProviderProps = ParentProps<{
   theme?: Theme;
   class?: string;
 }>;
-
-const ThemeProvider = (props: ThemeProviderProps) => {
+const ThemeProvider: Component<ThemeProviderProps> = (props) => {
   let ref!: HTMLDivElement;
 
   const prevContext = useContext(ThemeContext);
