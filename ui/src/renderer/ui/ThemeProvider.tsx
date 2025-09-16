@@ -4,7 +4,7 @@ import { createContext, ParentProps } from "solid-js";
 
 import { cn } from "~/lib/cn";
 
-import Theme, { themeCssStyles } from "~/Theme";
+import Theme, { themeCssStyles } from "~/ui/Theme";
 
 export type ThemeContext = {
   theme: () => Theme;

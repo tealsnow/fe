@@ -41,9 +41,9 @@ import { MatchTag } from "~/lib/MatchTag";
 import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
 
 import { Icon } from "~/assets/icons";
-import ThemeProvider, { useThemeContext } from "~/ThemeProvider";
-import Theme from "~/Theme";
 
+import ThemeProvider, { useThemeContext } from "~/ui/ThemeProvider";
+import Theme from "~/ui/Theme";
 import Button from "~/ui/components/Button";
 
 import * as Panel from "./Panel";

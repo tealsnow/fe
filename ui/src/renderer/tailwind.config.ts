@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 import forms from "@tailwindcss/forms";
-import { tailwindColorsConfig } from "./Theme";
+import { tailwindColorsConfig } from "./ui/Theme";
 
 export default {
   content: [

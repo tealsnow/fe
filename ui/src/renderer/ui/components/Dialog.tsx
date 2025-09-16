@@ -11,9 +11,11 @@ import * as DialogPrimitive from "@kobalte/core/dialog";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 
 import { cn } from "~/lib/cn";
-import { useThemeContext } from "~/ThemeProvider";
-import Button, { ButtonProps } from "./Button";
+
 import { Icon } from "~/assets/icons";
+
+import { useThemeContext } from "~/ui/ThemeProvider";
+import Button, { ButtonProps } from "~/ui/components/Button";
 
 const DialogRoot = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;

@@ -1,8 +1,9 @@
 import { JSX, splitProps, ParentProps, Component } from "solid-js";
 import { cva, VariantProps } from "class-variance-authority";
 
-import { ColorKind } from "~/Theme";
 import { cn } from "~/lib/cn";
+
+import { ColorKind } from "~/ui/Theme";
 
 const inputLozengeStyles = cva(
   "inline-block size-fit content-center bg-(--lozenge-bg) ring-0",

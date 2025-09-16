@@ -17,22 +17,25 @@ import { Effect, Option } from "effect";
 
 import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
 import { cn } from "~/lib/cn";
-
 import {
   NotificationProvider,
   notify,
   notifyPromise,
 } from "~/lib/notifications";
-import * as theming from "~/Theme";
-import ThemeProvider from "~/ThemeProvider";
 
 import { Icon, IconKind, iconKinds } from "~/assets/icons";
 
+import * as theming from "~/ui/Theme";
+import ThemeProvider from "~/ui/ThemeProvider";
 import Button from "~/ui/components/Button";
 
-import PanelsRoot, { setupDebugPanels } from "~/panels/panels";
-import { PanelContextProvider, usePanelContext } from "./panels/PanelContext";
-import * as Panel from "~/panels/Panel";
+// import { setupDebugPanels } from "~/ui/panels/panels";
+import PanelsRoot from "~/ui/panels/panels";
+import {
+  PanelContextProvider,
+  usePanelContext,
+} from "~/ui/panels/PanelContext";
+import * as Panel from "~/ui/panels/Panel";
 
 export const App: Component = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the

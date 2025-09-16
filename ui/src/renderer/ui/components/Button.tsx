@@ -7,7 +7,8 @@ import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
 import { cn } from "~/lib/cn";
-import { ColorKind } from "~/Theme";
+
+import { ColorKind } from "~/ui/Theme";
 
 // @FIXME: in some cases the focus ring causes the outline to be white
 //   not for all variants, but some. I have tried a multitude of fixes, but
