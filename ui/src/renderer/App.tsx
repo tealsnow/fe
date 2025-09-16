@@ -424,7 +424,7 @@ const Dbg: Component<DbgProps> = (props) => {
             onClick={() => {
               const succeedOrFail = new Promise<void>((resolve, reject) => {
                 setTimeout(() => {
-                  const _ = Math.random() > 0.5 ? resolve() : reject();
+                  Math.random() > 0.5 ? resolve() : reject();
                 }, 2000);
               });
               notifyPromise(succeedOrFail, {
@@ -518,6 +518,8 @@ const Dbg: Component<DbgProps> = (props) => {
       </div>
     );
   };
+
+  const _ignore = StatusBarTest;
 
   return (
     <div class="flex flex-col w-full gap-2">
