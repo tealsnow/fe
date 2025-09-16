@@ -249,10 +249,12 @@ export const RenderPanels: Component = () => {
   });
 
   return (
-    <RenderPanelUnderSplit
-      parentSplitDirection={() => "horizontal"}
-      panelId={() => tree.root}
-    />
+    <div class="flex grow overflow-hidden">
+      <RenderPanelUnderSplit
+        parentSplitDirection={() => "horizontal"}
+        panelId={() => tree.root}
+      />
+    </div>
   );
 };
 

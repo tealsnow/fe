@@ -37,6 +37,13 @@ import {
 } from "~/ui/panels/PanelContext";
 import * as Panel from "~/ui/panels/Panel";
 
+import {
+  StatusBarContextProvider,
+  StatusBarItem,
+  useStatusBarContext,
+} from "~/ui/StatusBarContext";
+import StatusBar from "~/ui/StatusBar";
+
 export const App: Component = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the
   //  document globally. This is mostly just for the toasts, since they
@@ -52,9 +59,11 @@ export const App: Component = () => {
     <WindowContextProvider>
       <ThemeProvider theme={theming.defaultTheme} class="w-screen h-screen">
         <NotificationProvider>
-          <PanelContextProvider initialTitlebar={Titlebar}>
-            <Root />
-          </PanelContextProvider>
+          <StatusBarContextProvider>
+            <PanelContextProvider initialTitlebar={Titlebar}>
+              <Root />
+            </PanelContextProvider>
+          </StatusBarContextProvider>
         </NotificationProvider>
       </ThemeProvider>
     </WindowContextProvider>
@@ -106,6 +115,21 @@ const Root: Component = () => {
     }).pipe(effectEdgeRunSync);
   });
 
+  const statusBarCtx = useStatusBarContext();
+
+  onMount(() => {
+    const [cleanup] = statusBarCtx.addItem({
+      item: StatusBarItem.iconButton({
+        icon: () => "bell",
+        onClick: () => {
+          console.log("clicked!");
+        },
+      }),
+      alignment: "right",
+    });
+    onCleanup(() => cleanup());
+  });
+
   return (
     <div
       class={cn(
@@ -119,7 +143,7 @@ const Root: Component = () => {
 
       <PanelsRoot />
 
-      {/*<StatusBar />*/}
+      <StatusBar />
     </div>
   );
 };
@@ -276,12 +300,8 @@ export const WindowContextProvider: Component<WindowContextProviderProps> = (
 
 type DbgProps = { setShowNoise: Setter<boolean> };
 const Dbg: Component<DbgProps> = (props) => {
-  const plus100 = window.api.native.plus100(5);
-  const greet = window.api.native.greet("world");
-  const numCpus = window.api.native.getNumCpus();
-
-  return (
-    <div class="flex flex-col w-full gap-2">
+  const Settings: Component = () => {
+    return (
       <div class="flex flex-col m-2">
         <h3 class="text-lg underline">Settings</h3>
 
@@ -294,9 +314,15 @@ const Dbg: Component<DbgProps> = (props) => {
           toggle background noise
         </Button>
       </div>
+    );
+  };
 
-      <hr />
+  const NativeTest: Component = () => {
+    const plus100 = window.api.native.plus100(5);
+    const greet = window.api.native.greet("world");
+    const numCpus = window.api.native.getNumCpus();
 
+    return (
       <div class="flex flex-col gap-2 w-fit m-2">
         <h3 class="text-lg underline">Native Test</h3>
 
@@ -317,12 +343,18 @@ const Dbg: Component<DbgProps> = (props) => {
           ipc reload
         </Button>
         {/*<Button onClick={() => window.electron.ipcRenderer.send("restart")}>
-        ipc restart
-      </Button>*/}
+          ipc restart
+        </Button>*/}
+        <Button onClick={() => window.api.native.printCwd()}>print cwd</Button>
+        <Button onClick={() => window.api.native.printArch()}>
+          print arch
+        </Button>
       </div>
+    );
+  };
 
-      <hr />
-
+  const NotificationsTest: Component = () => {
+    return (
       <div class="flex flex-col m-2">
         <h3 class="text-lg underline">Notifications</h3>
 
@@ -406,6 +438,96 @@ const Dbg: Component<DbgProps> = (props) => {
           </Button>
         </div>
       </div>
+    );
+  };
+
+  const StatusBarTest: Component = () => {
+    const statusBarCtx = useStatusBarContext();
+
+    const [startText, setStartText] = createSignal("foo bar");
+
+    onMount(() => {
+      const [cleanup1, _id1] = statusBarCtx.addItem({
+        item: StatusBarItem.text({ value: startText }),
+        alignment: "left",
+      });
+
+      const [cleanup2, id2] = statusBarCtx.addItem({
+        item: StatusBarItem.text({ value: () => "asdf" }),
+        alignment: "right",
+      });
+
+      const [cleanup3, _id3] = statusBarCtx.addItem({
+        item: StatusBarItem.textButton({
+          value: () => "button",
+          onClick: () => {
+            console.log("clicked!");
+          },
+        }),
+        alignment: "left",
+      });
+
+      const [cleanup4, _id4] = statusBarCtx.addItem({
+        item: StatusBarItem.textButton({
+          value: () => "other button",
+          onClick: () => {
+            console.log("clicked!");
+          },
+        }),
+        alignment: "right",
+        after: id2,
+      });
+
+      const [cleanup5, _id5] = statusBarCtx.addItem({
+        item: StatusBarItem.iconButton({
+          icon: () => "bell",
+          onClick: () => {
+            console.log("bell!");
+          },
+        }),
+        alignment: "right",
+      });
+
+      const [cleanup6, _id6] = statusBarCtx.addItem({
+        item: StatusBarItem.divider(),
+        alignment: "left",
+      });
+
+      onCleanup(() => {
+        cleanup1();
+        cleanup2();
+        cleanup3();
+        cleanup4();
+        cleanup5();
+        cleanup6();
+      });
+    });
+
+    return (
+      <div class="flex flex-col gap-2 p-2">
+        <h3 class="text-lg underline">Status Bar</h3>
+
+        <Button
+          color="green"
+          onClick={() => {
+            setStartText("updated!");
+          }}
+        >
+          Update text
+        </Button>
+      </div>
+    );
+  };
+
+  return (
+    <div class="flex flex-col w-full gap-2">
+      <Settings />
+      <hr />
+      <NativeTest />
+      <hr />
+      <NotificationsTest />
+      {/*<hr />
+      <StatusBarTest />*/}
     </div>
   );
 };

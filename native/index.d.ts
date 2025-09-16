@@ -6,4 +6,8 @@ export declare function greet(name: string): string
 
 export declare function plus100(input: number): number
 
+export declare function printArch(): void
+
 export declare function printArray(arr: Uint8Array): void
+
+export declare function printCwd(): void

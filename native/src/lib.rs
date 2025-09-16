@@ -21,6 +21,24 @@ pub fn print_array(arr: Uint8Array) {
     println!("rust arr: '{:?}'", arr.iter());
 }
 
+#[napi]
+pub fn print_cwd() -> napi::Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    println!("Current working directory: {:?}", cwd);
+
+    for entry in std::fs::read_dir(cwd)? {
+        println!("File: {:?}", entry?.path());
+    }
+
+    return Ok(());
+}
+
+#[napi]
+pub fn print_arch() {
+    println!("current arch: {}", std::env::consts::ARCH);
+}
+
 #[cfg(test)]
 pub mod test {
     use super::*;

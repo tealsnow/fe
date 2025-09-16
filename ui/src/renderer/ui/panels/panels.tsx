@@ -77,6 +77,10 @@ export const setupDebugPanels = (): void => {
 };
 
 export const PanelsRoot: Component = () => {
+  return <RenderPanels />;
+};
+
+export const PanelsRoot2: Component = () => {
   // false positive
   // eslint-disable-next-line solid/reactivity
   const [showExplorer, setShowExplorer] = makePersisted(createSignal(false), {
@@ -89,7 +93,7 @@ export const PanelsRoot: Component = () => {
   // });
 
   return (
-    <div class="flex flex-col w-full h-full">
+    <div class="flex flex-col grow overflow-hidden">
       <Show when={false}>
         <div class="flex flex-row h-8 border-b border-theme-border items-center p-2">
           <div class="ml-auto flex flex-row gap-2">
@@ -121,7 +125,7 @@ export const PanelsRoot: Component = () => {
         </div>
       </Show>
 
-      <div class="flex h-full w-full">
+      <div class="flex grow overflow-hidden">
         <div
           class={cn(
             "h-full border-theme-border",

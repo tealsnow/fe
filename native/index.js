@@ -511,4 +511,6 @@ module.exports = nativeBinding
 module.exports.getNumCpus = nativeBinding.getNumCpus
 module.exports.greet = nativeBinding.greet
 module.exports.plus100 = nativeBinding.plus100
+module.exports.printArch = nativeBinding.printArch
 module.exports.printArray = nativeBinding.printArray
+module.exports.printCwd = nativeBinding.printCwd
