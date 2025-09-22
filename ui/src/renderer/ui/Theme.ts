@@ -5,6 +5,8 @@ import * as z from "zod";
 import { flattenArrayOfObjects, flattenZodSchemaPaths } from "../lib/flatten";
 import { DeepPartial } from "../lib/type_helpers";
 
+z.config({ jitless: true });
+
 export type ColorKind =
   | "red"
   | "orange"
@@ -48,6 +50,13 @@ export const ThemeColorsSchema = z.object({
   pink: ThemeColorTupleSchema,
 });
 
+export const ThemeWindowRoundingSchema = z.enum([
+  "none",
+  "small",
+  "medium",
+  "large",
+]);
+
 export const ThemeSchema = z.object({
   background: z.string(),
   text: z.string(),
@@ -71,13 +80,16 @@ export const ThemeSchema = z.object({
     background: z.string(),
   }),
   colors: ThemeColorsSchema,
+  windowRounding: ThemeWindowRoundingSchema,
 });
 
-export type Theme = z.infer<typeof ThemeSchema>;
-export default Theme;
 export type ThemeIconTuple = z.infer<typeof ThemeIconTupleSchema>;
 export type ThemeColorTuple = z.infer<typeof ThemeColorTupleSchema>;
 export type ThemeColors = z.infer<typeof ThemeColorsSchema>;
+export type ThemeWindowRounding = z.infer<typeof ThemeWindowRoundingSchema>;
+
+export type Theme = z.infer<typeof ThemeSchema>;
+export default Theme;
 
 export const themeDescFlat = flattenZodSchemaPaths(ThemeSchema);
 
@@ -184,7 +196,7 @@ export const themeFromBase16 = (
     },
     icon: {
       base: autoThemeIconTuple(
-        overrides?.icon?.base?.stroke ?? base16.base05,
+        overrides?.icon?.base?.stroke ?? base16.base04,
         overrides?.icon?.base?.fill,
       ),
       active: autoThemeIconTuple(
@@ -196,6 +208,7 @@ export const themeFromBase16 = (
       background: overrides?.statusbar?.background ?? base16.base01,
     },
     colors,
+    windowRounding: "large",
   };
 };
 
@@ -234,7 +247,9 @@ export const applyTheme = (theme: Theme): void => {
   });
 };
 
-export const themeCssStyles = (theme: Theme): string => {
+export const themeCssStyles = (
+  theme: Omit<Theme, "windowRounding">,
+): string => {
   return themeDescFlat
     .map((path) => {
       const value = path.reduce((acc, key) => (acc as any)[key], theme);

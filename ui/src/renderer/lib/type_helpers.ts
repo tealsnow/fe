@@ -36,7 +36,7 @@ export type DeepPartial<T> = T extends object
  * @template T Type to get optional keys of
  * @returns All optional keys of a type
  */
-export type OptionalKeysOf<T extends object> = Exclude<
+export type TakeOptionalKeys<T extends object> = Exclude<
   {
     [K in keyof T]: T extends Record<K, T[K]> ? never : K;
   }[keyof T],
@@ -47,8 +47,12 @@ export type OptionalKeysOf<T extends object> = Exclude<
  * @template T object to pick optional keys of
  * @returns Creates a type of `T` only containing the optional keys
  */
-export type PickOptional<T extends object> = Pick<T, OptionalKeysOf<T>>;
+export type TakeOptional<T extends object> = Pick<T, TakeOptionalKeys<T>>;
 
-export type DeepWriteable<T> = {
-  -readonly [P in keyof T]: DeepWriteable<T[P]>;
-};
+// export type DeepWriteable<T> = {
+//   -readonly [P in keyof T]: DeepWriteable<T[P]>;
+// };
+
+export type PickPartial<T, K extends keyof T> =
+  /* */
+  Partial<Pick<T, K>> & Omit<T, K>;

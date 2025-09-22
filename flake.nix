@@ -83,10 +83,7 @@
                 libgbm
               ]
             );
-            # ELECTRON_OZONE_PLATFORM_HINT = "auto";
-            ELECTRON_OZONE_PLATFORM_HINT = "wayland";
-            NIXOS_OZONE_WL = 1;
-            GDK_BACKEND = "wayland";
+            ELECTRON_OZONE_PLATFORM_HINT = "auto";
 
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           };
@@ -94,7 +91,8 @@
           shellHook = ''
             # pnpm install
 
-            export PATH="node_modules/.bin:$PATH"
+            export GIT_ROOT=$(git rev-parse --show-toplevel)
+            export PATH="$GIT_ROOT/node_modules/.bin:$PATH"
           '';
         };
       }

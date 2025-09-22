@@ -1,12 +1,29 @@
-import { join } from "path";
+import path, { join } from "path";
+import fs from "fs";
+
 import { app, shell, BrowserWindow, ipcMain } from "electron";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 
 import icon from "../../resources/icon.png?asset";
 
+if (is.dev) {
+  console.log("development build");
+
+  const devUserData = path.resolve(process.cwd(), ".user-data");
+  try {
+    fs.mkdirSync(devUserData, { recursive: true });
+  } catch (err) {
+    console.error("Could not create dev userData folder:", err);
+  }
+  app.setPath("userData", devUserData);
+
+  console.log("set local userData path:", devUserData);
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
+    title: "Fe",
     width: 900,
     height: 670,
     show: false,
@@ -17,6 +34,8 @@ function createWindow(): void {
       sandbox: false,
     },
     titleBarStyle: "hidden",
+    transparent: true,
+    frame: false,
   });
 
   mainWindow.on("ready-to-show", () => {

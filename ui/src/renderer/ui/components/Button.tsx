@@ -51,6 +51,11 @@ const buttonVariants = cva(
         variant: "default",
         class: "border",
       },
+      {
+        variant: "icon",
+        highlighted: true,
+        class: "bg-theme-icon-base-fill/80 border-theme-border/60 border",
+      },
     ],
   },
 );

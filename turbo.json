@@ -1,5 +1,12 @@
 {
   "$schema": "https://turborepo.com/schema.json",
+  "globalPassThroughEnv": [
+    "XDG_SESSION_TYPE",
+    "XDG_RUNTIME_DIR",
+    "WAYLAND_DISPLAY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "ELECTRON_OZONE_PLATFORM_HINT"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"]

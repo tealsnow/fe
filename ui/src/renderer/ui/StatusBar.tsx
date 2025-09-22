@@ -4,14 +4,14 @@ import { MatchTag } from "~/lib/MatchTag";
 import Button from "~/ui/components/Button";
 
 import { StatusBarItem, useStatusBarContext } from "./StatusBarContext";
-import { Icon } from "~/assets/icons";
+import { Icon, icons } from "~/assets/icons";
 
 export type StatusBarProps = {};
 export const StatusBar: Component<StatusBarProps> = () => {
   const ctx = useStatusBarContext();
 
   return (
-    <div class="flex flex-row w-full min-h-6 max-h-6 border-theme-border border-t items-center px-1 py-[1px] text-xs gap-1">
+    <div class="flex flex-row w-full min-h-6 max-h-6 border-theme-border border-t items-center px-1 py-[1px] text-xs gap-1 overflow-hidden">
       <Index each={ctx.items().left}>
         {(id) => <RenderItem item={() => ctx.item_map()[id()]} />}
       </Index>
@@ -49,7 +49,7 @@ const RenderItem: Component<{ item: () => StatusBarItem }> = (props) => {
       <MatchTag on={props.item()} tag="iconButton">
         {(button) => (
           <Button variant="icon" size="icon" onClick={button().onClick}>
-            <Icon kind={button().icon()} />
+            <Icon icon={icons[button().icon()]} />
           </Button>
         )}
       </MatchTag>

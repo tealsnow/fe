@@ -8,9 +8,9 @@ import { Dynamic } from "solid-js/web";
 export * from "./generated/icons";
 
 export type IconComponent = Component<JSX.SvgSVGAttributes<SVGElement>>;
-export type Icons = { [key: string]: IconComponent };
+export type Icons = Record<IconKind, IconComponent>;
 
-const icons: Icons = flattenArrayOfObjects(
+export const icons: Icons = flattenArrayOfObjects(
   Object.entries(
     import.meta.glob("./icons/*.svg", {
       query: "?component-solid",
@@ -22,28 +22,26 @@ const icons: Icons = flattenArrayOfObjects(
       [name]: lazy(() => func() as Promise<{ default: Component }>),
     };
   }),
-);
+) as Icons;
 
 export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
-  kind: IconKind;
+  // kind: IconKind;
+  icon: IconComponent;
   children?: never;
+  noDefaultStyles?: boolean;
 };
 
-export const IconProps = {
-  noDefaultStyles: false,
-};
-export const Icon: Component<IconProps> = (inProps) => {
-  const props = mergeProps(IconProps, inProps);
-  const [local, rest] = splitProps(props, ["class", "kind"]);
+export const Icon: Component<IconProps> = (props) => {
+  const [local, rest] = splitProps(props, ["class", "icon"]);
 
-  const icon = (): IconComponent => icons[local.kind];
+  // const icon = (): IconComponent => icons[local.kind];
 
   return (
     <Dynamic
-      component={icon()}
+      component={props.icon}
       {...rest}
       class={cn(
-        local.kind !== "fe" &&
+        !props.noDefaultStyles &&
           "stroke-theme-icon-base-stroke fill-theme-icon-base-fill",
         local.class,
       )}

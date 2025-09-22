@@ -4,18 +4,11 @@ import {
   onMount,
   Show,
   For,
-  Accessor,
-  createContext,
-  useContext,
-  ParentProps,
   Index,
   Setter,
   Component,
 } from "solid-js";
 
-import { Effect, Option } from "effect";
-
-import effectEdgeRunSync from "~/lib/effectEdgeRunSync";
 import { cn } from "~/lib/cn";
 import {
   NotificationProvider,
@@ -23,19 +16,19 @@ import {
   notifyPromise,
 } from "~/lib/notifications";
 
-import { Icon, IconKind, iconKinds } from "~/assets/icons";
+import { Icon, IconKind, iconKinds, icons } from "~/assets/icons";
 
 import * as theming from "~/ui/Theme";
-import ThemeProvider from "~/ui/ThemeProvider";
+import ThemeProvider, { useThemeContext } from "~/ui/ThemeProvider";
 import Button from "~/ui/components/Button";
 
 // import { setupDebugPanels } from "~/ui/panels/panels";
-import PanelsRoot from "~/ui/panels/panels";
-import {
-  PanelContextProvider,
-  usePanelContext,
-} from "~/ui/panels/PanelContext";
-import * as Panel from "~/ui/panels/Panel";
+// import PanelsRoot from "~/ui/panels/panels";
+// import {
+//   PanelContextProvider,
+//   usePanelContext,
+// } from "~/ui/panels/PanelContext";
+// import * as Panel from "~/ui/panels/Panel";
 
 import {
   StatusBarContextProvider,
@@ -44,29 +37,45 @@ import {
 } from "~/ui/StatusBarContext";
 import StatusBar from "~/ui/StatusBar";
 
+// import { Test as Panel2Test } from "~/ui/panels2/test";
+import { Test as Panel3Test } from "~/ui/panel3/test";
+import { useWindowContext, WindowContextProvider } from "./ui/WindowContext";
+
 export const App: Component = () => {
+  return (
+    <WindowContextProvider>
+      <AfterWindow />
+    </WindowContextProvider>
+  );
+};
+
+const AfterWindow: Component = () => {
   // @NOTE: This applies the theme globally - setting the css vars on the
   //  document globally. This is mostly just for the toasts, since they
   //  are built with normal css.
   //  If that changes to use inline styles and/or tailwind we can remove this
   //
   //  As is stands this works just fine, if and when we do a theme preview
-  //  we can just use the provider, unless we want to show what toast would
+  //  we can just use the provider, unless we want to show what toasts would
   //  look like...
   theming.applyTheme(theming.defaultTheme);
 
+  const windowCtx = useWindowContext();
+
   return (
-    <WindowContextProvider>
-      <ThemeProvider theme={theming.defaultTheme} class="w-screen h-screen">
-        <NotificationProvider>
-          <StatusBarContextProvider>
-            <PanelContextProvider initialTitlebar={Titlebar}>
-              <Root />
-            </PanelContextProvider>
-          </StatusBarContextProvider>
-        </NotificationProvider>
-      </ThemeProvider>
-    </WindowContextProvider>
+    <ThemeProvider
+      theme={theming.defaultTheme}
+      class="flex w-screen h-screen overflow-hidden"
+      applyRounding={!windowCtx.maximized()}
+    >
+      <NotificationProvider>
+        <StatusBarContextProvider>
+          {/*<PanelContextProvider initialTitlebar={Titlebar}>*/}
+          <Root />
+          {/*</PanelContextProvider>*/}
+        </StatusBarContextProvider>
+      </NotificationProvider>
+    </ThemeProvider>
   );
 };
 
@@ -74,46 +83,47 @@ const Root: Component = () => {
   const [showNoise, setShowNoise] = createSignal(true);
 
   const windowCtx = useWindowContext();
+  const themeCtx = useThemeContext();
 
-  onMount(() => {
-    // setupDebugPanels();
-    // return;
+  // onMount(() => {
+  //   // setupDebugPanels();
+  //   // return;
 
-    const { tree, setTree } = usePanelContext();
+  //   const { tree, setTree } = usePanelContext();
 
-    Effect.gen(function* () {
-      const root = tree.root;
+  //   Effect.gen(function* () {
+  //     const root = tree.root;
 
-      const tabs = yield* Panel.Node.Parent.create(
-        setTree,
-        {
-          layout: Panel.Layout.Tabs(),
-        },
-        { addTo: root },
-      );
+  //     const tabs = yield* Panel.Node.Parent.create(
+  //       setTree,
+  //       {
+  //         layout: Panel.Layout.Tabs(),
+  //       },
+  //       { addTo: root },
+  //     );
 
-      yield* Panel.Node.Leaf.create(
-        setTree,
-        {
-          title: "dbg",
-          content: Option.some(async () => ({
-            default: () => <Dbg setShowNoise={setShowNoise} />,
-          })),
-        },
-        { addTo: tabs },
-      );
-      yield* Panel.Node.Leaf.create(
-        setTree,
-        {
-          title: "theme showcase",
-          content: Option.some(async () => ({
-            default: () => <ThemeShowcase />,
-          })),
-        },
-        { addTo: tabs },
-      );
-    }).pipe(effectEdgeRunSync);
-  });
+  //     yield* Panel.Node.Leaf.create(
+  //       setTree,
+  //       {
+  //         title: "dbg",
+  //         content: Option.some(async () => ({
+  //           default: () => <Dbg setShowNoise={setShowNoise} />,
+  //         })),
+  //       },
+  //       { addTo: tabs },
+  //     );
+  //     yield* Panel.Node.Leaf.create(
+  //       setTree,
+  //       {
+  //         title: "theme showcase",
+  //         content: Option.some(async () => ({
+  //           default: () => <ThemeShowcase />,
+  //         })),
+  //       },
+  //       { addTo: tabs },
+  //     );
+  //   }).pipe(effectEdgeRunSync);
+  // });
 
   const statusBarCtx = useStatusBarContext();
 
@@ -133,15 +143,28 @@ const Root: Component = () => {
   return (
     <div
       class={cn(
-        "flex flex-col w-full h-full",
-        !windowCtx.maximized() && "border border-theme-border",
+        "flex flex-col grow overflow-hidden relative",
+        !windowCtx.maximized() && [
+          themeCtx.theme().windowRounding,
+          "electron-corner-smoothing-[60%] border border-theme-border overflow-hidden",
+        ],
       )}
     >
       <Show when={showNoise()}>
-        <BackgroundNoise />
+        <BackgroundNoise class={themeCtx.theme().windowRounding} />
       </Show>
 
-      <PanelsRoot />
+      {/*<PanelsRoot />*/}
+
+      {/*<div class="flex grow">asdf</div>*/}
+
+      {/*<Panel2Test />*/}
+
+      {/*<Titlebar />*/}
+
+      <Panel3Test />
+
+      {/*<ThemeShowcase />*/}
 
       <StatusBar />
     </div>
@@ -173,35 +196,39 @@ const Titlebar: Component = () => {
   ];
 
   return (
-    <>
-      <div class="flex flex-row h-full w-full items-center window-drag">
-        <Icon kind="fe" class="size-4 mx-1" />
+    <div class="flex flex-row h-6 w-full items-center window-drag border-b border-theme-border">
+      <Icon icon={icons["fe"]} noDefaultStyles class="size-4 mx-1" />
 
-        <div class="grow h-full block" />
+      <div class="grow h-full block" />
 
-        <div class="flex h-full -window-drag">
-          <For each={windowButtons()}>
-            {(button) => (
-              <div
-                class="hover:bg-theme-icon-base-fill
+      <div class="flex h-full -window-drag">
+        <For each={windowButtons()}>
+          {(button) => (
+            <div
+              class="hover:bg-theme-icon-base-fill
                 active:bg-theme-icon-active-fill inline-flex h-full w-8
                 items-center justify-center hover:cursor-pointer"
-                onClick={button.onClick}
-              >
-                <Icon kind={button.icon()} class="size-4" />
-              </div>
-            )}
-          </For>
-        </div>
+              onClick={button.onClick}
+            >
+              <Icon icon={icons[button.icon()]} class="size-4" />
+            </div>
+          )}
+        </For>
       </div>
-    </>
+    </div>
   );
 };
 
-const BackgroundNoise: Component = () => {
+type BackgroundNoiseProps = {
+  class?: string;
+};
+const BackgroundNoise: Component<BackgroundNoiseProps> = (props) => {
   return (
     <svg
-      class="w-full h-full absolute inset-0 pointer-events-none"
+      class={cn(
+        "w-full h-full absolute inset-0 pointer-events-none overflow-none",
+        props.class,
+      )}
       style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
     >
       <filter id="noiseFilter" x={0} y={0} width="100%" height="100%">
@@ -242,59 +269,6 @@ const BackgroundNoise: Component = () => {
         fill="transparent"
       />
     </svg>
-  );
-};
-
-export type WindowContext = {
-  maximized: Accessor<boolean>;
-  minimize: () => void;
-  toggleMaximize: () => void;
-  close: () => void;
-};
-export const WindowContext = createContext<WindowContext>();
-export const useWindowContext = (): WindowContext => {
-  const ctx = useContext(WindowContext);
-  if (!ctx)
-    throw new Error(
-      "Cannot use useWindowContext outside of a WindowContextProvider",
-    );
-  return ctx;
-};
-export type WindowContextProviderProps = ParentProps<{}>;
-export const WindowContextProvider: Component<WindowContextProviderProps> = (
-  props,
-) => {
-  const [maximized, setMaximized] = createSignal(
-    window.electron.ipcRenderer.sendSync("get window/isMaximized"),
-  );
-
-  onMount(() => {
-    const cleanups: (() => void)[] = [];
-    cleanups.push(
-      window.electron.ipcRenderer.on("on window/maximized", () =>
-        setMaximized(true),
-      ),
-    );
-    cleanups.push(
-      window.electron.ipcRenderer.on("on window/unmaximized", () =>
-        setMaximized(false),
-      ),
-    );
-    onCleanup(() => cleanups.map((fn) => fn()));
-  });
-
-  return (
-    <WindowContext.Provider
-      value={{
-        maximized,
-        minimize: () => window.electron.ipcRenderer.send("window/minimize"),
-        toggleMaximize: () =>
-          window.electron.ipcRenderer.send("window/toggleMaximize"),
-        close: () => window.electron.ipcRenderer.send("window/close"),
-      }}
-    >
-      {props.children}
-    </WindowContext.Provider>
   );
 };
 
@@ -576,7 +550,11 @@ const ThemeShowcase: Component = () => {
                   justify-center rounded-sm p-2 text-xs shadow-md"
               >
                 {kind()}
-                <Icon kind={kind()} class="size-10" />
+                <Icon
+                  icon={icons[kind()]}
+                  noDefaultStyles={kind() === "fe"}
+                  class="size-10"
+                />
               </div>
             );
           }}

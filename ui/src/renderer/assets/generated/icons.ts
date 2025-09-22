@@ -1,3 +1,3 @@
-export type IconKind = "add" | "bell" | "chevron_right" | "close" | "fe" | "fe_transparent" | "window_maximize" | "window_minimize" | "window_restore";
+export type IconKind = "add" | "adwaita_window_close" | "adwaita_window_maximize" | "adwaita_window_minimize" | "adwaita_window_restore" | "bell" | "chevron_right" | "close" | "fe" | "fe_transparent" | "sidebar_disabled" | "sidebar_enabled" | "window_maximize" | "window_minimize" | "window_restore";
 
-export const iconKinds = ["add", "bell", "chevron_right", "close", "fe", "fe_transparent", "window_maximize", "window_minimize", "window_restore"] as const;
+export const iconKinds = ["add", "adwaita_window_close", "adwaita_window_maximize", "adwaita_window_minimize", "adwaita_window_restore", "bell", "chevron_right", "close", "fe", "fe_transparent", "sidebar_disabled", "sidebar_enabled", "window_maximize", "window_minimize", "window_restore"] as const;

@@ -3,6 +3,14 @@
 
 @config "./tailwind.config.ts";
 
+html {
+  font-size: 14px;
+}
+
+@theme {
+  --spacing: 4px; /* 0.25 * 16 */
+}
+
 @layer base {
   :root {
     @apply cursor-default leading-4 font-normal select-none;
@@ -24,6 +32,9 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-theme-deemphasis;
   }
+  ::-webkit-scrollbar-corner {
+    @apply bg-theme-deemphasis/25;
+  }
 }
 
 @utility no-scrollbar {
@@ -36,6 +47,10 @@
 
 @utility -window-drag {
   app-region: no-drag;
+}
+
+@utility electron-corner-smoothing-* {
+  -electron-corner-smoothing: var(--value([*]));
 }
 
 hr {

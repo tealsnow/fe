@@ -27,7 +27,8 @@ export default tseslint.config(
       "@typescript-eslint/no-namespace": "off", // namespaces are useful
       "no-debugger": "warn", // What am I not allowed to debug my code?
       "require-yield": "off", // Effect generators
-      "solid/reactivity": ["warn"],
+      "solid/reactivity": "warn",
+      "@typescript-eslint/explicit-function-return-type": "warn",
       // gets in the way during dev and well its pretty easy to tell if a
       // function is empty + just putting a comment in it stops the error
       "@typescript-eslint/no-empty-function": "off",

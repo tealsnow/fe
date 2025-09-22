@@ -4,7 +4,7 @@ import * as tsafe from "tsafe";
 import { SetStoreFunction } from "solid-js/store";
 import { Component } from "solid-js";
 
-import { PickOptional } from "~/lib/type_helpers";
+import { TakeOptional } from "~/lib/type_helpers";
 import { storeUpdate } from "~/lib/SignalObject";
 import OptionGetOrFail from "~/lib/OptionGetOrFail";
 
@@ -162,7 +162,7 @@ export namespace Node {
       percentOfParent?: Percent;
       edgeDropConfig?: EdgeDropConfig;
     };
-    export const Common = (): Required<PickOptional<Common>> =>
+    export const Common = (): Required<TakeOptional<Common>> =>
       ({
         parent: Option.none(),
         percentOfParent: Percent(1),
@@ -174,7 +174,7 @@ export namespace Node {
       layout?: Layout;
       titlebar?: Option.Option<Component<{}>>;
     };
-    export const ParentProps = (): Required<PickOptional<ParentProps>> =>
+    export const ParentProps = (): Required<TakeOptional<ParentProps>> =>
       ({
         layout: Layout.Split({ direction: "horizontal" }),
         titlebar: Option.none(),
@@ -187,7 +187,7 @@ export namespace Node {
       title: string;
       content?: Option.Option<() => Promise<{ default: Component<{}> }>>;
     };
-    export const LeafProps = (): Required<PickOptional<LeafProps>> =>
+    export const LeafProps = (): Required<TakeOptional<LeafProps>> =>
       ({
         content: Option.none(),
         ...Common(),
@@ -237,8 +237,8 @@ export namespace Node {
       }
     };
 
-  export type ParentProps = Data.ParentProps & PickOptional<Data.ParentProps>;
-  export type LeafProps = Data.LeafProps & PickOptional<Data.LeafProps>;
+  export type ParentProps = Data.ParentProps & TakeOptional<Data.ParentProps>;
+  export type LeafProps = Data.LeafProps & TakeOptional<Data.LeafProps>;
 
   export const get = (tree: Tree, { id }: { id: ID }): Option.Option<Node> => {
     const node = tree.nodes[id.uuid];
@@ -480,7 +480,10 @@ export namespace Node {
   export const promoteToParent = (
     setTree: SetTree,
     { id, layout }: { id: ID; layout: Layout },
-  ): Effect.Effect<ID.Parent, NodeNotInTreeError | NodeHasNoParentError> =>
+  ): Effect.Effect<
+    ID.Parent,
+    NodeNotInTreeError | NodeHasNoParentError | CannotAddParentToTabsLayout
+  > =>
     Effect.gen(function* () {
       const newParentId = yield* Node.Parent.create(setTree, {
         layout: layout,
@@ -522,7 +525,12 @@ export namespace Node {
       setTree: SetTree,
       props: Omit<Node.ParentProps, "id">,
       { addTo }: { addTo: ID.Parent },
-    ): Effect.Effect<ID.Parent, NodeNotInTreeError | NodeAlreadyHasParentError>;
+    ): Effect.Effect<
+      ID.Parent,
+      | NodeNotInTreeError
+      | NodeAlreadyHasParentError
+      | CannotAddParentToTabsLayout
+    >;
 
     export function create(
       setTree: SetTree,
@@ -530,7 +538,9 @@ export namespace Node {
       { addTo }: { addTo?: ID.Parent } = {},
     ): Effect.Effect<
       ID.Parent,
-      NodeNotInTreeError | NodeAlreadyHasParentError
+      | NodeNotInTreeError
+      | NodeAlreadyHasParentError
+      | CannotAddParentToTabsLayout
     > {
       return storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
@@ -589,7 +599,12 @@ export namespace Node {
     export const addChild = (
       setTree: SetTree,
       { parentId, childId: newChildId }: { parentId: ID.Parent; childId: ID },
-    ): Effect.Effect<void, NodeNotInTreeError | NodeAlreadyHasParentError> =>
+    ): Effect.Effect<
+      void,
+      | NodeNotInTreeError
+      | NodeAlreadyHasParentError
+      | CannotAddParentToTabsLayout
+    > =>
       storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           // This keep the ratio of sizes of existing panels while adding
@@ -601,7 +616,7 @@ export namespace Node {
           const newChild = yield* Node.getOrError(tree, { id: newChildId });
 
           if (ID.$is("parent")(newChildId) && Layout.$is("tabs")(parent.layout))
-            return Effect.fail(
+            return yield* Effect.fail(
               new CannotAddParentToTabsLayout({
                 addingTo: parentId,
                 child: newChildId,
@@ -609,7 +624,7 @@ export namespace Node {
             );
 
           if (Option.isSome(newChild.parent))
-            return Effect.fail(
+            return yield* Effect.fail(
               new NodeAlreadyHasParentError({ id: newChildId }),
             );
 
@@ -767,7 +782,12 @@ export namespace Node {
       setTree: SetTree,
       props: Omit<Node.LeafProps, "id">,
       { addTo }: { addTo?: ID.Parent } = {},
-    ): Effect.Effect<ID.Leaf, NodeNotInTreeError | NodeAlreadyHasParentError> {
+    ): Effect.Effect<
+      ID.Leaf,
+      | NodeNotInTreeError
+      | NodeAlreadyHasParentError
+      | CannotAddParentToTabsLayout
+    > {
       return storeUpdate(setTree, (tree) =>
         Effect.gen(function* () {
           const id = yield* ID.create.Leaf;
