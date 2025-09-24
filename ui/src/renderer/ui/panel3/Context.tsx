@@ -1,4 +1,10 @@
-import { Component, createEffect, ParentProps, useContext } from "solid-js";
+import {
+  Component,
+  createEffect,
+  createSignal,
+  ParentProps,
+  useContext,
+} from "solid-js";
 import { createStore, SetStoreFunction } from "solid-js/store";
 
 import createHotStableContext from "~/lib/createHotStableContext";
@@ -10,8 +16,12 @@ import { Console, DateTime, Effect } from "effect";
 export type PanelContext = {
   workspace: Workspace;
   setWorkspace: SetStoreFunction<Workspace>;
+
   leafRecord: LeafRecord;
   setLeafRecord: SetStoreFunction<LeafRecord>;
+
+  historyBatchBegin: () => void;
+  historyBatchEnd: () => void;
 
   getLeafContent: (id: LeafID) => LeafContent;
 };
@@ -27,13 +37,12 @@ export const usePanelContext = (): PanelContext => {
   return ctx;
 };
 
-export type PanelContextProviderProps = ParentProps<{
-  initialWorkspace: Workspace;
-  initialLeafRecord: LeafRecord;
-}>;
-export const PanelContextProvider: Component<PanelContextProviderProps> = (
-  props,
-) => {
+export const PanelContextProvider: Component<
+  ParentProps<{
+    initialWorkspace: Workspace;
+    initialLeafRecord: LeafRecord;
+  }>
+> = (props) => {
   const [workspace, setWorkspace] = createStore<Workspace>(
     props.initialWorkspace,
   );
@@ -41,7 +50,11 @@ export const PanelContextProvider: Component<PanelContextProviderProps> = (
     props.initialLeafRecord,
   );
 
+  const [historyBatch, setHistoryBatch] = createSignal(false);
+
   createEffect(() => {
+    if (historyBatch()) return;
+
     const update = trackStore(workspace);
 
     Console.withGroup(
@@ -49,7 +62,7 @@ export const PanelContextProvider: Component<PanelContextProviderProps> = (
         console.log(JSON.stringify(update, null, 2));
       }),
       {
-        label: `createEffect update - ${DateTime.now.pipe(Effect.runSync)}`,
+        label: `update - ${DateTime.now.pipe(Effect.runSync)}`,
         collapsed: true,
       },
     ).pipe(Effect.runSync);
@@ -67,8 +80,12 @@ export const PanelContextProvider: Component<PanelContextProviderProps> = (
       value={{
         workspace,
         setWorkspace,
+
         leafRecord,
         setLeafRecord,
+
+        historyBatchBegin: () => setHistoryBatch(true),
+        historyBatchEnd: () => setHistoryBatch(false),
 
         getLeafContent,
       }}

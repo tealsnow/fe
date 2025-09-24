@@ -1,51 +1,66 @@
 import {
   Component,
   createEffect,
-  createMemo,
   For,
   Index,
+  onMount,
   ParentProps,
   Show,
   Switch,
+  onCleanup,
+  createSignal,
 } from "solid-js";
-import { Option, Effect, Match } from "effect";
+import { Option, Effect, Match, Order, pipe, Equal } from "effect";
+import { MapOption } from "solid-effect";
+import { css } from "solid-styled-components";
 
-import { cn } from "~/lib/cn";
+import {
+  draggable,
+  // dropTargetForElements,
+  // monitorForElements,
+} from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+// import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
+import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/disable-native-drag-preview";
+// import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
+import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
+// import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
+// import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
+// import { GetOffsetFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/public-utils/element/custom-native-drag-preview/types";
 
 import { Icon, IconKind, icons } from "~/assets/icons";
+
+import { cn } from "~/lib/cn";
+import Percent from "~/lib/Percent";
+import { MatchTag } from "~/lib/MatchTag";
+import assert from "~/lib/assert";
+import Integer from "~/lib/Integer";
 
 import { useWindowContext } from "~/ui/WindowContext";
 import Button from "~/ui/components/Button";
 
 import { usePanelContext } from "./Context";
 import {
-  Workspace,
-  updateSidebar,
   toggleSidebar,
   WorkspaceSidebars,
   WorkspaceSidebarSide,
   PanelNode,
   LeafContent,
-  updateNode,
   selectTab,
   SplitAxis,
+  updateSplitChildPercent,
+  SplitChild,
+  updateNode,
 } from "./data";
-import { Motion, Presence } from "solid-motionone";
-import Percent from "~/lib/Percent";
-import { createStore } from "solid-js/store";
-import { MatchTag } from "~/lib/MatchTag";
-import assert from "~/lib/assert";
-import Integer from "~/lib/Integer";
-import { MapOption } from "solid-effect";
 
-export type ViewPanelTitlebarProps = ParentProps<{
-  class?: string;
-}>;
-export const ViewPanelTitlebar: Component<ViewPanelTitlebarProps> = (props) => {
+export const ViewPanelTitlebar: Component<
+  ParentProps<{
+    class?: string;
+  }>
+> = (props) => {
   return (
     <div
       class={cn(
-        "flex flex-row h-6 w-full items-center border-theme-border border-b",
+        "flex flex-row min-h-6 max-h-6 w-full items-center border-theme-border border-b",
         props.class,
       )}
     >
@@ -54,12 +69,9 @@ export const ViewPanelTitlebar: Component<ViewPanelTitlebarProps> = (props) => {
   );
 };
 
-export type ViewWorkspaceTitlebarProps = {
+export const ViewWorkspaceTitlebar: Component<{
   sidebars: () => WorkspaceSidebars;
-};
-export const ViewWorkspaceTitlebar: Component<ViewWorkspaceTitlebarProps> = (
-  props,
-) => {
+}> = (props) => {
   const ctx = usePanelContext();
 
   type WindowButton = {
@@ -200,77 +212,83 @@ export const ViewWorkspaceTitlebar: Component<ViewWorkspaceTitlebarProps> = (
   );
 };
 
-export type ViewWorkspaceProps = {};
-export const ViewWorkspace: Component<ViewWorkspaceProps> = () => {
+export const ViewWorkspace: Component<{}> = () => {
   const ctx = usePanelContext();
 
-  const sidebars = createMemo(() => ctx.workspace.sidebars);
-
-  const [sidebarSizes, setSidebarSizes] = createStore<
-    Record<WorkspaceSidebarSide, Percent>
-  >({
-    left: Percent(0.25),
-    right: Percent(0.25),
-    bottom: Percent(0.25),
-  });
-
-  const sidebarStyles: Record<WorkspaceSidebarSide, string> = {
-    left: "border-r",
-    right: "border-l",
-    bottom: "border-t",
-  };
-
-  const sidebarSizeType: Record<WorkspaceSidebarSide, "width" | "height"> = {
-    left: "width",
-    right: "width",
-    bottom: "height",
-  };
-
-  const sidebarAxis: Record<WorkspaceSidebarSide, "x" | "y"> = {
-    left: "x",
-    right: "x",
-    bottom: "y",
-  };
-
-  const sidebarAxisSign: Record<WorkspaceSidebarSide, "-" | "+"> = {
-    left: "-",
-    right: "+",
-    bottom: "+",
-  };
+  const sidebars = (): WorkspaceSidebars => ctx.workspace.sidebars;
 
   const sidebarSize = (side: WorkspaceSidebarSide): string =>
-    `${sidebarSizes[side] * 100}%`;
+    `${sidebars()[side].size * 100}%`;
 
-  type ViewSidebarProps = {
+  const ViewSidebar: Component<{
     side: WorkspaceSidebarSide;
-  };
-  const ViewSidebar: Component<ViewSidebarProps> = (props) => {
+  }> = (props) => {
+    const sizeType: Record<WorkspaceSidebarSide, "width" | "height"> = {
+      left: "width",
+      right: "width",
+      bottom: "height",
+    };
+
     return (
-      <Presence initial={false}>
-        <Show when={sidebars()[props.side].enabled}>
-          <Motion.div
-            class={cn(
-              "relative flex border-theme-border overflow-none",
-              sidebarStyles[props.side],
-            )}
-            style={{ [sidebarSizeType[props.side]]: sidebarSize(props.side) }}
-            initial={{
-              [sidebarAxis[props.side]]: `${sidebarAxisSign[props.side]}100%`,
-            }}
-            animate={{
-              [sidebarAxis[props.side]]: 0,
-            }}
-            // @ts-expect-error 2322: false positive
-            exit={{
-              [sidebarAxis[props.side]]: `${sidebarAxisSign[props.side]}100%`,
-              transition: { duration: 0.05, easing: "ease-out" },
-            }}
-            transition={{ duration: 0.05, easing: "ease-in" }}
-          >
-            <ViewPanelNode node={() => sidebars()[props.side].node} />
-          </Motion.div>
-        </Show>
-      </Presence>
+      <Show when={sidebars()[props.side].enabled}>
+        <div
+          class="relative flex border-theme-border overflow-none"
+          style={{
+            [sizeType[props.side]]: sidebarSize(props.side),
+          }}
+        >
+          <ViewPanelNode
+            node={() => sidebars()[props.side].node}
+            updateNode={(fn) =>
+              // false positive
+              // eslint-disable-next-line solid/reactivity
+              ctx.setWorkspace("sidebars", (sidebars) => ({
+                ...sidebars,
+                [props.side]: {
+                  ...sidebars[props.side],
+                  node: fn(sidebars[props.side].node),
+                },
+              }))
+            }
+          />
+        </div>
+      </Show>
+    );
+  };
+
+  const SidebarHandle: Component<{
+    side: WorkspaceSidebarSide;
+  }> = (props) => {
+    const axis: Record<WorkspaceSidebarSide, SplitAxis> = {
+      left: "horizontal",
+      right: "horizontal",
+      bottom: "vertical",
+    };
+    const sign: Record<WorkspaceSidebarSide, "+" | "-"> = {
+      left: "+",
+      right: "-",
+      bottom: "-",
+    };
+
+    return (
+      <Show when={sidebars()[props.side].enabled}>
+        <WorkspaceResizeHandle
+          axis={axis[props.side]}
+          size={sidebars()[props.side].size}
+          updateSize={(size) =>
+            // false positive
+            // eslint-disable-next-line solid/reactivity
+            ctx.setWorkspace("sidebars", (sidebars) => ({
+              ...sidebars,
+              [props.side]: {
+                ...sidebars[props.side],
+                size,
+              },
+            }))
+          }
+          sign={sign[props.side]}
+        />
+      </Show>
     );
   };
 
@@ -282,32 +300,58 @@ export const ViewWorkspace: Component<ViewWorkspaceProps> = () => {
 
       <div class="flex flex-row grow">
         <ViewSidebar side="left" />
+        <SidebarHandle side="left" />
 
         <div class="flex flex-col grow">
           <div class="flex grow">
-            <ViewPanelNode node={() => ctx.workspace.root} />
+            <ViewPanelNode
+              node={() => ctx.workspace.root}
+              updateNode={(fn) => ctx.setWorkspace("root", fn)}
+            />
           </div>
 
+          <SidebarHandle side="bottom" />
           <ViewSidebar side="bottom" />
         </div>
 
+        <SidebarHandle side="right" />
         <ViewSidebar side="right" />
       </div>
     </div>
   );
 };
 
-export type ViewPanelNodeProps = {
+export const ViewPanelNode: Component<{
   node: () => PanelNode;
-};
-export const ViewPanelNode: Component<ViewPanelNodeProps> = (props) => {
+  updateNode: (fn: (node: PanelNode) => PanelNode) => void;
+}> = (props) => {
   return (
     <Switch>
       <MatchTag on={props.node()} tag={"Split"}>
-        {(split) => <ViewPanelNodeSplit split={split} />}
+        {(split) => (
+          <ViewPanelNodeSplit
+            split={split}
+            updateSplit={(fn) =>
+              props.updateNode((node) => {
+                assert(PanelNode.$is("Split")(node));
+                return fn(node);
+              })
+            }
+          />
+        )}
       </MatchTag>
       <MatchTag on={props.node()} tag={"Tabs"}>
-        {(tabs) => <ViewPanelNodeTabs tabs={tabs} />}
+        {(tabs) => (
+          <ViewPanelNodeTabs
+            tabs={tabs}
+            updateTabs={(fn) =>
+              props.updateNode((node) => {
+                assert(PanelNode.$is("Tabs")(node));
+                return fn(node);
+              })
+            }
+          />
+        )}
       </MatchTag>
       <MatchTag on={props.node()} tag={"Leaf"}>
         {(leaf) => <ViewPanelNodeLeaf leaf={leaf} />}
@@ -316,15 +360,11 @@ export const ViewPanelNode: Component<ViewPanelNodeProps> = (props) => {
   );
 };
 
-export type ViewPanelNodeSplitProps = {
+export const ViewPanelNodeSplit: Component<{
   split: () => PanelNode.Split;
-};
-export const ViewPanelNodeSplit: Component<ViewPanelNodeSplitProps> = (
-  props,
-) => {
-  // for why?
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  const axis = () => props.split().axis;
+  updateSplit: (fn: (split: PanelNode.Split) => PanelNode.Split) => void;
+}> = (props) => {
+  const axis = (): SplitAxis => props.split().axis;
 
   const layoutSize: Record<SplitAxis, "height" | "width"> = {
     vertical: "height",
@@ -341,81 +381,344 @@ export const ViewPanelNodeSplit: Component<ViewPanelNodeSplitProps> = (
     horizontal: "h-full",
   };
 
-  const borderSize: Record<SplitAxis, "h-[1px]" | "w-[1px]"> = {
-    vertical: "h-[1px]",
-    horizontal: "w-[1px]",
-  };
-
   return (
     <div class={cn("flex grow", layoutDirection[axis()])}>
-      <For each={props.split().children}>
+      <Index each={props.split().children}>
         {(child, idx) => {
           return (
             <>
               <div
                 class={cn("flex border-theme-border", layoutFullAxis[axis()])}
                 style={{
-                  [layoutSize[axis()]]: `${child.percent * 100}%`,
+                  [layoutSize[axis()]]: `${child().percent * 100}%`,
                 }}
               >
-                <ViewPanelNode node={() => child.node} />
+                <ViewPanelNode
+                  node={() => child().node}
+                  updateNode={(fn) =>
+                    props.updateSplit((split) => {
+                      const res = updateNode({
+                        node: split,
+                        match: (node) => Equal.equals(node, child().node),
+                        fn,
+                      }).pipe(Effect.runSync);
+                      assert(PanelNode.$is("Split")(res));
+                      return res;
+                    })
+                  }
+                />
               </div>
-              <Show when={idx() !== props.split().children.length - 1}>
-                <div
-                  class={cn(
-                    "bg-theme-border",
-                    borderSize[axis()],
-                    layoutFullAxis[axis()],
-                  )}
+
+              <Show when={idx !== props.split().children.length - 1}>
+                <SplitResizeHandle
+                  updateSplit={(fn) => props.updateSplit(fn)}
+                  currentChild={child}
+                  nextChild={() => props.split().children[idx + 1]}
+                  idx={() => idx}
+                  axis={() => props.split().axis}
                 />
               </Show>
             </>
           );
         }}
-      </For>
+      </Index>
     </div>
   );
 };
 
-export type ViewPanelNodeTabsProps = {
-  tabs: () => PanelNode.Tabs;
-};
-export const ViewPanelNodeTabs: Component<ViewPanelNodeTabsProps> = (props) => {
+const SplitResizeHandle: Component<{
+  updateSplit: (fn: (split: PanelNode.Split) => PanelNode.Split) => void;
+  currentChild: () => SplitChild;
+  nextChild: () => SplitChild;
+  idx: () => number;
+  axis: () => SplitAxis;
+}> = (props) => {
   const ctx = usePanelContext();
 
-  createEffect(() => {
-    if (props.tabs().children.some((child) => !PanelNode.$is("Leaf")(child)))
-      throw new Error("Attempt to render tabs with non all leaf children");
+  const [resizing, setResizing] = createSignal(false);
+
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = draggable({
+      element: ref,
+
+      onGenerateDragPreview: ({ nativeSetDragImage }) => {
+        disableNativeDragPreview({ nativeSetDragImage });
+      },
+      onDragStart: () => {
+        console.groupCollapsed("PanelNode split resize");
+        console.log("drag start");
+
+        setResizing(true);
+
+        preventUnhandled.start();
+
+        ctx.historyBatchBegin();
+      },
+      onDrop: () => {
+        console.log("drag stop");
+
+        setResizing(false);
+
+        preventUnhandled.stop();
+
+        console.groupEnd();
+        ctx.historyBatchEnd();
+      },
+
+      getInitialData: () => {
+        const parentRect = ref.parentElement?.getBoundingClientRect();
+        assert(parentRect !== undefined);
+
+        const parentSizes: Record<SplitAxis, number> = {
+          vertical: parentRect.height,
+          horizontal: parentRect.width,
+        };
+        const parentSize = parentSizes[props.axis()];
+
+        const currentSize = parentSize * props.currentChild().percent;
+        const nextSize = parentSize * props.nextChild().percent;
+
+        return {
+          parentSize,
+          currentSize,
+          nextSize,
+        };
+      },
+
+      onDrag: ({ location, source }) => {
+        console.log("on drag");
+
+        const parentSize = source.data.parentSize as number;
+        const currentSize = source.data.currentSize as number;
+        const nextSize = source.data.nextSize as number;
+
+        const deltas: Record<SplitAxis, () => number> = {
+          vertical: () =>
+            location.current.input.clientY - location.initial.input.clientY,
+          horizontal: () =>
+            location.current.input.clientX - location.initial.input.clientX,
+        };
+        const delta = deltas[props.axis()]();
+
+        const totalAvailableSpace = currentSize + nextSize;
+        const margin = parentSize * 0.05;
+
+        const clamp = Order.clamp(Order.number)({
+          minimum: margin,
+          maximum: totalAvailableSpace - margin,
+        });
+        const newCurrentSize = clamp(currentSize + delta);
+        const newNextSize = clamp(nextSize - delta);
+
+        const newCurrentPercent = newCurrentSize / parentSize;
+        const newNextPercent = newNextSize / parentSize;
+
+        console.log(
+          "new current",
+          newCurrentPercent,
+          "new next",
+          newNextPercent,
+        );
+
+        // false positive
+        // eslint-disable-next-line solid/reactivity
+        props.updateSplit((split) => {
+          return pipe(
+            updateSplitChildPercent({
+              split,
+              childIndex: Integer(props.idx()),
+              percent: Percent(newCurrentPercent),
+            }),
+            Effect.flatMap((split) =>
+              updateSplitChildPercent({
+                split,
+                childIndex: Integer(props.idx() + 1),
+                percent: Percent(newNextPercent),
+              }),
+            ),
+            Effect.catchTag("OutOfBoundsError", (err) => {
+              console.error(
+                "Split child index out of bounds when trying to resize split.",
+                err,
+              );
+              return Effect.sync(() => split);
+            }),
+            Effect.runSync,
+          );
+        });
+      },
+    });
+    onCleanup(() => cleanup());
   });
 
-  const active = createMemo(() =>
-    // for why?
-    // eslint-disable-next-line solid/reactivity
-    Option.map(props.tabs().active, (idx) => {
-      const tab = props.tabs().children[idx];
-      assert(PanelNode.$is("Leaf")(tab));
-      return tab;
-    }),
+  return (
+    <ResizeHandleRender ref={ref} axis={props.axis()} resizing={resizing} />
   );
+};
+
+const WorkspaceResizeHandle: Component<{
+  axis: SplitAxis;
+  size: Percent;
+  updateSize: (size: Percent) => void;
+  sign: "+" | "-";
+}> = (props) => {
+  const ctx = usePanelContext();
+
+  const [resizing, setResizing] = createSignal(false);
+
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = draggable({
+      element: ref,
+
+      onGenerateDragPreview: ({ nativeSetDragImage }) => {
+        disableNativeDragPreview({ nativeSetDragImage });
+      },
+      onDragStart: () => {
+        console.groupCollapsed("workspace split resize");
+        console.log("drag start");
+
+        setResizing(true);
+
+        preventUnhandled.start();
+
+        ctx.historyBatchBegin();
+      },
+      onDrop: () => {
+        console.log("drag stop");
+
+        setResizing(false);
+
+        preventUnhandled.stop();
+
+        console.groupEnd();
+        ctx.historyBatchEnd();
+      },
+
+      getInitialData: () => {
+        const parentRect = ref.parentElement?.getBoundingClientRect();
+        assert(parentRect !== undefined);
+
+        const parentSizes: Record<SplitAxis, number> = {
+          vertical: parentRect.height,
+          horizontal: parentRect.width,
+        };
+        const parentSize = parentSizes[props.axis];
+
+        const currentSize = parentSize * props.size;
+
+        return {
+          parentSize,
+          currentSize,
+        };
+      },
+
+      onDrag: ({ location, source }) => {
+        console.log("on drag");
+
+        const parentSize = source.data.parentSize as number;
+        const currentSize = source.data.currentSize as number;
+
+        const deltas: Record<SplitAxis, () => number> = {
+          vertical: () =>
+            location.current.input.clientY - location.initial.input.clientY,
+          horizontal: () =>
+            location.current.input.clientX - location.initial.input.clientX,
+        };
+        const delta = deltas[props.axis]();
+
+        const margin = parentSize * 0.05;
+
+        const clamp = Order.clamp(Order.number)({
+          minimum: margin,
+          maximum: parentSize - margin,
+        });
+        const newCurrentSize = clamp(
+          props.sign === "+" ? currentSize + delta : currentSize - delta,
+        );
+
+        const newCurrentPercent = newCurrentSize / parentSize;
+
+        console.log("new size", newCurrentPercent);
+
+        props.updateSize(Percent(newCurrentPercent));
+      },
+    });
+    onCleanup(() => cleanup());
+  });
+
+  return <ResizeHandleRender ref={ref} axis={props.axis} resizing={resizing} />;
+};
+
+export const ResizeHandleRender: Component<{
+  ref?: HTMLDivElement;
+  axis: SplitAxis;
+  resizing: () => boolean;
+}> = (props) => {
+  const axisStyles: Record<SplitAxis, string> = {
+    vertical: "h-[1px] w-full",
+    horizontal: "w-[1px] h-full",
+  };
+
+  const pseudoStyles: Record<SplitAxis, string> = {
+    vertical: `
+      cursor: ns-resize;
+      width: 100%;
+      height: 7px;
+      top: -3px;
+    `,
+    horizontal: `
+      cursor: ew-resize;
+      height: 100%;
+      width: 7px;
+      left: -3px;
+    `,
+  };
+
+  return (
+    <div
+      ref={props.ref}
+      class={cn(
+        "relative bg-theme-border transition-colors hover:bg-theme-deemphasis",
+        axisStyles[props.axis],
+        props.resizing() && "bg-theme-deemphasis",
+        css`
+          &::before {
+            content: "";
+            position: absolute;
+            ${pseudoStyles[props.axis]}
+          }
+        `,
+      )}
+    />
+  );
+};
+
+export const ViewPanelNodeTabs: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+}> = (props) => {
+  const ctx = usePanelContext();
+
+  const active = (): Option.Option<PanelNode.Leaf> =>
+    // false positive
+    // eslint-disable-next-line solid/reactivity
+    Option.map(props.tabs().active, (idx) => props.tabs().children[idx]);
 
   return (
     <div class="flex flex-col grow overflow-none">
       <ViewPanelTitlebar class="px-1">
-        <For
-          each={props
-            .tabs()
-            .children.filter((child) => PanelNode.$is("Leaf")(child))}
-        >
+        <For each={props.tabs().children}>
           {(child, idx) => {
-            const title = createMemo(() => ctx.getLeafContent(child.id).title);
+            const title = (): string => ctx.getLeafContent(child.id).title;
 
-            const selected = createMemo(() =>
-              // for why?
+            const selected = (): boolean =>
+              // false positive
               // eslint-disable-next-line solid/reactivity
               Option.map(props.tabs().active, (i) => i === idx()).pipe(
                 Option.getOrElse(() => false),
-              ),
-            );
+              );
 
             return (
               <div
@@ -424,19 +727,14 @@ export const ViewPanelNodeTabs: Component<ViewPanelNodeTabsProps> = (props) => {
                   selected() && "bg-theme-panel-tab-background-active",
                 )}
                 onClick={() => {
-                  ctx.setWorkspace("root", (root) =>
-                    updateNode({
-                      node: root,
-                      match: (node) => node == props.tabs(),
-                      fn: (tabs) => {
-                        assert(PanelNode.$is("Tabs")(tabs));
-                        return selectTab({
-                          tabs,
-                          index: Option.some(Integer(idx())),
-                        }).pipe(Effect.runSync);
-                      },
-                    }).pipe(Effect.runSync),
-                  );
+                  // false positive
+                  // eslint-disable-next-line solid/reactivity
+                  props.updateTabs((tabs) => {
+                    return selectTab({
+                      tabs,
+                      index: Option.some(Integer(idx())),
+                    }).pipe(Effect.runSync);
+                  });
                 }}
               >
                 {/* icon placeholder */}
@@ -462,7 +760,7 @@ export const ViewPanelNodeTabs: Component<ViewPanelNodeTabsProps> = (props) => {
       </ViewPanelTitlebar>
       <MapOption on={active()}>
         {(tab) => {
-          const content = createMemo(() => ctx.getLeafContent(tab().id));
+          const content = (): LeafContent => ctx.getLeafContent(tab().id);
           return <ViewPanelNodeLeafContent content={content} />;
         }}
       </MapOption>
@@ -470,17 +768,20 @@ export const ViewPanelNodeTabs: Component<ViewPanelNodeTabsProps> = (props) => {
   );
 };
 
-export type ViewPanelNodeLeafProps = {
+export const ViewPanelNodeLeaf: Component<{
   leaf: () => PanelNode.Leaf;
-};
-export const ViewPanelNodeLeaf: Component<ViewPanelNodeLeafProps> = (props) => {
+}> = (props) => {
   const ctx = usePanelContext();
 
-  const content = createMemo(() => ctx.getLeafContent(props.leaf().id));
+  const content = (): LeafContent => ctx.getLeafContent(props.leaf().id);
 
   return (
     <div class="flex flex-col grow overflow-none">
       <ViewPanelTitlebar class="text-sm px-1">
+        {/* if someone can tell how the fuck overflow and/or ellipses are meant
+            to work in css I'd really fucking appreciate it
+            I've tried every combination of css under the sun,
+            but it just never fucking works, google's useless */}
         {content().title}
       </ViewPanelTitlebar>
       <ViewPanelNodeLeafContent content={content} />
@@ -488,31 +789,20 @@ export const ViewPanelNodeLeaf: Component<ViewPanelNodeLeafProps> = (props) => {
   );
 };
 
-export type ViewPanelNodeLeafContentProps = {
+export const ViewPanelNodeLeafContent: Component<{
   content: () => LeafContent;
-};
-export const ViewPanelNodeLeafContent: Component<
-  ViewPanelNodeLeafContentProps
-> = (props) => {
+}> = (props) => {
   return (
     <div class="flex grow overflow-auto">{props.content().render({})}</div>
   );
 };
 
 export namespace View {
-  export type WorkspaceProps = ViewWorkspaceProps;
+  export const PanelTitlebar = ViewPanelTitlebar;
   export const Workspace = ViewWorkspace;
-
-  export type PanelNodeProps = ViewPanelNodeProps;
   export const PanelNode = ViewPanelNode;
-
-  export type PanelNodeSplitProps = ViewPanelNodeSplitProps;
   export const PanelNodeSplit = ViewPanelNodeSplit;
-
-  export type PanelNodeTabsProps = ViewPanelNodeTabsProps;
   export const PanelNodeTabs = ViewPanelNodeTabs;
-
-  export type PanelNodeLeafProps = ViewPanelNodeLeafProps;
   export const PanelNodeLeaf = ViewPanelNodeTabs;
 }
 export default View;

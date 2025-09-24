@@ -9,8 +9,6 @@ import {
   splitLeaf,
   addTab,
   tabify,
-  replaceChild,
-  closeLeaf,
   updateNode,
   toggleSidebar,
   updateSidebar,
@@ -46,10 +44,10 @@ describe("PanelNode operations", () => {
   it.effect("can add a tab", () =>
     Effect.gen(function* () {
       const a = mkLeaf();
-      const tab = PanelNode.Tabs({ active: Option.none(), children: [a] });
+      const tabs = PanelNode.Tabs({ active: Option.none(), children: [a] });
       const b = mkLeaf();
 
-      const updated = yield* addTab({ tab, newLeaf: b });
+      const updated = yield* addTab({ tabs, newLeaf: b });
 
       expect(updated.children).toHaveLength(2);
       expect(Option.getOrUndefined(updated.active)).toBe(1);
@@ -68,53 +66,52 @@ describe("PanelNode operations", () => {
     }),
   );
 
-  it.effect("can replace a child in split", () =>
-    Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
-      const c = mkLeaf();
+  // it.effect("can replace a child in split", () =>
+  //   Effect.gen(function* () {
+  //     const a = mkLeaf();
+  //     const b = mkLeaf();
+  //     const c = mkLeaf();
 
-      const split = yield* splitLeaf({
-        leaf: a,
-        axis: "vertical",
-        newLeaf: b,
-        ratio: [Percent.from(50), Percent.from(50)],
-      });
+  //     const split = yield* splitLeaf({
+  //       leaf: a,
+  //       newLeaf: b,
+  //       axis: "vertical",
+  //     });
 
-      const replaced = yield* replaceChild({
-        parent: split,
-        oldNode: b,
-        newNode: c,
-      });
+  //     const replaced = yield* replaceChild({
+  //       parent: split,
+  //       oldNode: b,
+  //       newNode: c,
+  //     });
 
-      expect(PanelNode.$is("Split")(replaced));
-      expect(
-        (replaced as PanelNode.Split).children.some((ch) => ch.node === c),
-      );
-      expect(
-        (replaced as PanelNode.Split).children.some((ch) => ch.node === b),
-      ).toBe(false);
-    }),
-  );
+  //     expect(PanelNode.$is("Split")(replaced));
+  //     expect(
+  //       (replaced as PanelNode.Split).children.some((ch) => ch.node === c),
+  //     );
+  //     expect(
+  //       (replaced as PanelNode.Split).children.some((ch) => ch.node === b),
+  //     ).toBe(false);
+  //   }),
+  // );
 
-  it.effect("can close a leaf", () =>
-    Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+  // it.effect("can close a leaf", () =>
+  //   Effect.gen(function* () {
+  //     const a = mkLeaf();
+  //     const b = mkLeaf();
 
-      const split = yield* splitLeaf({
-        leaf: a,
-        axis: "horizontal",
-        newLeaf: b,
-      });
+  //     const split = yield* splitLeaf({
+  //       leaf: a,
+  //       newLeaf: b,
+  //       axis: "horizontal",
+  //     });
 
-      const closed = yield* closeLeaf({ node: split, id: a.id });
+  //     const closed = yield* closeLeaf({ node: split, id: a.id });
 
-      // should collapse to just b
-      expect(PanelNode.$is("Leaf")(closed));
-      expect((closed as PanelNode.Leaf).id).toBe(b.id);
-    }),
-  );
+  //     // should collapse to just b
+  //     expect(PanelNode.$is("Leaf")(closed));
+  //     expect((closed as PanelNode.Leaf).id).toBe(b.id);
+  //   }),
+  // );
 
   it.effect("updateNode finds and updates", () =>
     Effect.gen(function* () {
@@ -247,9 +244,9 @@ describe("PanelNode operations", () => {
       const ws = Workspace({
         root: a,
         sidebars: {
-          left: { enabled: false, node: a },
-          right: { enabled: false, node: a },
-          bottom: { enabled: false, node: a },
+          left: { enabled: false, size: Percent.from(25), node: a },
+          right: { enabled: false, size: Percent.from(25), node: a },
+          bottom: { enabled: false, size: Percent.from(25), node: a },
         },
       });
 
@@ -269,9 +266,9 @@ describe("PanelNode operations", () => {
       const ws = Workspace({
         root: a,
         sidebars: {
-          left: { enabled: true, node: a },
-          right: { enabled: false, node: a },
-          bottom: { enabled: false, node: a },
+          left: { enabled: true, size: Percent.from(25), node: a },
+          right: { enabled: false, size: Percent.from(25), node: a },
+          bottom: { enabled: false, size: Percent.from(25), node: a },
         },
       });
 

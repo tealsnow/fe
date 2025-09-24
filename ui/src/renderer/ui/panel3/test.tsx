@@ -1,10 +1,21 @@
-import { Component, createEffect } from "solid-js";
+import { Component, createEffect, Index } from "solid-js";
 import { Console, Effect, Option } from "effect";
 
-import { LeafRecord, PanelNode, addLeaf, LeafID, LeafContent } from "./data";
-import View from "./View";
-import { PanelContextProvider, usePanelContext } from "./Context";
 import Percent from "~/lib/Percent";
+import UUID from "~/lib/UUID";
+
+import {
+  LeafRecord,
+  PanelNode,
+  addLeaf,
+  LeafID,
+  LeafContent,
+  WorkspaceSidebars,
+  WorkspaceSidebar,
+} from "./data";
+import { PanelContextProvider, usePanelContext } from "./Context";
+import View from "./View";
+import assert from "~/lib/assert";
 
 export const Test: Component<{}> = () => {
   const leftId = LeafID.make();
@@ -15,7 +26,9 @@ export const Test: Component<{}> = () => {
   const testTab2Id = LeafID.make();
 
   const rightTopId = LeafID.make();
-  const rightBottomId = LeafID.make();
+  // const rightBottomId = LeafID.make();
+  const rightBottomLeftId = LeafID.make();
+  const rightBottomRightId = LeafID.make();
 
   const leafRecord: LeafRecord = {
     [leftId]: LeafContent({
@@ -33,7 +46,27 @@ export const Test: Component<{}> = () => {
 
     [testTab1Id]: LeafContent({
       title: "test tab 1",
-      render: () => <>test tab 1 content</>,
+      render: () => {
+        const ctx = usePanelContext();
+
+        const rightSplit = ctx.workspace.sidebars.right.node;
+        // assert(PanelNode.$is("Split")(rightSplit));
+
+        return (
+          <div class="flex flex-col">
+            <pre>{JSON.stringify(rightSplit, null, 2)}</pre>
+            {/*<Index each={rightSplit.children}>
+              {(child, idx) => {
+                return (
+                  <p>
+                    {idx} - {child().percent * 100} %
+                  </p>
+                );
+              }}
+            </Index>*/}
+          </div>
+        );
+      },
     }),
     [testTab2Id]: LeafContent({
       title: "test tab 2",
@@ -44,9 +77,17 @@ export const Test: Component<{}> = () => {
       title: "right top",
       render: () => <>right top content</>,
     }),
-    [rightBottomId]: LeafContent({
-      title: "right bottom",
-      render: () => <>right bottom content</>,
+    // [rightBottomId]: LeafContent({
+    //   title: "right bottom",
+    //   render: () => <>right bottom content</>,
+    // }),
+    [rightBottomLeftId]: LeafContent({
+      title: "right bottom left",
+      render: () => <>right bottom left content</>,
+    }),
+    [rightBottomRightId]: LeafContent({
+      title: "right bottom right",
+      render: () => <>right bottom right content</>,
     }),
   };
 
@@ -61,42 +102,40 @@ export const Test: Component<{}> = () => {
               PanelNode.Leaf({ id: testTab2Id }),
             ],
           }),
-          sidebars: {
-            left: {
+          sidebars: WorkspaceSidebars({
+            left: WorkspaceSidebar({
               enabled: false,
               node: PanelNode.Leaf({ id: leftId }),
-            },
-            right: {
+            }),
+            right: WorkspaceSidebar({
               enabled: true,
+              size: Percent.from(40),
               // node: PanelNode.Leaf({ id: rightId }),
-              node: PanelNode.Split({
+              node: PanelNode.makeSplit({
                 axis: "vertical",
                 children: [
-                  {
-                    percent: Percent.from(50),
-                    node: PanelNode.Leaf({ id: rightTopId }),
-                  },
-                  {
-                    percent: Percent.from(50),
-                    node: PanelNode.Leaf({ id: rightBottomId }),
-                  },
+                  PanelNode.Leaf({ id: rightTopId }),
+                  // PanelNode.Leaf({ id: rightBottomId }),
+                  PanelNode.makeSplit({
+                    axis: "horizontal",
+                    children: [
+                      PanelNode.Leaf({ id: rightBottomLeftId }),
+                      PanelNode.Leaf({ id: rightBottomRightId }),
+                    ],
+                  }),
                 ],
               }),
-            },
-            bottom: {
+            }),
+            bottom: WorkspaceSidebar({
               enabled: true,
               node: PanelNode.Leaf({ id: bottomId }),
-            },
-          },
+            }),
+          }),
         }}
         initialLeafRecord={leafRecord}
       >
-        <ActualTest />
+        <View.Workspace />
       </PanelContextProvider>
     </div>
   );
-};
-
-export const ActualTest: Component<{}> = () => {
-  return <View.Workspace />;
 };

@@ -219,10 +219,9 @@ const Titlebar: Component = () => {
   );
 };
 
-type BackgroundNoiseProps = {
+const BackgroundNoise: Component<{
   class?: string;
-};
-const BackgroundNoise: Component<BackgroundNoiseProps> = (props) => {
+}> = (props) => {
   return (
     <svg
       class={cn(
@@ -272,8 +271,9 @@ const BackgroundNoise: Component<BackgroundNoiseProps> = (props) => {
   );
 };
 
-type DbgProps = { setShowNoise: Setter<boolean> };
-const Dbg: Component<DbgProps> = (props) => {
+const Dbg: Component<{
+  setShowNoise: Setter<boolean>;
+}> = (props) => {
   const Settings: Component = () => {
     return (
       <div class="flex flex-col m-2">
