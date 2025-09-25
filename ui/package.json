@@ -28,6 +28,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@fe/native": "workspace:*",
+    "@fe/theme": "workspace:*",
     "@kobalte/core": "^0.13.11",
     "@solid-primitives/deep": "^0.3.3",
     "@solid-primitives/destructure": "^0.2.2",
@@ -69,6 +70,7 @@
     "vite": "^7.0.5",
     "vite-plugin-solid": "^2.11.7",
     "vite-plugin-solid-svg": "^0.8.1",
+    "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.2.4"
   }
 }

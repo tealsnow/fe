@@ -7,6 +7,10 @@ html {
   font-size: 14px;
 }
 
+pre {
+  @apply select-text cursor-text;
+}
+
 @theme {
   --spacing: 4px; /* 0.25 * 16 */
 }

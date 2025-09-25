@@ -1,6 +1,5 @@
 import {
   Component,
-  createEffect,
   For,
   Index,
   onMount,
@@ -35,16 +34,15 @@ import { MatchTag } from "~/lib/MatchTag";
 import assert from "~/lib/assert";
 import Integer from "~/lib/Integer";
 
-import { useWindowContext } from "~/ui/WindowContext";
+import { useWindowContext } from "~/ui/Window";
 import Button from "~/ui/components/Button";
 
-import { usePanelContext } from "./Context";
+import { usePanelContext } from "./ContextProvider";
 import {
   toggleSidebar,
   WorkspaceSidebars,
   WorkspaceSidebarSide,
   PanelNode,
-  LeafContent,
   selectTab,
   SplitAxis,
   updateSplitChildPercent,
@@ -296,14 +294,23 @@ export const ViewWorkspace: Component<{}> = () => {
     <div class="flex flex-col grow">
       <ViewWorkspaceTitlebar sidebars={sidebars} />
       {/* border as an element to so you cannot drag the window by the border */}
-      <div class="w-full h-[1px] bg-theme-border" />
+      <div class="w-full min-h-[1px] max-h-[1px] bg-theme-border" />
 
       <div class="flex flex-row grow">
         <ViewSidebar side="left" />
         <SidebarHandle side="left" />
 
         <div class="flex flex-col grow">
-          <div class="flex grow">
+          <div
+            class="flex"
+            style={{
+              height: `${
+                sidebars().bottom.enabled
+                  ? (1 - sidebars().bottom.size) * 100
+                  : 100
+              }%`,
+            }}
+          >
             <ViewPanelNode
               node={() => ctx.workspace.root}
               updateNode={(fn) => ctx.setWorkspace("root", fn)}
@@ -711,8 +718,6 @@ export const ViewPanelNodeTabs: Component<{
       <ViewPanelTitlebar class="px-1">
         <For each={props.tabs().children}>
           {(child, idx) => {
-            const title = (): string => ctx.getLeafContent(child.id).title;
-
             const selected = (): boolean =>
               // false positive
               // eslint-disable-next-line solid/reactivity
@@ -740,7 +745,9 @@ export const ViewPanelNodeTabs: Component<{
                 {/* icon placeholder */}
                 <div class="size-3.5" />
 
-                {title()}
+                <MapOption on={ctx.getLeaf(child.id)} fallback={"<none leaf>"}>
+                  {(leaf) => leaf().title}
+                </MapOption>
 
                 <Button
                   as={Icon}
@@ -759,9 +766,21 @@ export const ViewPanelNodeTabs: Component<{
         </For>
       </ViewPanelTitlebar>
       <MapOption on={active()}>
-        {(tab) => {
-          const content = (): LeafContent => ctx.getLeafContent(tab().id);
-          return <ViewPanelNodeLeafContent content={content} />;
+        {(leaf) => {
+          return (
+            <MapOption
+              on={ctx.getLeaf(leaf().id)}
+              fallback={
+                <div class="flex grow items-center justify-center">
+                  <p>TODO: none leaf in tabs</p>
+                </div>
+              }
+            >
+              {(content) => (
+                <ViewPanelNodeLeafContent render={() => content().render} />
+              )}
+            </MapOption>
+          );
         }}
       </MapOption>
     </div>
@@ -773,28 +792,35 @@ export const ViewPanelNodeLeaf: Component<{
 }> = (props) => {
   const ctx = usePanelContext();
 
-  const content = (): LeafContent => ctx.getLeafContent(props.leaf().id);
-
   return (
-    <div class="flex flex-col grow overflow-none">
-      <ViewPanelTitlebar class="text-sm px-1">
-        {/* if someone can tell how the fuck overflow and/or ellipses are meant
-            to work in css I'd really fucking appreciate it
-            I've tried every combination of css under the sun,
-            but it just never fucking works, google's useless */}
-        {content().title}
-      </ViewPanelTitlebar>
-      <ViewPanelNodeLeafContent content={content} />
-    </div>
+    <MapOption
+      on={ctx.getLeaf(props.leaf().id)}
+      fallback={
+        <div class="flex grow items-center justify-center">
+          <p>TODO: none leaf</p>
+        </div>
+      }
+    >
+      {(content) => (
+        <div class="flex flex-col grow overflow-none">
+          <ViewPanelTitlebar class="text-sm px-1">
+            {/* if someone can tell how the fuck overflow and/or ellipses are meant
+                    to work in css I'd really fucking appreciate it
+                    I've tried every combination of css under the sun,
+                    but it just never fucking works, google's useless */}
+            {content().title}
+          </ViewPanelTitlebar>
+          <ViewPanelNodeLeafContent render={() => content().render} />
+        </div>
+      )}
+    </MapOption>
   );
 };
 
 export const ViewPanelNodeLeafContent: Component<{
-  content: () => LeafContent;
+  render: () => Component<{}>;
 }> = (props) => {
-  return (
-    <div class="flex grow overflow-auto">{props.content().render({})}</div>
-  );
+  return <div class="flex grow overflow-auto">{props.render()({})}</div>;
 };
 
 export namespace View {

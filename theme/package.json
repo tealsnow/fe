@@ -1,0 +1,14 @@
+{
+  "name": "@fe/theme",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "main": "./src/Theme.ts",
+  "files": [
+    "./src/Theme.ts"
+  ],
+  "dependencies": {
+    "zod": "^4.1.5",
+    "color": "^5.0.0"
+  }
+}

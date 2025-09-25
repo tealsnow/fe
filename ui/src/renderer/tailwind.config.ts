@@ -1,6 +1,9 @@
 import type { Config } from "tailwindcss";
+
 import forms from "@tailwindcss/forms";
-import { tailwindColorsConfig } from "./ui/Theme";
+import animate from "tailwindcss-animate";
+
+import { tailwindColorsConfig } from "@fe/theme";
 
 export default {
   content: [
@@ -14,9 +17,5 @@ export default {
       },
     },
   },
-  plugins: [
-    forms,
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require("tailwindcss-animate"),
-  ],
+  plugins: [forms, animate],
 } satisfies Config;

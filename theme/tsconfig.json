@@ -1,0 +1,12 @@
+{
+  "include": ["src/**/*"],
+  "compilerOptions": {
+    "composite": true,
+
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}

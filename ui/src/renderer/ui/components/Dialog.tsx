@@ -12,9 +12,9 @@ import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 
 import { cn } from "~/lib/cn";
 
-import { Icon } from "~/assets/icons";
+import { Icon, icons } from "~/assets/icons";
 
-import { useThemeContext } from "~/ui/ThemeProvider";
+import { useThemeContext } from "~/ui/Theme";
 import Button, { ButtonProps } from "~/ui/components/Button";
 
 const DialogRoot = DialogPrimitive.Root;
@@ -145,7 +145,7 @@ const DialogCloseButton: Component<ButtonProps> = (props) => {
       class={cn("ml-auto opacity-70 border-0", props.class)}
       {...rest}
     >
-      <Icon kind="close" />
+      <Icon icon={icons["close"]} />
       <span class="sr-only">Close</span>
     </DialogPrimitive.CloseButton>
   );

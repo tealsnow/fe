@@ -25,7 +25,7 @@ import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/elem
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 
 import { cn } from "~/lib/cn";
-import { Icon } from "~/assets/icons";
+import { Icon, icons } from "~/assets/icons";
 import { TextInputLozenge } from "~/ui/components/Lozenge";
 import Button from "~/ui/components/Button";
 
@@ -428,7 +428,10 @@ export const ArrayProperty = <T,>(props: ArrayPropertyProps<T>): JSXElement => {
               )}
               onClick={() => setExpanded(!expanded())}
             >
-              <Icon kind="chevron_right" class="fill-transparent size-3 p-0" />
+              <Icon
+                icon={icons["chevron_right"]}
+                class="fill-transparent size-3 p-0"
+              />
             </button>
             <div class={cn("pt-1", expanded() && "pt-0.5")}>{props.key}</div>
           </Key>
@@ -532,7 +535,7 @@ export const AddString: Component<AddStringProps> = (props) => {
           }
         }}
       >
-        <Icon kind="add" />
+        <Icon icon={icons["add"]} />
       </Button>
     </div>
   );

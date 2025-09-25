@@ -1,10 +1,15 @@
 import { Component, Index, Switch } from "solid-js";
+
+import { Icon, icons } from "~/assets/icons";
+
 import { MatchTag } from "~/lib/MatchTag";
 
 import Button from "~/ui/components/Button";
 
-import { StatusBarItem, useStatusBarContext } from "./StatusBarContext";
-import { Icon, icons } from "~/assets/icons";
+import { useStatusBarContext } from "./ContextProvider";
+import { StatusBarItem } from "./Context";
+export * from "./ContextProvider";
+export * from "./Context";
 
 export type StatusBarProps = {};
 export const StatusBar: Component<StatusBarProps> = () => {

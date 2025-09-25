@@ -40,7 +40,7 @@ export namespace PanelNode {
    */
   export const makeSplit = ({
     axis,
-    children,
+    children = [],
   }: Omit<PanelNode.Split, "_tag" | "children"> & {
     children: PanelNode[];
   }): PanelNode.Split => {
@@ -56,6 +56,22 @@ export namespace PanelNode {
       children: newChildren,
     });
   };
+
+  export const makeTabs = (
+    {
+      active,
+      children,
+    }: Omit<PanelNode.Tabs, "_tag" | "active"> & {
+      active?: Integer;
+    } = { children: [] },
+  ): PanelNode.Tabs =>
+    PanelNode.Tabs({
+      active: Option.fromNullable(active),
+      children,
+    });
+
+  export const makeLeaf = (id: LeafID = UUID.make()): PanelNode.Leaf =>
+    PanelNode.Leaf({ id });
 }
 
 export type SplitAxis = "horizontal" | "vertical";
@@ -74,7 +90,7 @@ export type LeafContent = {
 };
 export const LeafContent = Data.case<LeafContent>();
 
-export type LeafRecord = Record<LeafID, LeafContent>;
+export type LeafRecord = Record<LeafID, Option.Option<LeafContent>>;
 
 export type Workspace = {
   root: PanelNode;
@@ -107,13 +123,13 @@ export type WorkspaceSidebarSide = "left" | "right" | "bottom";
  * Split an existing leaf into a split with a optional new leaf
  */
 export const splitLeaf = ({
-  leaf,
   axis,
+  leaf,
   newLeaf,
   ratio,
 }: {
-  leaf: PanelNode.Leaf;
   axis: SplitAxis;
+  leaf: PanelNode.Leaf;
 } & (
   | {
       newLeaf: PanelNode.Leaf;
@@ -382,15 +398,15 @@ export const toggleSidebar = ({
     },
   });
 
-export const addLeaf = ({
-  record,
-  content,
-}: {
-  record: LeafRecord;
-  content: LeafContent;
-}): Effect.Effect<[LeafRecord, PanelNode]> =>
-  pipe(
-    PanelNode.Leaf({ id: UUID.make() }),
-    Effect.succeed,
-    Effect.andThen((leaf) => [{ ...record, [leaf.id]: content }, leaf]),
-  );
+// export const addLeaf = ({
+//   record,
+//   content,
+// }: {
+//   record: LeafRecord;
+//   content: LeafContent;
+// }): Effect.Effect<[LeafRecord, PanelNode]> =>
+//   pipe(
+//     PanelNode.Leaf({ id: UUID.make() }),
+//     Effect.succeed,
+//     Effect.andThen((leaf) => [{ ...record, [leaf.id]: content }, leaf]),
+//   );

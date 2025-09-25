@@ -14,24 +14,20 @@ import {
   updateSidebar,
   Workspace,
   NodeNotFoundError,
+  WorkspaceSidebars,
+  WorkspaceSidebar,
 } from "./data";
-
-const mkLeaf = (): PanelNode.Leaf =>
-  PanelNode.Leaf({
-    id: UUID.make(),
-  });
 
 describe("PanelNode operations", () => {
   it.effect("can split a leaf", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
 
       const split = yield* splitLeaf({
-        leaf: a,
         axis: "horizontal",
+        leaf: a,
         newLeaf: b,
-        ratio: [Percent.from(50), Percent.from(50)],
       });
 
       expect(split.axis).toBe("horizontal");
@@ -43,9 +39,9 @@ describe("PanelNode operations", () => {
 
   it.effect("can add a tab", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const tabs = PanelNode.Tabs({ active: Option.none(), children: [a] });
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const tabs = PanelNode.makeTabs({ children: [a] });
+      const b = PanelNode.makeLeaf();
 
       const updated = yield* addTab({ tabs, newLeaf: b });
 
@@ -56,8 +52,8 @@ describe("PanelNode operations", () => {
 
   it.effect("can tabify a leaf", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
 
       const tab = yield* tabify({ leaf: a, newLeaf: b });
 
@@ -68,14 +64,14 @@ describe("PanelNode operations", () => {
 
   // it.effect("can replace a child in split", () =>
   //   Effect.gen(function* () {
-  //     const a = mkLeaf();
-  //     const b = mkLeaf();
-  //     const c = mkLeaf();
+  //     const a = PanelNode.makeLeaf();
+  //     const b = PanelNode.makeLeaf();
+  //     const c = PanelNode.makeLeaf();
 
   //     const split = yield* splitLeaf({
+  //       axis: "vertical",
   //       leaf: a,
   //       newLeaf: b,
-  //       axis: "vertical",
   //     });
 
   //     const replaced = yield* replaceChild({
@@ -96,13 +92,13 @@ describe("PanelNode operations", () => {
 
   // it.effect("can close a leaf", () =>
   //   Effect.gen(function* () {
-  //     const a = mkLeaf();
-  //     const b = mkLeaf();
+  //     const a = PanelNode.makeLeaf();
+  //     const b = PanelNode.makeLeaf();
 
   //     const split = yield* splitLeaf({
+  //       axis: "horizontal",
   //       leaf: a,
   //       newLeaf: b,
-  //       axis: "horizontal",
   //     });
 
   //     const closed = yield* closeLeaf({ node: split, id: a.id });
@@ -115,19 +111,19 @@ describe("PanelNode operations", () => {
 
   it.effect("updateNode finds and updates", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
 
       const split = yield* splitLeaf({
-        leaf: a,
         axis: "horizontal",
+        leaf: a,
         newLeaf: b,
       });
 
       const res = yield* updateNode({
         node: split,
         match: (n) => PanelNode.$is("Leaf")(n) && n.id === a.id,
-        fn: (_n) => PanelNode.Leaf({ id: b.id }),
+        fn: () => PanelNode.Leaf({ id: b.id }),
       });
 
       expect(PanelNode.$is("Split")(res));
@@ -139,18 +135,18 @@ describe("PanelNode operations", () => {
 
   it.effect("updates deeply nested leaf", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
 
       // Split root into a and b
       const split = yield* splitLeaf({
-        leaf: a,
         axis: "horizontal",
+        leaf: a,
         newLeaf: b,
       });
 
       // Tabify b with a new leaf c
-      const c = mkLeaf();
+      const c = PanelNode.makeLeaf();
       const tab = yield* tabify({ leaf: b, newLeaf: c });
 
       const root = PanelNode.Split({
@@ -183,19 +179,16 @@ describe("PanelNode operations", () => {
 
   it.effect("updates multiple matching leaves", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
-      const c = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
+      const c = PanelNode.makeLeaf();
 
-      const root: PanelNode = PanelNode.Split({
+      const root: PanelNode = PanelNode.makeSplit({
         axis: "horizontal",
         children: [
-          { percent: Percent.from(33), node: a },
-          {
-            percent: Percent.from(33),
-            node: PanelNode.Tabs({ active: Option.none(), children: [b, c] }),
-          },
-          { percent: Percent.from(34), node: mkLeaf() },
+          a,
+          PanelNode.Tabs({ active: Option.none(), children: [b, c] }),
+          PanelNode.makeLeaf(),
         ],
       });
 
@@ -224,12 +217,12 @@ describe("PanelNode operations", () => {
 
   it.effect("updateNode fails if not found", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
+      const a = PanelNode.makeLeaf();
 
       const result = yield* Effect.exit(
         updateNode({
           node: a,
-          match: (n) => PanelNode.$is("Leaf")(n) && false,
+          match: () => false,
           fn: (n) => n,
         }),
       );
@@ -240,14 +233,14 @@ describe("PanelNode operations", () => {
 
   it.effect("toggle sidebar flips enabled", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
+      const a = PanelNode.makeLeaf();
       const ws = Workspace({
         root: a,
-        sidebars: {
-          left: { enabled: false, size: Percent.from(25), node: a },
-          right: { enabled: false, size: Percent.from(25), node: a },
-          bottom: { enabled: false, size: Percent.from(25), node: a },
-        },
+        sidebars: WorkspaceSidebars({
+          left: WorkspaceSidebar({ node: a }),
+          right: WorkspaceSidebar({ node: a }),
+          bottom: WorkspaceSidebar({ node: a }),
+        }),
       });
 
       const updated = yield* toggleSidebar({
@@ -261,15 +254,15 @@ describe("PanelNode operations", () => {
 
   it.effect("updateSidebar replaces sidebar node", () =>
     Effect.gen(function* () {
-      const a = mkLeaf();
-      const b = mkLeaf();
+      const a = PanelNode.makeLeaf();
+      const b = PanelNode.makeLeaf();
       const ws = Workspace({
         root: a,
-        sidebars: {
-          left: { enabled: true, size: Percent.from(25), node: a },
-          right: { enabled: false, size: Percent.from(25), node: a },
-          bottom: { enabled: false, size: Percent.from(25), node: a },
-        },
+        sidebars: WorkspaceSidebars({
+          left: WorkspaceSidebar({ node: a }),
+          right: WorkspaceSidebar({ node: a }),
+          bottom: WorkspaceSidebar({ node: a }),
+        }),
       });
 
       const updated = yield* updateSidebar({

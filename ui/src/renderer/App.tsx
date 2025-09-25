@@ -18,8 +18,7 @@ import {
 
 import { Icon, IconKind, iconKinds, icons } from "~/assets/icons";
 
-import * as theming from "~/ui/Theme";
-import ThemeProvider, { useThemeContext } from "~/ui/ThemeProvider";
+import * as Theme from "~/ui/Theme";
 import Button from "~/ui/components/Button";
 
 // import { setupDebugPanels } from "~/ui/panels/panels";
@@ -30,16 +29,15 @@ import Button from "~/ui/components/Button";
 // } from "~/ui/panels/PanelContext";
 // import * as Panel from "~/ui/panels/Panel";
 
-import {
+import StatusBar, {
   StatusBarContextProvider,
-  StatusBarItem,
   useStatusBarContext,
-} from "~/ui/StatusBarContext";
-import StatusBar from "~/ui/StatusBar";
+  StatusBarItem,
+} from "~/ui/StatusBar";
 
 // import { Test as Panel2Test } from "~/ui/panels2/test";
 import { Test as Panel3Test } from "~/ui/panel3/test";
-import { useWindowContext, WindowContextProvider } from "./ui/WindowContext";
+import { useWindowContext, WindowContextProvider } from "./ui/Window";
 
 export const App: Component = () => {
   return (
@@ -58,13 +56,13 @@ const AfterWindow: Component = () => {
   //  As is stands this works just fine, if and when we do a theme preview
   //  we can just use the provider, unless we want to show what toasts would
   //  look like...
-  theming.applyTheme(theming.defaultTheme);
+  Theme.applyTheme(Theme.defaultTheme);
 
   const windowCtx = useWindowContext();
 
   return (
-    <ThemeProvider
-      theme={theming.defaultTheme}
+    <Theme.ThemeContextProvider
+      theme={Theme.defaultTheme}
       class="flex w-screen h-screen overflow-hidden"
       applyRounding={!windowCtx.maximized()}
     >
@@ -75,7 +73,7 @@ const AfterWindow: Component = () => {
           {/*</PanelContextProvider>*/}
         </StatusBarContextProvider>
       </NotificationProvider>
-    </ThemeProvider>
+    </Theme.ThemeContextProvider>
   );
 };
 
@@ -83,7 +81,7 @@ const Root: Component = () => {
   const [showNoise, setShowNoise] = createSignal(true);
 
   const windowCtx = useWindowContext();
-  const themeCtx = useThemeContext();
+  const themeCtx = Theme.useThemeContext();
 
   // onMount(() => {
   //   // setupDebugPanels();
@@ -512,7 +510,7 @@ const ThemeShowcase: Component = () => {
   const Colors: Component = () => {
     return (
       <div class="flex flex-row justify-evenly text-center">
-        <Index each={theming.colors}>
+        <Index each={Theme.colors}>
           {(color) => {
             return (
               <div
@@ -567,7 +565,7 @@ const ThemeShowcase: Component = () => {
     <div class="flex-col overflow-auto w-full">
       <Colors />
       <Icons />
-      <Index each={theming.themeDescFlat}>
+      <Index each={Theme.themeDescFlat}>
         {(item) => {
           return (
             <div

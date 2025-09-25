@@ -1,11 +1,69 @@
 import Color from "color";
 import * as z from "zod";
 
-// @NOTE: These cannot use '~' since this file is imported from `tailwind.config.ts`
-import { flattenArrayOfObjects, flattenZodSchemaPaths } from "../lib/flatten";
-import { DeepPartial } from "../lib/type_helpers";
+// z.config({ jitless: true });
 
-z.config({ jitless: true });
+/**
+ * Flatten an array of objects into a single object.
+ * e.g. `[{ a: 1 }, { b: 2 }]` => `{ a: 1, b: 2 }`
+ */
+export const flattenArrayOfObjects = function <
+  InputValue,
+  OutputValue,
+  Input extends Record<keyof any, InputValue> | {},
+  Output extends Record<keyof any, OutputValue> | {},
+>(array: Input[]): Output {
+  return array.reduce<Output>((acc, obj) => ({ ...acc, ...obj }), {} as Output);
+};
+
+/**
+ * Flatten a generic object into a list of leaf paths,
+ * e.g. `{ foo: { bar: {}, baz: { a: {}, b: {} }, }, quux: {} }`
+ * becomes [["foo", "bar"], ["foo", "baz", "a"], ["foo", "baz", "b"] ["quux"]]
+ */
+export const flattenObjectToPaths = (
+  obj: Record<string, any>,
+  prefix: string[] = [],
+): string[][] => {
+  const paths: string[][] = [];
+
+  for (const key in obj) {
+    const value = obj[key];
+    const currentPath = [...prefix, key];
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const subPaths = flattenObjectToPaths(value, currentPath);
+      paths.push(...subPaths);
+    } else {
+      paths.push(currentPath);
+    }
+  }
+
+  // Special case for `{}` leaf objects
+  if (Object.keys(obj).length === 0) {
+    paths.push(prefix);
+  }
+
+  return paths;
+};
+
+/**
+ * Acts the same as [`flattenObjectToPaths`] but takes a zod schema instead
+ */
+export function flattenZodSchemaPaths(
+  schema: z.ZodTypeAny,
+  prefix: string[] = [],
+): string[][] {
+  if (schema instanceof z.ZodObject) {
+    const shape = schema.shape;
+
+    return Object.entries(shape).flatMap(([key, value]) => {
+      return flattenZodSchemaPaths(value, [...prefix, key]);
+    });
+  }
+
+  return [prefix];
+}
 
 export type ColorKind =
   | "red"
@@ -61,6 +119,7 @@ export const ThemeSchema = z.object({
   background: z.string(),
   text: z.string(),
   deemphasis: z.string(),
+  selection: z.string(),
   border: z.string(),
   panel: z.object({
     tab: z.object({
@@ -91,7 +150,57 @@ export type ThemeWindowRounding = z.infer<typeof ThemeWindowRoundingSchema>;
 export type Theme = z.infer<typeof ThemeSchema>;
 export default Theme;
 
+export type Base16Theme = {
+  base00: string; // Default Background
+  base01: string; // Lighter Background (Used for status bars, line number and folding marks)
+  base02: string; // Selection Background
+  base03: string; // Comments, Invisibles, Line Highlighting
+  base04: string; // Dark Foreground (Used for status bars)
+  base05: string; // Default Foreground, Caret, Delimiters, Operators
+  base06: string; // Light Foreground (Not often used)
+  base07: string; // Light Background (Not often used)
+  base08: string; // Variables, XML Tags, Markup Link Text, Markup Lists, Diff Deleted
+  base09: string; // Integers, Boolean, Constants, XML Attributes, Markup Link Url
+  base0A: string; // Classes, Markup Bold, Search Text Background
+  base0B: string; // Strings, Inherited Class, Markup Code, Diff Inserted
+  base0C: string; // Support, Regular Expressions, Escape Characters, Markup Quotes
+  base0D: string; // Functions, Methods, Attribute IDs, Headings
+  base0E: string; // Keywords, Storage, Selector, Markup Italic, Diff Changed
+  base0F: string; // Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php ?>
+};
+
 export const themeDescFlat = flattenZodSchemaPaths(ThemeSchema);
+
+export const applyTheme = (theme: Theme): void => {
+  themeDescFlat.map((path) => {
+    const cssVarName = `--theme-${path.join("-")}`;
+    // @HACK: typing escape hatch here, it does make sense if you read it
+    //   and it works, so bonus points for that
+    const value = path.reduce((acc: any, key) => acc[key], theme) as string;
+    document.documentElement.style.setProperty(cssVarName, value);
+  });
+};
+
+export const themeCssStyles = (
+  theme: Omit<Theme, "windowRounding">,
+): string => {
+  return themeDescFlat
+    .map((path) => {
+      const value = path.reduce((acc, key) => (acc as any)[key], theme);
+      return `--theme-${path.join("-")}: ${value};`;
+    })
+    .join(" ");
+};
+
+const themeDescriptionCssVarNames = (): Record<string, string>[] =>
+  themeDescFlat.map((p) => {
+    const name = p.join("-");
+    return { [`theme-${name}`]: `var(--theme-${name})` };
+  });
+
+export const tailwindColorsConfig = (): Record<string, string> => {
+  return flattenArrayOfObjects(themeDescriptionCssVarNames());
+};
 
 export const autoThemeIconTuple = (
   stroke: string,
@@ -134,136 +243,4 @@ export const autoThemeColors = (colors: {
     purple: autoThemeColorTuple(colors.purple),
     pink: autoThemeColorTuple(colors.pink),
   };
-};
-
-export type Base16Theme = {
-  base00: string; // Default Background
-  base01: string; // Lighter Background (Used for status bars, line number and folding marks)
-  base02: string; // Selection Background
-  base03: string; // Comments, Invisibles, Line Highlighting
-  base04: string; // Dark Foreground (Used for status bars)
-  base05: string; // Default Foreground, Caret, Delimiters, Operators
-  base06: string; // Light Foreground (Not often used)
-  base07: string; // Light Background (Not often used)
-  base08: string; // Variables, XML Tags, Markup Link Text, Markup Lists, Diff Deleted
-  base09: string; // Integers, Boolean, Constants, XML Attributes, Markup Link Url
-  base0A: string; // Classes, Markup Bold, Search Text Background
-  base0B: string; // Strings, Inherited Class, Markup Code, Diff Inserted
-  base0C: string; // Support, Regular Expressions, Escape Characters, Markup Quotes
-  base0D: string; // Functions, Methods, Attribute IDs, Headings
-  base0E: string; // Keywords, Storage, Selector, Markup Italic, Diff Changed
-  base0F: string; // Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php ?>
-};
-
-const gruvbox_dark_hard_base_16: Base16Theme = {
-  base00: "#1d2021",
-  base01: "#3c3836",
-  base02: "#504945",
-  base03: "#665c54",
-  base04: "#bdae93",
-  base05: "#d5c4a1",
-  base06: "#ebdbb2",
-  base07: "#fbf1c7",
-  base08: "#fb4934",
-  base09: "#fe8019",
-  base0A: "#fabd2f",
-  base0B: "#b8bb26",
-  base0C: "#8ec07c",
-  base0D: "#83a598",
-  base0E: "#d3869b",
-  base0F: "#d65d0e",
-};
-
-export const themeFromBase16 = (
-  base16: Base16Theme,
-  colors: ThemeColors,
-  overrides?: DeepPartial<Theme>,
-): Theme => {
-  return {
-    background: overrides?.background ?? base16.base00,
-    text: overrides?.text ?? base16.base05,
-    deemphasis: overrides?.deemphasis ?? base16.base04,
-    border: overrides?.border ?? base16.base02,
-    panel: {
-      tab: {
-        background: {
-          idle: overrides?.panel?.tab?.background?.idle ?? base16.base00,
-          active: overrides?.panel?.tab?.background?.active ?? base16.base01,
-          dropTarget:
-            overrides?.panel?.tab?.background?.dropTarget ?? base16.base01,
-        },
-      },
-    },
-    icon: {
-      base: autoThemeIconTuple(
-        overrides?.icon?.base?.stroke ?? base16.base04,
-        overrides?.icon?.base?.fill,
-      ),
-      active: autoThemeIconTuple(
-        overrides?.icon?.active?.stroke ?? base16.base06,
-        overrides?.icon?.active?.fill,
-      ),
-    },
-    statusbar: {
-      background: overrides?.statusbar?.background ?? base16.base01,
-    },
-    colors,
-    windowRounding: "large",
-  };
-};
-
-export const defaultTheme = themeFromBase16(
-  gruvbox_dark_hard_base_16,
-  autoThemeColors({
-    red: "#cc241d",
-    orange: "#fe8019",
-    yellow: "#d79921",
-    green: "#98971a",
-    aqua: "#689d6a",
-    blue: "#458588",
-    purple: "#b16286",
-    pink: "#d4879c",
-  }),
-  {
-    icon: {
-      active: {
-        fill: Color(gruvbox_dark_hard_base_16.base06)
-          .saturate(1)
-          .lighten(0.5)
-          .fade(0.8)
-          .hexa(),
-      },
-    },
-  },
-);
-
-export const applyTheme = (theme: Theme): void => {
-  themeDescFlat.map((path) => {
-    const cssVarName = `--theme-${path.join("-")}`;
-    // @HACK: typing escape hatch here, it does make sense if you read it
-    //   and it works, so bonus points for that
-    const value = path.reduce((acc: any, key) => acc[key], theme) as string;
-    document.documentElement.style.setProperty(cssVarName, value);
-  });
-};
-
-export const themeCssStyles = (
-  theme: Omit<Theme, "windowRounding">,
-): string => {
-  return themeDescFlat
-    .map((path) => {
-      const value = path.reduce((acc, key) => (acc as any)[key], theme);
-      return `--theme-${path.join("-")}: ${value};`;
-    })
-    .join(" ");
-};
-
-const themeDescriptionCssVarNames = (): Record<string, string>[] =>
-  themeDescFlat.map((p) => {
-    const name = p.join("-");
-    return { [`theme-${name}`]: `var(--theme-${name})` };
-  });
-
-export const tailwindColorsConfig = (): Record<string, string> => {
-  return flattenArrayOfObjects(themeDescriptionCssVarNames());
 };

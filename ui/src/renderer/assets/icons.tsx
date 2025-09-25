@@ -1,10 +1,11 @@
-import { Component, JSX, lazy, mergeProps, splitProps } from "solid-js";
+import { Component, JSX, lazy, splitProps } from "solid-js";
+import { Dynamic } from "solid-js/web";
 
-import { flattenArrayOfObjects } from "~/lib/flatten";
+import { flattenArrayOfObjects } from "@fe/theme";
+
+import { cn } from "~/lib/cn";
 
 import { IconKind } from "./generated/icons";
-import { cn } from "~/lib/cn";
-import { Dynamic } from "solid-js/web";
 export * from "./generated/icons";
 
 export type IconComponent = Component<JSX.SvgSVGAttributes<SVGElement>>;

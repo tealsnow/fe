@@ -2,30 +2,12 @@ import {
   createSignal,
   onCleanup,
   onMount,
-  Accessor,
   useContext,
   ParentProps,
   Component,
 } from "solid-js";
+import { WindowContext } from "./Context";
 
-import createHotStableContext from "~/lib/createHotStableContext";
-
-export type WindowContext = {
-  maximized: Accessor<boolean>;
-  minimize: () => void;
-  toggleMaximize: () => void;
-  close: () => void;
-};
-export const WindowContext =
-  createHotStableContext<WindowContext>("window-context");
-export const useWindowContext = (): WindowContext => {
-  const ctx = useContext(WindowContext);
-  if (!ctx)
-    throw new Error(
-      "Cannot use useWindowContext outside of a WindowContextProvider",
-    );
-  return ctx;
-};
 export type WindowContextProviderProps = ParentProps<{}>;
 export const WindowContextProvider: Component<WindowContextProviderProps> = (
   props,
@@ -62,4 +44,13 @@ export const WindowContextProvider: Component<WindowContextProviderProps> = (
       {props.children}
     </WindowContext.Provider>
   );
+};
+
+export const useWindowContext = (): WindowContext => {
+  const ctx = useContext(WindowContext);
+  if (!ctx)
+    throw new Error(
+      "Cannot use useWindowContext outside of a WindowContextProvider",
+    );
+  return ctx;
 };
