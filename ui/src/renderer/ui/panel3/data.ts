@@ -1,5 +1,5 @@
 import { Component } from "solid-js";
-import { Data, Effect, Either, Match, Option, pipe } from "effect";
+import { Data, Effect, Either, Equal, Match, Option } from "effect";
 
 import Integer from "~/lib/Integer";
 import Percent from "~/lib/Percent";
@@ -30,6 +30,8 @@ export namespace PanelNode {
   export type Split = Data.TaggedEnum.Value<PanelNode, "Split">;
   export type Tabs = Data.TaggedEnum.Value<PanelNode, "Tabs">;
   export type Leaf = Data.TaggedEnum.Value<PanelNode, "Leaf">;
+
+  export type Parent = Split | Tabs;
 
   export const Split = PanelNodeCtor.Split;
   export const Tabs = PanelNodeCtor.Tabs;
@@ -186,17 +188,32 @@ export const updateSplitChildPercent = ({
 export const addTab = ({
   tabs,
   newLeaf,
+  idx,
 }: {
   tabs: PanelNode.Tabs;
   newLeaf: PanelNode.Leaf;
+  idx?: Integer;
 }): Effect.Effect<PanelNode.Tabs> =>
-  Effect.sync(() =>
-    PanelNode.Tabs({
-      ...tabs,
-      active: Option.some(Integer(tabs.children.length)), // make new one active
-      children: [...tabs.children, newLeaf],
-    }),
-  );
+  Effect.sync(() => {
+    if (idx !== undefined && idx !== tabs.children.length) {
+      assert(idx < tabs.children.length);
+
+      const newChildren = tabs.children;
+      newChildren.splice(idx, 0, newLeaf);
+
+      return PanelNode.Tabs({
+        ...tabs,
+        active: Option.some(idx),
+        children: newChildren,
+      });
+    } else {
+      return PanelNode.Tabs({
+        ...tabs,
+        active: Option.some(Integer(tabs.children.length)), // make new one active
+        children: [...tabs.children, newLeaf],
+      });
+    }
+  });
 
 /**
  * Wrap a leaf into a new tab node with another leaf
@@ -227,6 +244,43 @@ export const selectTab = ({
       ...tabs,
       active: index,
     }),
+  );
+
+export const removeChild = ({
+  parent,
+  match,
+}: {
+  parent: PanelNode.Parent;
+  match: (child: PanelNode) => boolean;
+}): Effect.Effect<PanelNode.Parent, NodeNotFoundError> =>
+  Match.value(parent).pipe(
+    Match.tag("Split", (split) => {
+      const newChildren = split.children.filter((c) => !match(c.node));
+
+      if (Equal.equals(newChildren, split.children))
+        return Effect.fail(new NodeNotFoundError());
+
+      return Effect.succeed(
+        PanelNode.Split({
+          ...split,
+          children: newChildren,
+        }),
+      );
+    }),
+    Match.tag("Tabs", (tabs) => {
+      const newChildren = tabs.children.filter((c) => !match(c));
+
+      if (Equal.equals(newChildren, tabs.children))
+        return Effect.fail(new NodeNotFoundError());
+
+      return Effect.succeed(
+        PanelNode.Tabs({
+          ...tabs,
+          children: newChildren,
+        }),
+      );
+    }),
+    Match.exhaustive,
   );
 
 // /**

@@ -8,23 +8,25 @@ import {
   Switch,
   onCleanup,
   createSignal,
+  batch,
 } from "solid-js";
+import { render as solidRender } from "solid-js/web";
 import { Option, Effect, Match, Order, pipe, Equal } from "effect";
 import { MapOption } from "solid-effect";
 import { css } from "solid-styled-components";
 
 import {
   draggable,
-  // dropTargetForElements,
-  // monitorForElements,
+  dropTargetForElements,
+  monitorForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-// import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
+import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
 import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/disable-native-drag-preview";
-// import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
+import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
-// import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
+import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 // import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
-// import { GetOffsetFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/public-utils/element/custom-native-drag-preview/types";
+import { GetOffsetFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/public-utils/element/custom-native-drag-preview/types";
 
 import { Icon, IconKind, icons } from "~/assets/icons";
 
@@ -33,6 +35,7 @@ import Percent from "~/lib/Percent";
 import { MatchTag } from "~/lib/MatchTag";
 import assert from "~/lib/assert";
 import Integer from "~/lib/Integer";
+import { taggedCtor } from "~/lib/taggedCtor";
 
 import { useWindowContext } from "~/ui/Window";
 import Button from "~/ui/components/Button";
@@ -48,7 +51,73 @@ import {
   updateSplitChildPercent,
   SplitChild,
   updateNode,
+  removeChild,
+  addTab,
 } from "./data";
+
+export const ViewRoot: Component = () => {
+  onMount(() => {
+    const cleanup = monitorForElements({
+      onDrop: ({ source, location }) => {
+        // @FIXME: we might need to check each drop target depending on how
+        //   pdnd handles overlapping valid and invalid drop targets
+        const destination = location.current.dropTargets[0];
+        if (!destination) return;
+        console.log("drop target count: ", location.current.dropTargets.length);
+
+        const handleDragDataForTabOnDropTargetDataForTab = (
+          drag: DragDataForTab,
+          dropTarget: DropTargetDataForTab,
+        ): void => {
+          batch(() => {
+            drag.updateParent((parent) =>
+              removeChild({
+                parent,
+                match: (node) => Equal.equals(node, drag.node),
+              }).pipe(
+                Effect.catchTag("NodeNotFoundError", (err) => {
+                  console.error(
+                    "failed to find child in what is meant to be its parent",
+                    err,
+                  );
+                  return Effect.sync(() => parent);
+                }),
+                Effect.runSync,
+              ),
+            );
+
+            dropTarget.updateTabs((tabs) => {
+              return addTab({
+                tabs,
+                newLeaf: drag.node,
+                idx: Option.getOrUndefined(dropTarget.idx),
+              }).pipe(Effect.runSync);
+            });
+          });
+        };
+
+        Match.value({
+          source: source.data,
+          destination: destination.data,
+        }).pipe(
+          Match.when(
+            {
+              source: (source) => DragDataForTab.$is(source),
+              destination: (destination) =>
+                DropTargetDataForTab.$is(destination),
+            },
+            ({ source, destination }) => {
+              handleDragDataForTabOnDropTargetDataForTab(source, destination);
+            },
+          ),
+        );
+      },
+    });
+    onCleanup(() => cleanup());
+  });
+
+  return <ViewWorkspace />;
+};
 
 export const ViewPanelTitlebar: Component<
   ParentProps<{
@@ -308,6 +377,12 @@ export const ViewWorkspace: Component<{}> = () => {
                 sidebars().bottom.enabled
                   ? (1 - sidebars().bottom.size) * 100
                   : 100
+              }%`,
+              width: `${
+                1 -
+                ((sidebars().left.enabled ? sidebars().left.size : 0) +
+                  (sidebars().right.enabled ? sidebars().right.size : 0)) *
+                  100
               }%`,
             }}
           >
@@ -713,59 +788,83 @@ export const ViewPanelNodeTabs: Component<{
     // eslint-disable-next-line solid/reactivity
     Option.map(props.tabs().active, (idx) => props.tabs().children[idx]);
 
+  // const updateParent = (
+  //   fn: (node: PanelNode.Tabs) => PanelNode.Tabs,
+  // ): void => {
+  //   props.updateTabs(fn);
+  // };
+
+  const [hasDrop, setHasDrop] = createSignal(false);
+
+  let tabDropRef!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: tabDropRef,
+
+      getData: () =>
+        DropTargetDataForTab({
+          tabs: props.tabs(),
+          updateTabs: props.updateTabs,
+          idx: Option.none(),
+        }),
+
+      canDrop: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) return true;
+
+        return false;
+      },
+
+      onDragEnter: () => setHasDrop(true),
+      onDragLeave: () => setHasDrop(false),
+      onDrop: () => setHasDrop(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
   return (
     <div class="flex flex-col grow overflow-none">
       <ViewPanelTitlebar class="px-1">
         <For each={props.tabs().children}>
-          {(child, idx) => {
-            const selected = (): boolean =>
-              // false positive
-              // eslint-disable-next-line solid/reactivity
-              Option.map(props.tabs().active, (i) => i === idx()).pipe(
-                Option.getOrElse(() => false),
-              );
-
-            return (
-              <div
-                class={cn(
-                  "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border border-l last:border-r text-sm group cursor-pointer bg-theme-panel-tab-background-idle hover:bg-theme-panel-tab-background-active",
-                  selected() && "bg-theme-panel-tab-background-active",
-                )}
-                onClick={() => {
-                  // false positive
-                  // eslint-disable-next-line solid/reactivity
-                  props.updateTabs((tabs) => {
-                    return selectTab({
-                      tabs,
-                      index: Option.some(Integer(idx())),
-                    }).pipe(Effect.runSync);
-                  });
-                }}
-              >
-                {/* icon placeholder */}
-                <div class="size-3.5" />
-
-                <MapOption on={ctx.getLeaf(child.id)} fallback={"<none leaf>"}>
-                  {(leaf) => leaf().title}
-                </MapOption>
-
-                <Button
-                  as={Icon}
-                  icon={icons["close"]}
-                  variant="icon"
-                  size="icon"
-                  class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"
-                  noOnClickToOnMouseDown
-                  onClick={() => {
-                    // close tab
-                  }}
-                />
-              </div>
-            );
-          }}
+          {(child, idx) => (
+            <ViewTabHandle
+              tabs={props.tabs}
+              updateTabs={props.updateTabs}
+              active={() => props.tabs().active}
+              idx={() => Integer(idx())}
+              leaf={() => child}
+              onClick={() => {
+                // false positive
+                // eslint-disable-next-line solid/reactivity
+                props.updateTabs((tabs) => {
+                  return selectTab({
+                    tabs,
+                    index: Option.some(Integer(idx())),
+                  }).pipe(Effect.runSync);
+                });
+              }}
+              onCloseClick={() => {
+                console.warn("TODO: tab close click");
+              }}
+            />
+          )}
         </For>
+
+        <div
+          ref={tabDropRef}
+          class={cn(
+            "grow h-full",
+            hasDrop() && "bg-theme-panel-tab-background-drop-target",
+          )}
+        />
       </ViewPanelTitlebar>
-      <MapOption on={active()}>
+      <MapOption
+        on={active()}
+        fallback={
+          <div class="flex grow items-center justify-center">
+            <p>no tab selected</p>
+          </div>
+        }
+      >
         {(leaf) => {
           return (
             <MapOption
@@ -787,6 +886,159 @@ export const ViewPanelNodeTabs: Component<{
   );
 };
 
+export const ViewTabHandle: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+  active: () => Option.Option<Integer>;
+  idx: () => Integer;
+  leaf: () => PanelNode.Leaf;
+  onClick: () => void;
+  onCloseClick: () => void;
+}> = (props) => {
+  const ctx = usePanelContext();
+
+  const selected = (): boolean =>
+    // false positive
+    // eslint-disable-next-line solid/reactivity
+    Option.map(props.active(), (i) => i === props.idx()).pipe(
+      Option.getOrElse(() => false),
+    );
+
+  const [dragging, setDragging] = createSignal(false);
+  const [hasDrop, setHasDrop] = createSignal(false);
+
+  const title = (): string =>
+    Option.getOrElse(
+      Option.map(ctx.getLeaf(props.leaf().id), (leaf) => leaf.title),
+      () => "<none leaf>",
+    );
+
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = pdndCombine(
+      draggable({
+        element: ref,
+
+        getInitialData: () =>
+          DragDataForTab({
+            parent: props.tabs(),
+            updateParent: (fn) =>
+              props.updateTabs((parent) => {
+                const node = fn(parent);
+                assert(PanelNode.$is("Tabs")(node));
+                return node;
+              }),
+            node: props.leaf(),
+            idx: props.idx(),
+          }),
+
+        onGenerateDragPreview: ({ nativeSetDragImage }) => {
+          setDragging(true);
+
+          setCustomNativeDragPreview({
+            getOffset: tabNativeDragPreviewOffset(),
+            render: ({ container }) =>
+              solidRender(
+                () => (
+                  <ViewTabHandleImpl
+                    class="h-6 border text-theme-text bg-theme-background"
+                    title={title}
+                  />
+                ),
+                container,
+              ),
+            nativeSetDragImage,
+          });
+        },
+        onDrop: () => setDragging(false),
+      }),
+      dropTargetForElements({
+        element: ref,
+
+        getData: () =>
+          DropTargetDataForTab({
+            tabs: props.tabs(),
+            updateTabs: props.updateTabs,
+            idx: Option.some(props.idx()),
+          }),
+
+        canDrop: ({ source }) => {
+          if (DragDataForTab.$is(source.data)) return true;
+
+          return false;
+        },
+
+        onDragEnter: () => setHasDrop(true),
+        onDragLeave: () => setHasDrop(false),
+        onDrop: () => setHasDrop(false),
+      }),
+    );
+    onCleanup(() => cleanup());
+  });
+
+  return (
+    <ViewTabHandleImpl
+      ref={ref}
+      class={cn(
+        "relative first:border-l border-r cursor-pointer hover:bg-theme-panel-tab-background-active",
+        selected() && "bg-theme-panel-tab-background-active",
+        dragging() && "text-transparent",
+        hasDrop() && "bg-theme-panel-tab-background-drop-target",
+      )}
+      title={title}
+      onClick={() => {
+        if (selected()) return;
+        props.onClick();
+      }}
+      onCloseClick={props.onCloseClick}
+    />
+  );
+};
+
+const ViewTabHandleImpl: Component<{
+  ref?: HTMLDivElement;
+  class?: string;
+  title: () => string;
+  onClick?: () => void;
+  onCloseClick?: () => void;
+}> = (props) => {
+  return (
+    <div
+      ref={props.ref}
+      class={cn(
+        "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group",
+        props.class,
+      )}
+      onClick={() => props.onClick?.()}
+    >
+      {/* icon placeholder */}
+      <div class="size-3.5" />
+
+      {props.title()}
+
+      <Button
+        as={Icon}
+        icon={icons["close"]}
+        variant="icon"
+        size="icon"
+        class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"
+        noOnClickToOnMouseDown
+        onClick={(event) => {
+          if (!props.onCloseClick) return;
+          event.stopPropagation();
+          props.onCloseClick();
+        }}
+      />
+    </div>
+  );
+};
+
+const tabNativeDragPreviewOffset = (): GetOffsetFn =>
+  pointerOutsideOfPreview({
+    x: "calc(var(--spacing) * 2)",
+    y: "calc(var(--spacing) * 2)",
+  });
+
 export const ViewPanelNodeLeaf: Component<{
   leaf: () => PanelNode.Leaf;
 }> = (props) => {
@@ -803,12 +1055,12 @@ export const ViewPanelNodeLeaf: Component<{
     >
       {(content) => (
         <div class="flex flex-col grow overflow-none">
-          <ViewPanelTitlebar class="text-sm px-1">
-            {/* if someone can tell how the fuck overflow and/or ellipses are meant
-                    to work in css I'd really fucking appreciate it
-                    I've tried every combination of css under the sun,
-                    but it just never fucking works, google's useless */}
-            {content().title}
+          <ViewPanelTitlebar class="text-sm relative overflow-none">
+            {/* I've never liked css, but this is just insane.
+                Just makes me like tailwind more for what it does do */}
+            <p class="absolute left-0 right-0 overflow-clip text-ellipsis whitespace-nowrap px-1">
+              {content().title}
+            </p>
           </ViewPanelTitlebar>
           <ViewPanelNodeLeafContent render={() => content().render} />
         </div>
@@ -820,15 +1072,47 @@ export const ViewPanelNodeLeaf: Component<{
 export const ViewPanelNodeLeafContent: Component<{
   render: () => Component<{}>;
 }> = (props) => {
-  return <div class="flex grow overflow-auto">{props.render()({})}</div>;
+  return (
+    <div class="flex grow relative overflow-none">
+      {/* using absolute is the only way I have found to completely ensure that
+          the rendered content cannot affect the outside sizing - breaking the
+          whole panel layout system */}
+      <div class="absolute left-0 right-0 top-0 bottom-0 overflow-auto">
+        {props.render()({})}
+      </div>
+    </div>
+  );
 };
 
+export type DragDataForTab = Readonly<{
+  _tag: "DragDataForTab";
+  parent: PanelNode.Parent;
+  updateParent: (fn: (parent: PanelNode.Parent) => PanelNode.Parent) => void;
+  node: PanelNode.Leaf;
+  idx: Integer;
+}>;
+export const DragDataForTab = taggedCtor<DragDataForTab>("DragDataForTab");
+
+export type DropTargetDataForTab = Readonly<{
+  _tag: "DropTargetDataForTab";
+  tabs: PanelNode.Tabs;
+  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+  idx: Option.Option<Integer>;
+}>;
+export const DropTargetDataForTab = taggedCtor<DropTargetDataForTab>(
+  "DropTargetDataForTab",
+);
+
 export namespace View {
+  export const Root = ViewRoot;
   export const PanelTitlebar = ViewPanelTitlebar;
+  export const WorkspaceTitlebar = ViewWorkspaceTitlebar;
   export const Workspace = ViewWorkspace;
   export const PanelNode = ViewPanelNode;
   export const PanelNodeSplit = ViewPanelNodeSplit;
   export const PanelNodeTabs = ViewPanelNodeTabs;
-  export const PanelNodeLeaf = ViewPanelNodeTabs;
+  export const TabHandle = ViewTabHandle;
+  export const PanelNodeLeaf = ViewPanelNodeLeaf;
+  export const PanelNodeLeafContent = ViewPanelNodeLeafContent;
 }
 export default View;

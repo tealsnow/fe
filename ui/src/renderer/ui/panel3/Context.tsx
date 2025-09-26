@@ -1,15 +1,16 @@
-import { SetStoreFunction } from "solid-js/store";
-
-import createHotStableContext from "~/lib/createHotStableContext";
-
-import { LeafContent, LeafID, LeafRecord, PanelNode, Workspace } from "./data";
+import { createContext } from "solid-js";
+import { SetStoreFunction, Store } from "solid-js/store";
 import { Option } from "effect";
 
+// import createHotStableContext from "~/lib/createHotStableContext";
+
+import { LeafContent, LeafID, LeafRecord, PanelNode, Workspace } from "./data";
+
 export type PanelContext = {
-  workspace: Workspace;
+  workspace: Store<Workspace>;
   setWorkspace: SetStoreFunction<Workspace>;
 
-  leafRecord: LeafRecord;
+  leafRecord: Store<LeafRecord>;
   setLeafRecord: SetStoreFunction<LeafRecord>;
 
   historyBatchBegin: () => void;
@@ -19,5 +20,6 @@ export type PanelContext = {
   getLeaf: (id: LeafID) => Option.Option<LeafContent>;
   createLeaf: (content?: LeafContent) => PanelNode.Leaf;
 };
-export const PanelContext =
-  createHotStableContext<PanelContext>("PanelContext");
+// export const PanelContext =
+//   createHotStableContext<PanelContext>("PanelContext");
+export const PanelContext = createContext<PanelContext>();
