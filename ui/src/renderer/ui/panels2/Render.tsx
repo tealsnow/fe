@@ -51,7 +51,7 @@ export type RenderPanelProps = {
 };
 export const RenderPanel: Component<RenderPanelProps> = (props) => {
   return (
-    <div class="flex grow relative overflow-hidden" data-render-panel={true}>
+    <div class="flex grow relative" data-render-panel={true}>
       <Switch>
         <MatchTag on={props.id()} tag="DockSpace">
           {(dockSpace) => <RenderDockSpace id={dockSpace} />}
@@ -113,10 +113,7 @@ export const RenderDockSpaceTabs: Component<RenderDockSpaceTabsProps> = (
   const ctx = Panel.useContext();
 
   return (
-    <div
-      class="flex flex-col grow overflow-hidden gap-0"
-      data-render-dock-space={true}
-    >
+    <div class="flex flex-col grow gap-0" data-render-dock-space={true}>
       <RenderTitlebar>
         <Index each={props.tabs().children}>
           {(childId, idx) => {
@@ -198,10 +195,7 @@ export const RenderDockSpaceSlotted: Component<RenderDockSpaceSlottedProps> = (
   props,
 ) => {
   return (
-    <div
-      class="flex grow overflow-hidden"
-      data-render-dock-space-slotted={true}
-    >
+    <div class="flex grow" data-render-dock-space-slotted={true}>
       {props.slotted().layout({ slots: props.slotted().slots })}
     </div>
   );

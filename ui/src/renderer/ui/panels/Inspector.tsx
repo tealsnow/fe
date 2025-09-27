@@ -261,7 +261,7 @@ const PanelInspector: Component<PanelInspectorProps> = (props) => {
                         as="span"
                         size="small"
                         color="aqua"
-                        class="h-full pt-1 text-xs/tight w-20 overflow-hidden whitespace-nowrap text-ellipsis text-left text-nowrap"
+                        class="h-full pt-1 text-xs/tight w-20 whitespace-nowrap text-ellipsis text-left text-nowrap"
                         onClick={() => dbg.setSelectedId(Option.some(item.id))}
                       >
                         {item.id.uuid}

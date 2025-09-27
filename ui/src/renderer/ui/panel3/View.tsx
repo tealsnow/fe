@@ -12,7 +12,6 @@ import {
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { Option, Effect, Match, Order, pipe, Equal } from "effect";
-import { MapOption } from "solid-effect";
 import { css } from "solid-styled-components";
 
 import {
@@ -53,6 +52,7 @@ import {
   updateNode,
   removeChild,
   addTab,
+  LeafContent,
 } from "./data";
 
 export const ViewRoot: Component = () => {
@@ -124,12 +124,26 @@ export const ViewPanelTitlebar: Component<
     class?: string;
   }>
 > = (props) => {
+  let ref!: HTMLDivElement;
   return (
     <div
+      ref={ref}
       class={cn(
-        "flex flex-row min-h-6 max-h-6 w-full items-center border-theme-border border-b",
+        "flex flex-row min-h-6 max-h-6 items-center border-theme-border border-b overflow-x-auto no-scrollbar",
         props.class,
       )}
+      onWheel={(ev) => {
+        ev.preventDefault();
+
+        const isTrackpad = Math.abs(ev.deltaY) < 50;
+
+        if (isTrackpad) {
+          ref.scrollLeft += ev.deltaY;
+          ref.scrollLeft += ev.deltaX;
+        } else {
+          ref.scrollBy({ left: ev.deltaY, behavior: "smooth" });
+        }
+      }}
     >
       {props.children}
     </div>
@@ -299,7 +313,7 @@ export const ViewWorkspace: Component<{}> = () => {
     return (
       <Show when={sidebars()[props.side].enabled}>
         <div
-          class="relative flex border-theme-border overflow-none"
+          class="relative flex border-theme-border"
           style={{
             [sizeType[props.side]]: sidebarSize(props.side),
           }}
@@ -370,22 +384,7 @@ export const ViewWorkspace: Component<{}> = () => {
         <SidebarHandle side="left" />
 
         <div class="flex flex-col grow">
-          <div
-            class="flex"
-            style={{
-              height: `${
-                sidebars().bottom.enabled
-                  ? (1 - sidebars().bottom.size) * 100
-                  : 100
-              }%`,
-              width: `${
-                1 -
-                ((sidebars().left.enabled ? sidebars().left.size : 0) +
-                  (sidebars().right.enabled ? sidebars().right.size : 0)) *
-                  100
-              }%`,
-            }}
-          >
+          <div class="flex grow">
             <ViewPanelNode
               node={() => ctx.workspace.root}
               updateNode={(fn) => ctx.setWorkspace("root", fn)}
@@ -786,13 +785,10 @@ export const ViewPanelNodeTabs: Component<{
   const active = (): Option.Option<PanelNode.Leaf> =>
     // false positive
     // eslint-disable-next-line solid/reactivity
-    Option.map(props.tabs().active, (idx) => props.tabs().children[idx]);
-
-  // const updateParent = (
-  //   fn: (node: PanelNode.Tabs) => PanelNode.Tabs,
-  // ): void => {
-  //   props.updateTabs(fn);
-  // };
+    Option.flatMap(props.tabs().active, (idx) => {
+      if (idx >= props.tabs().children.length) return Option.none();
+      return Option.some(props.tabs().children[idx]);
+    });
 
   const [hasDrop, setHasDrop] = createSignal(false);
 
@@ -821,8 +817,20 @@ export const ViewPanelNodeTabs: Component<{
     onCleanup(() => cleanup());
   });
 
+  const activeTabContent = (): Component<{}> =>
+    active().pipe(
+      Option.flatMap(({ id }) =>
+        ctx.getLeaf(id).pipe(Option.map((content) => content.render)),
+      ),
+      Option.getOrElse(() => () => (
+        <div class="flex w-full h-full items-center justify-center">
+          <p>no tab selected</p>
+        </div>
+      )),
+    );
+
   return (
-    <div class="flex flex-col grow overflow-none">
+    <div class="flex flex-col w-full h-full">
       <ViewPanelTitlebar class="px-1">
         <For each={props.tabs().children}>
           {(child, idx) => (
@@ -855,33 +863,18 @@ export const ViewPanelNodeTabs: Component<{
             "grow h-full",
             hasDrop() && "bg-theme-panel-tab-background-drop-target",
           )}
+          onClick={() =>
+            props.updateTabs((tabs) => {
+              return selectTab({
+                tabs,
+                index: Option.none(),
+              }).pipe(Effect.runSync);
+            })
+          }
         />
       </ViewPanelTitlebar>
-      <MapOption
-        on={active()}
-        fallback={
-          <div class="flex grow items-center justify-center">
-            <p>no tab selected</p>
-          </div>
-        }
-      >
-        {(leaf) => {
-          return (
-            <MapOption
-              on={ctx.getLeaf(leaf().id)}
-              fallback={
-                <div class="flex grow items-center justify-center">
-                  <p>TODO: none leaf in tabs</p>
-                </div>
-              }
-            >
-              {(content) => (
-                <ViewPanelNodeLeafContent render={() => content().render} />
-              )}
-            </MapOption>
-          );
-        }}
-      </MapOption>
+
+      <ViewPanelNodeLeafContent render={() => activeTabContent()} />
     </div>
   );
 };
@@ -1006,7 +999,7 @@ const ViewTabHandleImpl: Component<{
     <div
       ref={props.ref}
       class={cn(
-        "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group",
+        "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
         props.class,
       )}
       onClick={() => props.onClick?.()}
@@ -1044,28 +1037,31 @@ export const ViewPanelNodeLeaf: Component<{
 }> = (props) => {
   const ctx = usePanelContext();
 
+  const leaf = (): LeafContent =>
+    ctx.getLeaf(props.leaf().id).pipe(
+      Option.getOrElse(() =>
+        LeafContent({
+          title: "",
+          render: () => (
+            <div class="flex w-full h-full items-center justify-center">
+              <p>TODO: none leaf</p>
+            </div>
+          ),
+        }),
+      ),
+    );
+
   return (
-    <MapOption
-      on={ctx.getLeaf(props.leaf().id)}
-      fallback={
-        <div class="flex grow items-center justify-center">
-          <p>TODO: none leaf</p>
-        </div>
-      }
-    >
-      {(content) => (
-        <div class="flex flex-col grow overflow-none">
-          <ViewPanelTitlebar class="text-sm relative overflow-none">
-            {/* I've never liked css, but this is just insane.
+    <div class="flex flex-col grow">
+      <ViewPanelTitlebar class="text-sm relative">
+        {/* I've never liked css, but this is just insane.
                 Just makes me like tailwind more for what it does do */}
-            <p class="absolute left-0 right-0 overflow-clip text-ellipsis whitespace-nowrap px-1">
-              {content().title}
-            </p>
-          </ViewPanelTitlebar>
-          <ViewPanelNodeLeafContent render={() => content().render} />
-        </div>
-      )}
-    </MapOption>
+        <p class="absolute left-0 right-0 overflow-clip text-ellipsis whitespace-nowrap px-1">
+          {leaf().title}
+        </p>
+      </ViewPanelTitlebar>
+      <ViewPanelNodeLeafContent render={() => leaf().render} />
+    </div>
   );
 };
 
@@ -1073,7 +1069,7 @@ export const ViewPanelNodeLeafContent: Component<{
   render: () => Component<{}>;
 }> = (props) => {
   return (
-    <div class="flex grow relative overflow-none">
+    <div class="flex grow relative">
       {/* using absolute is the only way I have found to completely ensure that
           the rendered content cannot affect the outside sizing - breaking the
           whole panel layout system */}

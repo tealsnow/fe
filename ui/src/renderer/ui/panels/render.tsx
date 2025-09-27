@@ -249,7 +249,7 @@ export const RenderPanels: Component = () => {
   });
 
   return (
-    <div class="flex grow overflow-hidden">
+    <div class="flex grow">
       <RenderPanelUnderSplit
         parentSplitDirection={() => "horizontal"}
         panelId={() => tree.root}
@@ -316,7 +316,7 @@ export const RenderPanelUnderSplit: Component<RenderPanelProps> = (props) => {
       data-panel-id={props.panelId().uuid}
       data-panel-tag={props.panelId()._tag}
     >
-      <div class="flex grow relative overflow-hidden">
+      <div class="flex grow relative">
         <Switch>
           <MatchTag on={panel()} tag="leaf">
             {(leaf) => <RenderPanelLeaf leaf={leaf} />}
@@ -387,7 +387,7 @@ const RenderPanelLeaf: Component<RenderPanelLeafProps> = (props) => {
   });
 
   return (
-    <div class="flex flex-col grow overflow-hidden">
+    <div class="flex flex-col grow">
       <PanelTitlebar ref={ref} class="pl-2">
         {props.leaf().title}
       </PanelTitlebar>
@@ -428,7 +428,7 @@ const RenderPanelParent: Component<RenderPanelParentProps> = (props) => {
   const { tree } = usePanelContext();
 
   return (
-    <div class="flex flex-col grow overflow-hidden">
+    <div class="flex flex-col grow">
       <MapOption on={props.node().titlebar}>
         {(titlebar) => <PanelTitlebar>{titlebar()({})}</PanelTitlebar>}
       </MapOption>
@@ -436,7 +436,7 @@ const RenderPanelParent: Component<RenderPanelParentProps> = (props) => {
       <Switch>
         <MatchTag on={props.node().layout} tag="tabs">
           {(tabs) => (
-            <div class="flex flex-col grow overflow-hidden">
+            <div class="flex flex-col grow">
               <TabBar parent={props.node} tabs={tabs} />
 
               <MapOption
@@ -463,7 +463,7 @@ const RenderPanelParent: Component<RenderPanelParentProps> = (props) => {
             return (
               <div
                 class={cn(
-                  "flex grow overflow-hidden",
+                  "flex grow",
                   Match.value(split().direction).pipe(
                     Match.when("vertical", () => "flex-col"),
                     Match.when("horizontal", () => "flex-row"),

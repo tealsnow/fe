@@ -339,7 +339,7 @@ export const ButtonProperty: Component<ButtonPropertyProps> = (props) => {
           as="span"
           color="aqua"
           size="small"
-          class="w-full h-full pt-1 overflow-hidden whitespace-nowrap text-ellipsis min-w-0 max-w-full"
+          class="w-full h-full pt-1 whitespace-nowrap text-ellipsis min-w-0 max-w-full"
           disabled={props.onClick === undefined}
           onClick={props.onClick}
         >

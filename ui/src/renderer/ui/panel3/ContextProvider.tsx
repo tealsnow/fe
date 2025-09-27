@@ -62,6 +62,7 @@ export const PanelContextProvider: Component<
 
     const update = trackStore(workspace);
 
+    console.count("panel update");
     Console.withGroup(
       Effect.gen(function* () {
         console.log(JSON.stringify(update, null, 2));

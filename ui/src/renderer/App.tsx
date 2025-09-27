@@ -63,7 +63,7 @@ const AfterWindow: Component = () => {
   return (
     <Theme.ThemeContextProvider
       theme={Theme.defaultTheme}
-      class="flex w-screen h-screen overflow-hidden"
+      class="flex w-screen h-screen"
       applyRounding={!windowCtx.maximized()}
     >
       <NotificationProvider>
@@ -141,10 +141,10 @@ const Root: Component = () => {
   return (
     <div
       class={cn(
-        "flex flex-col grow overflow-hidden relative",
+        "flex flex-col grow relative",
         !windowCtx.maximized() && [
           themeCtx.theme().windowRounding,
-          "electron-corner-smoothing-[60%] border border-theme-border overflow-hidden",
+          "electron-corner-smoothing-[60%] border border-theme-border",
         ],
       )}
     >

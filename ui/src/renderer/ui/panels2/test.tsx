@@ -56,7 +56,7 @@ const ActualTest: Component<{}> = () => {
   );
 
   return (
-    <div class="flex flex-row grow overflow-hidden">
+    <div class="flex flex-row grow">
       <Render.DockSpaceSlotted slotted={() => root.layout} />
 
       <Show when={ctx.showDebugSidePanel()}>

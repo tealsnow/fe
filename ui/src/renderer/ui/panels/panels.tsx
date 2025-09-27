@@ -93,7 +93,7 @@ export const PanelsRoot2: Component = () => {
   // });
 
   return (
-    <div class="flex flex-col grow overflow-hidden">
+    <div class="flex flex-col grow">
       <Show when={false}>
         <div class="flex flex-row h-8 border-b border-theme-border items-center p-2">
           <div class="ml-auto flex flex-row gap-2">
@@ -125,7 +125,7 @@ export const PanelsRoot2: Component = () => {
         </div>
       </Show>
 
-      <div class="flex grow overflow-hidden">
+      <div class="flex grow">
         <div
           class={cn(
             "h-full border-theme-border",

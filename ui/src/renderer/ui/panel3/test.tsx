@@ -39,7 +39,7 @@ const ActualTest: Component = () => {
               render: () => {
                 const rightSplit = ctx.workspace.sidebars.right.node;
                 return (
-                  <div class="flex grow flex-col p-1">
+                  <div class="flex flex-col p-1">
                     <pre>{JSON.stringify(rightSplit, null, 2)}</pre>
                   </div>
                 );
@@ -49,7 +49,7 @@ const ActualTest: Component = () => {
               title: "workspace dbg",
               render: () => {
                 return (
-                  <div class="flex grow flex-col p-1">
+                  <div class="flex flex-col p-1">
                     <pre>{JSON.stringify(ctx.workspace, null, 2)}</pre>
                   </div>
                 );
@@ -71,6 +71,10 @@ const ActualTest: Component = () => {
                   title: "bar",
                   render: () => <>bar content</>,
                 }),
+                ctx.createLeaf({
+                  title: "long tab name",
+                  render: () => <>content</>,
+                }),
               ],
             }),
           }),
@@ -88,11 +92,19 @@ const ActualTest: Component = () => {
                   children: [
                     ctx.createLeaf({
                       title: "right bottom left",
-                      render: () => <>right bottom left</>,
+                      render: () => <>right bottom left content</>,
                     }),
-                    ctx.createLeaf({
-                      title: "right bottom right",
-                      render: () => <>right bottom right</>,
+                    PanelNode.makeTabs({
+                      children: [
+                        ctx.createLeaf({
+                          title: "tab 1",
+                          render: () => <></>,
+                        }),
+                        ctx.createLeaf({
+                          title: "tab 2",
+                          render: () => <></>,
+                        }),
+                      ],
                     }),
                   ],
                 }),
