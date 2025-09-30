@@ -1,19 +1,9 @@
-import { batch, Component, createEffect, Index, onMount } from "solid-js";
-import { Console, Effect, Option } from "effect";
+import { batch, Component, onMount } from "solid-js";
 
 import Percent from "~/lib/Percent";
-import UUID from "~/lib/UUID";
-import assert from "~/lib/assert";
 import Integer from "~/lib/Integer";
 
-import {
-  LeafRecord,
-  PanelNode,
-  LeafID,
-  LeafContent,
-  WorkspaceSidebars,
-  WorkspaceSidebar,
-} from "./data";
+import { PanelNode, WorkspaceSidebar } from "./data";
 import { PanelContextProvider, usePanelContext } from "./ContextProvider";
 import View from "./View";
 
@@ -60,6 +50,7 @@ const ActualTest: Component = () => {
         }),
         sidebars: {
           left: WorkspaceSidebar({
+            size: Percent.from(15),
             enabled: true,
             node: PanelNode.makeTabs({
               children: [
@@ -79,20 +70,37 @@ const ActualTest: Component = () => {
             }),
           }),
           right: WorkspaceSidebar({
+            size: Percent.from(35),
             enabled: true,
             node: PanelNode.makeSplit({
               axis: "vertical",
               children: [
-                ctx.createLeaf({
-                  title: "right top",
-                  render: () => <>right top content</>,
+                PanelNode.makeTabs({
+                  children: [
+                    ctx.createLeaf({
+                      title: "right top",
+                      render: () => <>right top content</>,
+                    }),
+                  ],
+                }),
+                PanelNode.makeTabs({
+                  children: [
+                    ctx.createLeaf({
+                      title: "wow",
+                      render: () => <></>,
+                    }),
+                  ],
                 }),
                 PanelNode.makeSplit({
                   axis: "horizontal",
                   children: [
-                    ctx.createLeaf({
-                      title: "right bottom left",
-                      render: () => <>right bottom left content</>,
+                    PanelNode.makeTabs({
+                      children: [
+                        ctx.createLeaf({
+                          title: "right bottom left",
+                          render: () => <>right bottom left content</>,
+                        }),
+                      ],
                     }),
                     PanelNode.makeTabs({
                       children: [
@@ -112,8 +120,8 @@ const ActualTest: Component = () => {
             }),
           }),
           bottom: WorkspaceSidebar({
-            enabled: true,
-            node: ctx.createLeaf(),
+            enabled: false,
+            node: PanelNode.makeTabs(),
           }),
         },
       });

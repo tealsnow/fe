@@ -4,7 +4,7 @@ import { Option } from "effect";
 
 // import createHotStableContext from "~/lib/createHotStableContext";
 
-import { LeafContent, LeafID, LeafRecord, PanelNode, Workspace } from "./data";
+import { Leaf, LeafContent, LeafID, LeafRecord, Workspace } from "./data";
 
 export type PanelContext = {
   workspace: Store<Workspace>;
@@ -18,7 +18,7 @@ export type PanelContext = {
   historyBatch: <T>(fn: () => T) => T;
 
   getLeaf: (id: LeafID) => Option.Option<LeafContent>;
-  createLeaf: (content?: LeafContent) => PanelNode.Leaf;
+  createLeaf: (content?: LeafContent) => Leaf;
 };
 // export const PanelContext =
 //   createHotStableContext<PanelContext>("PanelContext");

@@ -1,3 +1,6 @@
+/* @refresh reload */
+// dnd functionality breaks after a hmr, so a reload is needed anyway
+
 import {
   Component,
   For,
@@ -11,7 +14,7 @@ import {
   batch,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
-import { Option, Effect, Match, Order, pipe, Equal } from "effect";
+import { Option, Effect, Match, Order, pipe, Array } from "effect";
 import { css } from "solid-styled-components";
 
 import {
@@ -25,7 +28,6 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 // import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
-import { GetOffsetFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/public-utils/element/custom-native-drag-preview/types";
 
 import { Icon, IconKind, icons } from "~/assets/icons";
 
@@ -49,11 +51,11 @@ import {
   SplitAxis,
   updateSplitChildPercent,
   SplitChild,
-  updateNode,
-  removeChild,
   addTab,
-  LeafContent,
+  Leaf,
 } from "./data";
+
+export type UpdateFn<T> = (fn: (_: T) => T) => void;
 
 export const ViewRoot: Component = () => {
   onMount(() => {
@@ -70,29 +72,19 @@ export const ViewRoot: Component = () => {
           dropTarget: DropTargetDataForTab,
         ): void => {
           batch(() => {
-            drag.updateParent((parent) =>
-              removeChild({
-                parent,
-                match: (node) => Equal.equals(node, drag.node),
-              }).pipe(
-                Effect.catchTag("NodeNotFoundError", (err) => {
-                  console.error(
-                    "failed to find child in what is meant to be its parent",
-                    err,
-                  );
-                  return Effect.sync(() => parent);
-                }),
-                Effect.runSync,
-              ),
+            drag.updateTabs((tabs) =>
+              PanelNode.Tabs({
+                ...tabs,
+                children: tabs.children.filter((_, idx) => idx !== drag.idx),
+              }),
             );
-
-            dropTarget.updateTabs((tabs) => {
-              return addTab({
+            dropTarget.updateTabs((tabs) =>
+              addTab({
                 tabs,
                 newLeaf: drag.node,
                 idx: Option.getOrUndefined(dropTarget.idx),
-              }).pipe(Effect.runSync);
-            });
+              }).pipe(Effect.runSync),
+            );
           });
         };
 
@@ -126,26 +118,40 @@ export const ViewPanelTitlebar: Component<
 > = (props) => {
   let ref!: HTMLDivElement;
   return (
-    <div
-      ref={ref}
-      class={cn(
-        "flex flex-row min-h-6 max-h-6 items-center border-theme-border border-b overflow-x-auto no-scrollbar",
-        props.class,
-      )}
-      onWheel={(ev) => {
-        ev.preventDefault();
+    <div data-panel-titlebar-root class={cn("min-h-6 max-h-6 relative")}>
+      <div
+        ref={ref}
+        class={cn(
+          "absolute left-0 right-0 top-0 bottom-0 flex flex-row items-center border-theme-border border-b overflow-x-scroll no-scrollbar",
+          props.class,
+        )}
+        onWheel={(ev) => {
+          // @HACK: This is real hacky, I find it hard to believe that there is
+          //   no way to scroll horizontally by default on the web platform.
+          //   Again this is a hack. I know at the native level it knows if it is
+          //   discrete or not, so I hate having to check like this.
+          //   Further on large lists, with multiple notches from a scroll wheel
+          //   the scrollBy with smooth breaks and starts jittering
+          //   The cleanest solution is to just have the `+=`s with the delta,
+          //   only problem is that it it stops the smooth scroll.
+          //   If we are so inclined, we could do so with a custom smooth scroll
+          //   implementation, which may be needed for to be made other parts
+          //   of the application.
 
-        const isTrackpad = Math.abs(ev.deltaY) < 50;
+          ev.preventDefault();
 
-        if (isTrackpad) {
-          ref.scrollLeft += ev.deltaY;
-          ref.scrollLeft += ev.deltaX;
-        } else {
-          ref.scrollBy({ left: ev.deltaY, behavior: "smooth" });
-        }
-      }}
-    >
-      {props.children}
+          const isDiscrete = Math.abs(ev.deltaY) < 50;
+
+          if (isDiscrete) {
+            ref.scrollLeft += ev.deltaY;
+            ref.scrollLeft += ev.deltaX;
+          } else {
+            ref.scrollBy({ left: ev.deltaY, behavior: "smooth" });
+          }
+        }}
+      >
+        {props.children}
+      </div>
     </div>
   );
 };
@@ -310,9 +316,17 @@ export const ViewWorkspace: Component<{}> = () => {
       bottom: "height",
     };
 
+    const parentAxis: Record<WorkspaceSidebarSide, SplitAxis> = {
+      left: "horizontal",
+      right: "horizontal",
+      bottom: "vertical",
+    };
+
     return (
       <Show when={sidebars()[props.side].enabled}>
         <div
+          data-sidebar-root
+          data-sidebar-side={props.side}
           class="relative flex border-theme-border"
           style={{
             [sizeType[props.side]]: sidebarSize(props.side),
@@ -331,13 +345,14 @@ export const ViewWorkspace: Component<{}> = () => {
                 },
               }))
             }
+            parentSplitAxis={() => Option.some(parentAxis[props.side])}
           />
         </div>
       </Show>
     );
   };
 
-  const SidebarHandle: Component<{
+  const SidebarResizeHandle: Component<{
     side: WorkspaceSidebarSide;
   }> = (props) => {
     const axis: Record<WorkspaceSidebarSide, SplitAxis> = {
@@ -374,28 +389,47 @@ export const ViewWorkspace: Component<{}> = () => {
   };
 
   return (
-    <div class="flex flex-col grow">
+    <div class="flex flex-col w-full h-full" data-workspace-root>
       <ViewWorkspaceTitlebar sidebars={sidebars} />
       {/* border as an element to so you cannot drag the window by the border */}
       <div class="w-full min-h-[1px] max-h-[1px] bg-theme-border" />
 
-      <div class="flex flex-row grow">
+      <div class="flex flex-row w-full h-full">
         <ViewSidebar side="left" />
-        <SidebarHandle side="left" />
+        <SidebarResizeHandle side="left" />
 
-        <div class="flex flex-col grow">
-          <div class="flex grow">
+        <div
+          class="flex flex-col"
+          style={{
+            width: `${
+              (1 -
+                ((sidebars().left.enabled ? sidebars().left.size : 0) +
+                  (sidebars().right.enabled ? sidebars().right.size : 0))) *
+              100
+            }%`,
+          }}
+        >
+          <div
+            class="flex w-full"
+            style={{
+              height: `${
+                (1 - (sidebars().bottom.enabled ? sidebars().bottom.size : 0)) *
+                100
+              }%`,
+            }}
+          >
             <ViewPanelNode
               node={() => ctx.workspace.root}
               updateNode={(fn) => ctx.setWorkspace("root", fn)}
+              parentSplitAxis={() => Option.none()}
             />
           </div>
 
-          <SidebarHandle side="bottom" />
+          <SidebarResizeHandle side="bottom" />
           <ViewSidebar side="bottom" />
         </div>
 
-        <SidebarHandle side="right" />
+        <SidebarResizeHandle side="right" />
         <ViewSidebar side="right" />
       </div>
     </div>
@@ -404,7 +438,8 @@ export const ViewWorkspace: Component<{}> = () => {
 
 export const ViewPanelNode: Component<{
   node: () => PanelNode;
-  updateNode: (fn: (node: PanelNode) => PanelNode) => void;
+  updateNode: UpdateFn<PanelNode>;
+  parentSplitAxis: () => Option.Option<SplitAxis>;
 }> = (props) => {
   return (
     <Switch>
@@ -431,11 +466,9 @@ export const ViewPanelNode: Component<{
                 return fn(node);
               })
             }
+            parentSplitAxis={props.parentSplitAxis}
           />
         )}
-      </MatchTag>
-      <MatchTag on={props.node()} tag={"Leaf"}>
-        {(leaf) => <ViewPanelNodeLeaf leaf={leaf} />}
       </MatchTag>
     </Switch>
   );
@@ -443,7 +476,7 @@ export const ViewPanelNode: Component<{
 
 export const ViewPanelNodeSplit: Component<{
   split: () => PanelNode.Split;
-  updateSplit: (fn: (split: PanelNode.Split) => PanelNode.Split) => void;
+  updateSplit: UpdateFn<PanelNode.Split>;
 }> = (props) => {
   const axis = (): SplitAxis => props.split().axis;
 
@@ -462,8 +495,34 @@ export const ViewPanelNodeSplit: Component<{
     horizontal: "h-full",
   };
 
+  const [tabHovered, setTabHovered] = createSignal(false);
+
+  let ref!: HTMLDivElement;
+
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: ref,
+
+      onDragStart: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragEnter: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragLeave: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(false);
+      },
+      onDrop: () => setTabHovered(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
   return (
-    <div class={cn("flex grow", layoutDirection[axis()])}>
+    <div
+      ref={ref}
+      class={cn("flex w-full h-full relative", layoutDirection[axis()])}
+      data-split-panel-root
+    >
       <Index each={props.split().children}>
         {(child, idx) => {
           return (
@@ -477,16 +536,21 @@ export const ViewPanelNodeSplit: Component<{
                 <ViewPanelNode
                   node={() => child().node}
                   updateNode={(fn) =>
-                    props.updateSplit((split) => {
-                      const res = updateNode({
-                        node: split,
-                        match: (node) => Equal.equals(node, child().node),
-                        fn,
-                      }).pipe(Effect.runSync);
-                      assert(PanelNode.$is("Split")(res));
-                      return res;
-                    })
+                    props.updateSplit((split) =>
+                      PanelNode.Split({
+                        ...split,
+                        children: Array.modify(
+                          split.children,
+                          idx,
+                          (child) => ({
+                            percent: child.percent,
+                            node: fn(child.node),
+                          }),
+                        ),
+                      }),
+                    )
                   }
+                  parentSplitAxis={() => Option.some(axis())}
                 />
               </div>
 
@@ -503,12 +567,84 @@ export const ViewPanelNodeSplit: Component<{
           );
         }}
       </Index>
+
+      <Show when={tabHovered()}>
+        <SplitDropOverlay isRoot={() => false} split={props.split} />
+      </Show>
     </div>
   );
 };
 
+const SplitDropOverlay: Component<{
+  isRoot: () => boolean;
+  split: () => PanelNode.Split;
+}> = (props) => {
+  const axis = (): SplitAxis => props.split().axis;
+
+  return (
+    <>
+      <div
+        class={cn(
+          "absolute top-0 bottom-0 left-0 right-0 z-10",
+          "grid",
+          "grid-cols-[2rem_1fr_3rem_1fr_2rem]",
+          "grid-rows-[2rem_1fr_3rem_1fr_2rem]",
+          "pointer-events-none",
+        )}
+      >
+        <Show when={props.isRoot() || axis() === "vertical"}>
+          {/* top */}
+          <div class={cn("bg-green-400 pointer-events-auto", "col-3 row-1")} />
+          {/* bottom */}
+          <div class={cn("bg-green-400 pointer-events-auto", "col-3 row-5")} />
+        </Show>
+        <Show when={props.isRoot() || axis() === "horizontal"}>
+          {/* left */}
+          <div class={cn("bg-green-400 pointer-events-auto", "col-1 row-3")} />
+          {/* right */}
+          <div class={cn("bg-green-400 pointer-events-auto", "col-5 row-3")} />
+        </Show>
+      </div>
+
+      <For each={props.split().children}>
+        {(_, idx) => {
+          // accumulate the sizes of children up to the current
+          const percent = (): number => {
+            let accum = 0;
+            for (let i = 0; i <= idx(); i += 1)
+              accum += props.split().children[i].percent;
+            assert(accum < 1);
+            return accum;
+          };
+
+          return (
+            <Show when={idx() !== props.split().children.length - 1}>
+              <div
+                class={cn("absolute bg-purple-600 self-center")}
+                style={{
+                  ...(axis() === "vertical"
+                    ? {
+                        width: "3rem",
+                        height: "2rem",
+                        top: `calc(${percent() * 100}% - 2rem / 2`,
+                      }
+                    : {
+                        width: "2rem",
+                        height: "3rem",
+                        left: `calc(${percent() * 100}% - 2rem / 2`,
+                      }),
+                }}
+              />
+            </Show>
+          );
+        }}
+      </For>
+    </>
+  );
+};
+
 const SplitResizeHandle: Component<{
-  updateSplit: (fn: (split: PanelNode.Split) => PanelNode.Split) => void;
+  updateSplit: UpdateFn<PanelNode.Split>;
   currentChild: () => SplitChild;
   nextChild: () => SplitChild;
   idx: () => number;
@@ -761,13 +897,14 @@ export const ResizeHandleRender: Component<{
     <div
       ref={props.ref}
       class={cn(
-        "relative bg-theme-border transition-colors hover:bg-theme-deemphasis",
+        "relative bg-theme-border hover:bg-theme-deemphasis transition-colors duration-100",
         axisStyles[props.axis],
         props.resizing() && "bg-theme-deemphasis",
         css`
           &::before {
             content: "";
             position: absolute;
+            z-index: 10;
             ${pseudoStyles[props.axis]}
           }
         `,
@@ -778,11 +915,12 @@ export const ResizeHandleRender: Component<{
 
 export const ViewPanelNodeTabs: Component<{
   tabs: () => PanelNode.Tabs;
-  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
+  parentSplitAxis: () => Option.Option<SplitAxis>;
 }> = (props) => {
   const ctx = usePanelContext();
 
-  const active = (): Option.Option<PanelNode.Leaf> =>
+  const active = (): Option.Option<Leaf> =>
     // false positive
     // eslint-disable-next-line solid/reactivity
     Option.flatMap(props.tabs().active, (idx) => {
@@ -829,8 +967,36 @@ export const ViewPanelNodeTabs: Component<{
       )),
     );
 
+  const [tabHovered, setTabHovered] = createSignal(false);
+
+  let ref!: HTMLDivElement;
+
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: ref,
+
+      onDragStart: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragEnter: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragLeave: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(false);
+      },
+      onDrop: () => setTabHovered(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  let titlebarRef!: HTMLDivElement;
+
   return (
-    <div class="flex flex-col w-full h-full">
+    <div
+      ref={ref}
+      class="flex flex-col relative w-full h-full"
+      data-tabs-panel-root
+    >
       <ViewPanelTitlebar class="px-1">
         <For each={props.tabs().children}>
           {(child, idx) => (
@@ -860,31 +1026,93 @@ export const ViewPanelNodeTabs: Component<{
         <div
           ref={tabDropRef}
           class={cn(
-            "grow h-full",
+            "grow h-full min-w-5",
             hasDrop() && "bg-theme-panel-tab-background-drop-target",
           )}
           onClick={() =>
-            props.updateTabs((tabs) => {
-              return selectTab({
+            props.updateTabs((tabs) =>
+              selectTab({
                 tabs,
                 index: Option.none(),
-              }).pipe(Effect.runSync);
-            })
+              }).pipe(Effect.runSync),
+            )
           }
         />
+
+        <div class="flex items-center border-l border-theme-border h-full">
+          <Button
+            as={Icon}
+            icon={icons["add"]}
+            variant="icon"
+            size="icon"
+            class="p-1 ml-1"
+            onClick={() => {
+              console.warn("TODO: new tab");
+            }}
+          />
+        </div>
       </ViewPanelTitlebar>
 
       <ViewPanelNodeLeafContent render={() => activeTabContent()} />
+
+      <Show when={tabHovered()}>
+        <TabsDropOverlay parentSplitAxis={props.parentSplitAxis} />
+      </Show>
+    </div>
+  );
+};
+
+const TabsDropOverlay: Component<{
+  parentSplitAxis: () => Option.Option<SplitAxis>;
+}> = (props) => {
+  return (
+    <div
+      class={cn(
+        "absolute top-0 bottom-0 left-0 right-0 z-10",
+        "grid",
+        "grid-cols-[1fr_3rem_3rem_3rem_1fr]",
+        "grid-rows-[1fr_3rem_3rem_3rem_1fr]",
+        "pointer-events-none",
+      )}
+    >
+      {/* center */}
+      <div class={cn("bg-orange-400 pointer-events-auto", "col-3 row-3")} />
+
+      <Show
+        when={
+          props
+            .parentSplitAxis()
+            .pipe(Option.getOrElse<SplitAxis>(() => "vertical")) === "vertical"
+        }
+      >
+        {/* left */}
+        <div class={cn("bg-blue-900 pointer-events-auto", "col-2 row-3")} />
+        {/* right */}
+        <div class={cn("bg-blue-900 pointer-events-auto", "col-4 row-3")} />
+      </Show>
+      <Show
+        when={
+          props
+            .parentSplitAxis()
+            .pipe(Option.getOrElse<SplitAxis>(() => "horizontal")) ===
+          "horizontal"
+        }
+      >
+        {/* top */}
+        <div class={cn("bg-blue-900 pointer-events-auto", "col-3 row-2")} />
+        {/* bottom */}
+        <div class={cn("bg-blue-900 pointer-events-auto", "col-3 row-4")} />
+      </Show>
     </div>
   );
 };
 
 export const ViewTabHandle: Component<{
   tabs: () => PanelNode.Tabs;
-  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
   active: () => Option.Option<Integer>;
   idx: () => Integer;
-  leaf: () => PanelNode.Leaf;
+  leaf: () => Leaf;
   onClick: () => void;
   onCloseClick: () => void;
 }> = (props) => {
@@ -914,13 +1142,8 @@ export const ViewTabHandle: Component<{
 
         getInitialData: () =>
           DragDataForTab({
-            parent: props.tabs(),
-            updateParent: (fn) =>
-              props.updateTabs((parent) => {
-                const node = fn(parent);
-                assert(PanelNode.$is("Tabs")(node));
-                return node;
-              }),
+            tabs: props.tabs(),
+            updateTabs: props.updateTabs,
             node: props.leaf(),
             idx: props.idx(),
           }),
@@ -929,7 +1152,10 @@ export const ViewTabHandle: Component<{
           setDragging(true);
 
           setCustomNativeDragPreview({
-            getOffset: tabNativeDragPreviewOffset(),
+            getOffset: pointerOutsideOfPreview({
+              x: "calc(var(--spacing) * 2)",
+              y: "calc(var(--spacing) * 2)",
+            }),
             render: ({ container }) =>
               solidRender(
                 () => (
@@ -973,7 +1199,7 @@ export const ViewTabHandle: Component<{
     <ViewTabHandleImpl
       ref={ref}
       class={cn(
-        "relative first:border-l border-r cursor-pointer hover:bg-theme-panel-tab-background-active",
+        "relative first:border-l border-r cursor-pointer hover:bg-theme-panel-tab-background-active transition-colors duration-100",
         selected() && "bg-theme-panel-tab-background-active",
         dragging() && "text-transparent",
         hasDrop() && "bg-theme-panel-tab-background-drop-target",
@@ -1026,50 +1252,11 @@ const ViewTabHandleImpl: Component<{
   );
 };
 
-const tabNativeDragPreviewOffset = (): GetOffsetFn =>
-  pointerOutsideOfPreview({
-    x: "calc(var(--spacing) * 2)",
-    y: "calc(var(--spacing) * 2)",
-  });
-
-export const ViewPanelNodeLeaf: Component<{
-  leaf: () => PanelNode.Leaf;
-}> = (props) => {
-  const ctx = usePanelContext();
-
-  const leaf = (): LeafContent =>
-    ctx.getLeaf(props.leaf().id).pipe(
-      Option.getOrElse(() =>
-        LeafContent({
-          title: "",
-          render: () => (
-            <div class="flex w-full h-full items-center justify-center">
-              <p>TODO: none leaf</p>
-            </div>
-          ),
-        }),
-      ),
-    );
-
-  return (
-    <div class="flex flex-col grow">
-      <ViewPanelTitlebar class="text-sm relative">
-        {/* I've never liked css, but this is just insane.
-                Just makes me like tailwind more for what it does do */}
-        <p class="absolute left-0 right-0 overflow-clip text-ellipsis whitespace-nowrap px-1">
-          {leaf().title}
-        </p>
-      </ViewPanelTitlebar>
-      <ViewPanelNodeLeafContent render={() => leaf().render} />
-    </div>
-  );
-};
-
 export const ViewPanelNodeLeafContent: Component<{
   render: () => Component<{}>;
 }> = (props) => {
   return (
-    <div class="flex grow relative">
+    <div class="flex relative w-full h-full" data-panel-leaf-content-root>
       {/* using absolute is the only way I have found to completely ensure that
           the rendered content cannot affect the outside sizing - breaking the
           whole panel layout system */}
@@ -1082,9 +1269,9 @@ export const ViewPanelNodeLeafContent: Component<{
 
 export type DragDataForTab = Readonly<{
   _tag: "DragDataForTab";
-  parent: PanelNode.Parent;
-  updateParent: (fn: (parent: PanelNode.Parent) => PanelNode.Parent) => void;
-  node: PanelNode.Leaf;
+  tabs: PanelNode.Tabs;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
+  node: Leaf;
   idx: Integer;
 }>;
 export const DragDataForTab = taggedCtor<DragDataForTab>("DragDataForTab");
@@ -1092,7 +1279,7 @@ export const DragDataForTab = taggedCtor<DragDataForTab>("DragDataForTab");
 export type DropTargetDataForTab = Readonly<{
   _tag: "DropTargetDataForTab";
   tabs: PanelNode.Tabs;
-  updateTabs: (fn: (tabs: PanelNode.Tabs) => PanelNode.Tabs) => void;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
   idx: Option.Option<Integer>;
 }>;
 export const DropTargetDataForTab = taggedCtor<DropTargetDataForTab>(
@@ -1108,7 +1295,7 @@ export namespace View {
   export const PanelNodeSplit = ViewPanelNodeSplit;
   export const PanelNodeTabs = ViewPanelNodeTabs;
   export const TabHandle = ViewTabHandle;
-  export const PanelNodeLeaf = ViewPanelNodeLeaf;
+  // export const PanelNodeLeaf = ViewPanelNodeLeaf;
   export const PanelNodeLeafContent = ViewPanelNodeLeafContent;
 }
 export default View;

@@ -6,7 +6,13 @@ import {
   useContext,
 } from "solid-js";
 import { createStore } from "solid-js/store";
-import { LeafRecord, PanelNode, Workspace, WorkspaceSidebar } from "./data";
+import {
+  LeafRecord,
+  makeLeaf,
+  PanelNode,
+  Workspace,
+  WorkspaceSidebar,
+} from "./data";
 import { trackStore } from "@solid-primitives/deep";
 import { Console, DateTime, Effect, Option } from "effect";
 
@@ -36,16 +42,16 @@ export const PanelContextProvider: Component<
     : [
         {},
         {
-          root: PanelNode.makeLeaf(),
+          root: PanelNode.makeTabs(),
           sidebars: {
             left: WorkspaceSidebar({
-              node: PanelNode.makeLeaf(),
+              node: PanelNode.makeTabs(),
             }),
             right: WorkspaceSidebar({
-              node: PanelNode.makeLeaf(),
+              node: PanelNode.makeTabs(),
             }),
             bottom: WorkspaceSidebar({
-              node: PanelNode.makeLeaf(),
+              node: PanelNode.makeTabs(),
             }),
           },
         },
@@ -84,7 +90,7 @@ export const PanelContextProvider: Component<
     const content = Option.fromNullable(maybeContent);
     const id = UUID.make();
     setLeafRecord((record) => ({ ...record, [id]: content }));
-    return PanelNode.makeLeaf(id);
+    return makeLeaf(id);
   };
 
   return (

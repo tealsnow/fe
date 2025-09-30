@@ -25,19 +25,19 @@ pre {
   }
 
   ::-webkit-scrollbar {
-    @apply w-2 h-2;
+    @apply w-3 h-3;
   }
   ::-webkit-scrollbar-track {
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-theme-deemphasis/50;
+    @apply bg-theme-deemphasis/25;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-theme-deemphasis;
+    @apply bg-theme-deemphasis/50;
   }
   ::-webkit-scrollbar-corner {
-    @apply bg-theme-deemphasis/25;
+    @apply bg-theme-deemphasis/10;
   }
 }
 

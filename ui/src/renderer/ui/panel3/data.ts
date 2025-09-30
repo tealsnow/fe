@@ -1,5 +1,5 @@
 import { Component } from "solid-js";
-import { Data, Effect, Either, Equal, Match, Option } from "effect";
+import { Array, Data, Effect, Either, Equal, Match, Option } from "effect";
 
 import Integer from "~/lib/Integer";
 import Percent from "~/lib/Percent";
@@ -8,6 +8,13 @@ import OutOfBoundsError from "~/lib/OutOfBoundsError";
 import { PickPartial } from "~/lib/type_helpers";
 import assert from "~/lib/assert";
 
+export type Leaf = {
+  id: LeafID;
+};
+export const Leaf = Data.case<Leaf>();
+
+export const makeLeaf = (id: LeafID = UUID.make()): Leaf => Leaf({ id });
+
 export type PanelNode = Data.TaggedEnum<{
   Split: {
     axis: SplitAxis;
@@ -15,10 +22,7 @@ export type PanelNode = Data.TaggedEnum<{
   };
   Tabs: {
     active: Option.Option<Integer>;
-    children: PanelNode.Leaf[];
-  };
-  Leaf: {
-    id: LeafID;
+    children: Leaf[];
   };
 }>;
 export namespace PanelNode {
@@ -29,13 +33,9 @@ export namespace PanelNode {
 
   export type Split = Data.TaggedEnum.Value<PanelNode, "Split">;
   export type Tabs = Data.TaggedEnum.Value<PanelNode, "Tabs">;
-  export type Leaf = Data.TaggedEnum.Value<PanelNode, "Leaf">;
-
-  export type Parent = Split | Tabs;
 
   export const Split = PanelNodeCtor.Split;
   export const Tabs = PanelNodeCtor.Tabs;
-  export const Leaf = PanelNodeCtor.Leaf;
 
   /**
    * Small helper for split to handle equal sizing for any number of children
@@ -71,9 +71,6 @@ export namespace PanelNode {
       active: Option.fromNullable(active),
       children,
     });
-
-  export const makeLeaf = (id: LeafID = UUID.make()): PanelNode.Leaf =>
-    PanelNode.Leaf({ id });
 }
 
 export type SplitAxis = "horizontal" | "vertical";
@@ -121,45 +118,45 @@ export const WorkspaceSidebar = ({
 
 export type WorkspaceSidebarSide = "left" | "right" | "bottom";
 
-/**
- * Split an existing leaf into a split with a optional new leaf
- */
-export const splitLeaf = ({
-  axis,
-  leaf,
-  newLeaf,
-  ratio,
-}: {
-  axis: SplitAxis;
-  leaf: PanelNode.Leaf;
-} & (
-  | {
-      newLeaf: PanelNode.Leaf;
-      ratio?: [Percent, Percent];
-    }
-  | {
-      newLeaf?: PanelNode.Leaf;
-      ratio?: never;
-    }
-)): Effect.Effect<PanelNode.Split> =>
-  Effect.sync(() =>
-    PanelNode.Split({
-      axis,
-      children: Option.match(Option.fromNullable(newLeaf), {
-        onSome: (newLeaf) =>
-          ratio
-            ? [
-                { percent: ratio[0], node: leaf },
-                { percent: ratio[1], node: newLeaf },
-              ]
-            : [
-                { percent: Percent(0.5), node: leaf },
-                { percent: Percent(0.5), node: newLeaf },
-              ],
-        onNone: () => [{ percent: Percent(1), node: leaf }],
-      }),
-    }),
-  );
+// /**
+//  * Split an existing leaf into a split with a optional new leaf
+//  */
+// export const splitLeaf = ({
+//   axis,
+//   leaf,
+//   newLeaf,
+//   ratio,
+// }: {
+//   axis: SplitAxis;
+//   leaf: PanelNode.Leaf;
+// } & (
+//   | {
+//       newLeaf: PanelNode.Leaf;
+//       ratio?: [Percent, Percent];
+//     }
+//   | {
+//       newLeaf?: PanelNode.Leaf;
+//       ratio?: never;
+//     }
+// )): Effect.Effect<PanelNode.Split> =>
+//   Effect.sync(() =>
+//     PanelNode.Split({
+//       axis,
+//       children: Option.match(Option.fromNullable(newLeaf), {
+//         onSome: (newLeaf) =>
+//           ratio
+//             ? [
+//                 { percent: ratio[0], node: leaf },
+//                 { percent: ratio[1], node: newLeaf },
+//               ]
+//             : [
+//                 { percent: Percent(0.5), node: leaf },
+//                 { percent: Percent(0.5), node: newLeaf },
+//               ],
+//         onNone: () => [{ percent: Percent(1), node: leaf }],
+//       }),
+//     }),
+//   );
 
 export const updateSplitChildPercent = ({
   split,
@@ -191,20 +188,18 @@ export const addTab = ({
   idx,
 }: {
   tabs: PanelNode.Tabs;
-  newLeaf: PanelNode.Leaf;
+  newLeaf: Leaf;
   idx?: Integer;
 }): Effect.Effect<PanelNode.Tabs> =>
   Effect.sync(() => {
     if (idx !== undefined && idx !== tabs.children.length) {
       assert(idx < tabs.children.length);
-
-      const newChildren = tabs.children;
-      newChildren.splice(idx, 0, newLeaf);
-
       return PanelNode.Tabs({
         ...tabs,
         active: Option.some(idx),
-        children: newChildren,
+        children: Option.getOrThrow(
+          Array.insertAt(tabs.children, idx, newLeaf),
+        ),
       });
     } else {
       return PanelNode.Tabs({
@@ -222,8 +217,8 @@ export const tabify = ({
   leaf,
   newLeaf,
 }: {
-  leaf: PanelNode.Leaf;
-  newLeaf?: PanelNode.Leaf;
+  leaf: Leaf;
+  newLeaf?: Leaf;
 }): Effect.Effect<PanelNode.Tabs> =>
   Effect.sync(() =>
     PanelNode.Tabs({
@@ -246,42 +241,42 @@ export const selectTab = ({
     }),
   );
 
-export const removeChild = ({
-  parent,
-  match,
-}: {
-  parent: PanelNode.Parent;
-  match: (child: PanelNode) => boolean;
-}): Effect.Effect<PanelNode.Parent, NodeNotFoundError> =>
-  Match.value(parent).pipe(
-    Match.tag("Split", (split) => {
-      const newChildren = split.children.filter((c) => !match(c.node));
+// export const removeChild = ({
+//   parent,
+//   match,
+// }: {
+//   parent: PanelNode.Parent;
+//   match: (child: PanelNode) => boolean;
+// }): Effect.Effect<PanelNode.Parent, NodeNotFoundError> =>
+//   Match.value(parent).pipe(
+//     Match.tag("Split", (split) => {
+//       const newChildren = split.children.filter((c) => !match(c.node));
 
-      if (Equal.equals(newChildren, split.children))
-        return Effect.fail(new NodeNotFoundError());
+//       if (Equal.equals(newChildren, split.children))
+//         return Effect.fail(new NodeNotFoundError());
 
-      return Effect.succeed(
-        PanelNode.Split({
-          ...split,
-          children: newChildren,
-        }),
-      );
-    }),
-    Match.tag("Tabs", (tabs) => {
-      const newChildren = tabs.children.filter((c) => !match(c));
+//       return Effect.succeed(
+//         PanelNode.Split({
+//           ...split,
+//           children: newChildren,
+//         }),
+//       );
+//     }),
+//     Match.tag("Tabs", (tabs) => {
+//       const newChildren = tabs.children.filter((c) => !match(c));
 
-      if (Equal.equals(newChildren, tabs.children))
-        return Effect.fail(new NodeNotFoundError());
+//       if (Equal.equals(newChildren, tabs.children))
+//         return Effect.fail(new NodeNotFoundError());
 
-      return Effect.succeed(
-        PanelNode.Tabs({
-          ...tabs,
-          children: newChildren,
-        }),
-      );
-    }),
-    Match.exhaustive,
-  );
+//       return Effect.succeed(
+//         PanelNode.Tabs({
+//           ...tabs,
+//           children: newChildren,
+//         }),
+//       );
+//     }),
+//     Match.exhaustive,
+//   );
 
 // /**
 //  * Replace a child node in a split or tab
@@ -355,68 +350,68 @@ export class NodeNotFoundError extends Data.TaggedError(
   "NodeNotFoundError",
 )<{}> {}
 
-/**
- * calls `fn` on each node that matches the predicate `match`
- */
-export const updateNode = ({
-  node,
-  match,
-  fn,
-}: {
-  node: PanelNode;
-  match: (node: PanelNode) => boolean;
-  fn: (node: PanelNode) => PanelNode;
-}): Effect.Effect<PanelNode, NodeNotFoundError> =>
-  Effect.gen(function* () {
-    if (match(node)) return fn(node);
+// /**
+//  * calls `fn` on each node that matches the predicate `match`
+//  */
+// export const updateNode = ({
+//   node,
+//   match,
+//   fn,
+// }: {
+//   node: PanelNode;
+//   match: (node: PanelNode) => boolean;
+//   fn: (node: PanelNode) => PanelNode;
+// }): Effect.Effect<PanelNode, NodeNotFoundError> =>
+//   Effect.gen(function* () {
+//     if (match(node)) return fn(node);
 
-    const testNode = (node: PanelNode): Effect.Effect<[boolean, PanelNode]> =>
-      Effect.gen(function* () {
-        const res = yield* Effect.either(updateNode({ node, match, fn }));
-        return Either.isRight(res) ? [true, res.right] : [false, node];
-      });
+//     const testNode = (node: PanelNode): Effect.Effect<[boolean, PanelNode]> =>
+//       Effect.gen(function* () {
+//         const res = yield* Effect.either(updateNode({ node, match, fn }));
+//         return Either.isRight(res) ? [true, res.right] : [false, node];
+//       });
 
-    return yield* Match.value(node).pipe(
-      Match.tag("Leaf", () => Effect.fail(new NodeNotFoundError())),
-      Match.tag("Split", (split) =>
-        Effect.gen(function* () {
-          let matched = false;
-          const newChildren: typeof split.children = [];
+//     return yield* Match.value(node).pipe(
+//       Match.tag("Leaf", () => Effect.fail(new NodeNotFoundError())),
+//       Match.tag("Split", (split) =>
+//         Effect.gen(function* () {
+//           let matched = false;
+//           const newChildren: typeof split.children = [];
 
-          for (const c of split.children) {
-            const [didMatch, node] = yield* testNode(c.node);
-            if (didMatch) matched = true;
-            newChildren.push({ ...c, node });
-          }
+//           for (const c of split.children) {
+//             const [didMatch, node] = yield* testNode(c.node);
+//             if (didMatch) matched = true;
+//             newChildren.push({ ...c, node });
+//           }
 
-          if (!matched) return yield* Effect.fail(new NodeNotFoundError());
+//           if (!matched) return yield* Effect.fail(new NodeNotFoundError());
 
-          return PanelNode.Split({ ...split, children: newChildren });
-        }),
-      ),
-      Match.tag("Tabs", (tab) =>
-        Effect.gen(function* () {
-          let matched = false;
-          const newChildren: PanelNode.Leaf[] = [];
+//           return PanelNode.Split({ ...split, children: newChildren });
+//         }),
+//       ),
+//       Match.tag("Tabs", (tab) =>
+//         Effect.gen(function* () {
+//           let matched = false;
+//           const newChildren: PanelNode.Leaf[] = [];
 
-          for (const c of tab.children) {
-            const [didMatch, node] = yield* testNode(c);
-            if (didMatch) matched = true;
-            assert(
-              PanelNode.$is("Leaf")(node),
-              "Child of PanelNode.Tabs must be a leaf",
-            );
-            newChildren.push(node);
-          }
+//           for (const c of tab.children) {
+//             const [didMatch, node] = yield* testNode(c);
+//             if (didMatch) matched = true;
+//             assert(
+//               PanelNode.$is("Leaf")(node),
+//               "Child of PanelNode.Tabs must be a leaf",
+//             );
+//             newChildren.push(node);
+//           }
 
-          if (!matched) return yield* Effect.fail(new NodeNotFoundError());
+//           if (!matched) return yield* Effect.fail(new NodeNotFoundError());
 
-          return PanelNode.Tabs({ ...tab, children: newChildren });
-        }),
-      ),
-      Match.exhaustive,
-    );
-  });
+//           return PanelNode.Tabs({ ...tab, children: newChildren });
+//         }),
+//       ),
+//       Match.exhaustive,
+//     );
+//   });
 
 export const updateSidebar = ({
   sidebars,
