@@ -25,22 +25,22 @@ const ActualTest: Component = () => {
           active: Integer(0),
           children: [
             ctx.createLeaf({
+              title: "workspace dbg",
+              render: () => {
+                return (
+                  <div class="flex flex-col p-1">
+                    <pre>{JSON.stringify(ctx.workspace, null, 2)}</pre>
+                  </div>
+                );
+              },
+            }),
+            ctx.createLeaf({
               title: "right split dbg",
               render: () => {
                 const rightSplit = ctx.workspace.sidebars.right.node;
                 return (
                   <div class="flex flex-col p-1">
                     <pre>{JSON.stringify(rightSplit, null, 2)}</pre>
-                  </div>
-                );
-              },
-            }),
-            ctx.createLeaf({
-              title: "workspace dbg",
-              render: () => {
-                return (
-                  <div class="flex flex-col p-1">
-                    <pre>{JSON.stringify(ctx.workspace, null, 2)}</pre>
                   </div>
                 );
               },

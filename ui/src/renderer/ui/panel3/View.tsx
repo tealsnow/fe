@@ -12,6 +12,8 @@ import {
   onCleanup,
   createSignal,
   batch,
+  Setter,
+  Accessor,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { Option, Effect, Match, Order, pipe, Array } from "effect";
@@ -27,7 +29,7 @@ import { disableNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/elem
 import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
 import { preventUnhandled } from "@atlaskit/pragmatic-drag-and-drop/prevent-unhandled";
 import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
-// import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
+import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 
 import { Icon, IconKind, icons } from "~/assets/icons";
 
@@ -43,16 +45,17 @@ import Button from "~/ui/components/Button";
 
 import { usePanelContext } from "./ContextProvider";
 import {
-  toggleSidebar,
   WorkspaceSidebars,
   WorkspaceSidebarSide,
   PanelNode,
-  selectTab,
   SplitAxis,
-  updateSplitChildPercent,
   SplitChild,
-  addTab,
   Leaf,
+  splitAddChild,
+  tabsAddTab,
+  sidebarToggle,
+  splitUpdateChildPercent,
+  tabsSelect,
 } from "./data";
 
 export type UpdateFn<T> = (fn: (_: T) => T) => void;
@@ -79,10 +82,34 @@ export const ViewRoot: Component = () => {
               }),
             );
             dropTarget.updateTabs((tabs) =>
-              addTab({
+              tabsAddTab({
                 tabs,
                 newLeaf: drag.node,
                 idx: Option.getOrUndefined(dropTarget.idx),
+              }).pipe(Effect.runSync),
+            );
+          });
+        };
+
+        const handleDragDataForTabOnDropTargetSplitInsert = (
+          drag: DragDataForTab,
+          dropTarget: DropTargetSplitInsert,
+        ): void => {
+          batch(() => {
+            drag.updateTabs((tabs) =>
+              PanelNode.Tabs({
+                ...tabs,
+                children: tabs.children.filter((_, idx) => idx !== drag.idx),
+              }),
+            );
+            dropTarget.updateSplit((split) =>
+              splitAddChild({
+                split,
+                child: PanelNode.makeTabs({
+                  active: Integer(0),
+                  children: [drag.node],
+                }),
+                idx: dropTarget.idx,
               }).pipe(Effect.runSync),
             );
           });
@@ -102,6 +129,18 @@ export const ViewRoot: Component = () => {
               handleDragDataForTabOnDropTargetDataForTab(source, destination);
             },
           ),
+          Match.when(
+            {
+              source: (source) => DragDataForTab.$is(source),
+              destination: (destination) =>
+                DropTargetSplitInsert.$is(destination),
+            },
+            ({ source, destination }) =>
+              handleDragDataForTabOnDropTargetSplitInsert(source, destination),
+          ),
+          Match.orElse(() => {
+            console.debug("no drop source/target pairs were matched");
+          }),
         );
       },
     });
@@ -234,7 +273,7 @@ export const ViewWorkspaceTitlebar: Component<{
               get: () => props.sidebars().left.enabled,
               toggle: () =>
                 ctx.setWorkspace("sidebars", (sidebars) =>
-                  toggleSidebar({ sidebars, side: "left" }).pipe(
+                  sidebarToggle({ sidebars, side: "left" }).pipe(
                     Effect.runSync,
                   ),
                 ),
@@ -244,7 +283,7 @@ export const ViewWorkspaceTitlebar: Component<{
               get: () => props.sidebars().bottom.enabled,
               toggle: () =>
                 ctx.setWorkspace("sidebars", (sidebars) =>
-                  toggleSidebar({ sidebars, side: "bottom" }).pipe(
+                  sidebarToggle({ sidebars, side: "bottom" }).pipe(
                     Effect.runSync,
                   ),
                 ),
@@ -254,7 +293,7 @@ export const ViewWorkspaceTitlebar: Component<{
               get: () => props.sidebars().right.enabled,
               toggle: () =>
                 ctx.setWorkspace("sidebars", (sidebars) =>
-                  toggleSidebar({ sidebars, side: "right" }).pipe(
+                  sidebarToggle({ sidebars, side: "right" }).pipe(
                     Effect.runSync,
                   ),
                 ),
@@ -569,17 +608,86 @@ export const ViewPanelNodeSplit: Component<{
       </Index>
 
       <Show when={tabHovered()}>
-        <SplitDropOverlay isRoot={() => false} split={props.split} />
+        <SplitDropOverlay split={props.split} updateSplit={props.updateSplit} />
       </Show>
     </div>
   );
 };
 
 const SplitDropOverlay: Component<{
-  isRoot: () => boolean;
   split: () => PanelNode.Split;
+  updateSplit: UpdateFn<PanelNode.Split>;
 }> = (props) => {
   const axis = (): SplitAxis => props.split().axis;
+
+  type SideInfo = {
+    ref: HTMLDivElement | undefined;
+    hovered: Accessor<boolean>;
+    setHovered: Setter<boolean>;
+    idx: Integer;
+  };
+
+  const Sides = ["left", "right", "top", "bottom"] as const;
+  type Side = (typeof Sides)[number];
+
+  const infos: Record<Side, SideInfo> = Sides.reduce(
+    (acc, side) => {
+      const [hovered, setHovered] = createSignal(false);
+      acc[side] = {
+        ref: undefined,
+        hovered,
+        setHovered,
+        idx: Match.value(side).pipe(
+          Match.whenOr("left", "top", () => Integer(0)),
+          Match.whenOr(
+            "right",
+            "bottom",
+            // the state shouldn't change during a drag
+            // eslint-disable-next-line solid/reactivity
+            () => Integer(props.split().children.length),
+          ),
+          Match.exhaustive,
+        ),
+      };
+      return acc;
+    },
+    {} as Record<Side, SideInfo>,
+  );
+
+  onMount(() => {
+    const cleanups: CleanupFn[] = [];
+
+    for (const side of Sides) {
+      const info = infos[side];
+
+      if (!info.ref) continue;
+
+      const cleanup = dropTargetForElements({
+        element: info.ref,
+
+        getData: () =>
+          DropTargetSplitInsert({
+            split: props.split(),
+            updateSplit: props.updateSplit,
+            idx: info.idx,
+          }),
+
+        canDrop: ({ source }) => {
+          if (DragDataForTab.$is(source.data)) return true;
+          return false;
+        },
+
+        onDragEnter: () => info.setHovered(true),
+        onDragLeave: () => info.setHovered(false),
+        onDrop: () => info.setHovered(false),
+      });
+      cleanups.push(cleanup);
+    }
+
+    onCleanup(() => {
+      for (const cleanup of cleanups) cleanup();
+    });
+  });
 
   return (
     <>
@@ -592,17 +700,45 @@ const SplitDropOverlay: Component<{
           "pointer-events-none",
         )}
       >
-        <Show when={props.isRoot() || axis() === "vertical"}>
+        <Show when={axis() === "vertical"}>
           {/* top */}
-          <div class={cn("bg-green-400 pointer-events-auto", "col-3 row-1")} />
+          <div
+            ref={infos.top.ref}
+            class={cn(
+              "bg-green-400 pointer-events-auto",
+              "col-3 row-1",
+              infos.top.hovered() && "bg-green-400/20",
+            )}
+          />
           {/* bottom */}
-          <div class={cn("bg-green-400 pointer-events-auto", "col-3 row-5")} />
+          <div
+            ref={infos.bottom.ref}
+            class={cn(
+              "bg-green-400 pointer-events-auto",
+              "col-3 row-5",
+              infos.bottom.hovered() && "bg-green-400/20",
+            )}
+          />
         </Show>
-        <Show when={props.isRoot() || axis() === "horizontal"}>
+        <Show when={axis() === "horizontal"}>
           {/* left */}
-          <div class={cn("bg-green-400 pointer-events-auto", "col-1 row-3")} />
+          <div
+            ref={infos.left.ref}
+            class={cn(
+              "bg-green-400 pointer-events-auto",
+              "col-1 row-3",
+              infos.left.hovered() && "bg-green-400/20",
+            )}
+          />
           {/* right */}
-          <div class={cn("bg-green-400 pointer-events-auto", "col-5 row-3")} />
+          <div
+            ref={infos.right.ref}
+            class={cn(
+              "bg-green-400 pointer-events-auto",
+              "col-5 row-3",
+              infos.right.hovered() && "bg-green-400/20",
+            )}
+          />
         </Show>
       </div>
 
@@ -740,30 +876,23 @@ const SplitResizeHandle: Component<{
 
         // false positive
         // eslint-disable-next-line solid/reactivity
-        props.updateSplit((split) => {
-          return pipe(
-            updateSplitChildPercent({
+        props.updateSplit((split) =>
+          pipe(
+            splitUpdateChildPercent({
               split,
-              childIndex: Integer(props.idx()),
+              idx: Integer(props.idx()),
               percent: Percent(newCurrentPercent),
             }),
             Effect.flatMap((split) =>
-              updateSplitChildPercent({
+              splitUpdateChildPercent({
                 split,
-                childIndex: Integer(props.idx() + 1),
+                idx: Integer(props.idx() + 1),
                 percent: Percent(newNextPercent),
               }),
             ),
-            Effect.catchTag("OutOfBoundsError", (err) => {
-              console.error(
-                "Split child index out of bounds when trying to resize split.",
-                err,
-              );
-              return Effect.sync(() => split);
-            }),
             Effect.runSync,
-          );
-        });
+          ),
+        );
       },
     });
     onCleanup(() => cleanup());
@@ -989,8 +1118,6 @@ export const ViewPanelNodeTabs: Component<{
     onCleanup(() => cleanup());
   });
 
-  let titlebarRef!: HTMLDivElement;
-
   return (
     <div
       ref={ref}
@@ -1010,7 +1137,7 @@ export const ViewPanelNodeTabs: Component<{
                 // false positive
                 // eslint-disable-next-line solid/reactivity
                 props.updateTabs((tabs) => {
-                  return selectTab({
+                  return tabsSelect({
                     tabs,
                     index: Option.some(Integer(idx())),
                   }).pipe(Effect.runSync);
@@ -1031,7 +1158,7 @@ export const ViewPanelNodeTabs: Component<{
           )}
           onClick={() =>
             props.updateTabs((tabs) =>
-              selectTab({
+              tabsSelect({
                 tabs,
                 index: Option.none(),
               }).pipe(Effect.runSync),
@@ -1284,6 +1411,16 @@ export type DropTargetDataForTab = Readonly<{
 }>;
 export const DropTargetDataForTab = taggedCtor<DropTargetDataForTab>(
   "DropTargetDataForTab",
+);
+
+export type DropTargetSplitInsert = Readonly<{
+  _tag: "DropTargetSplitInsert";
+  split: PanelNode.Split;
+  updateSplit: UpdateFn<PanelNode.Split>;
+  idx: Integer;
+}>;
+export const DropTargetSplitInsert = taggedCtor<DropTargetSplitInsert>(
+  "DropTargetSplitInsert",
 );
 
 export namespace View {
