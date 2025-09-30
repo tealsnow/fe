@@ -563,48 +563,42 @@ export const ViewPanelNodeSplit: Component<{
       data-split-panel-root
     >
       <Index each={props.split().children}>
-        {(child, idx) => {
-          return (
-            <>
-              <div
-                class={cn("flex border-theme-border", layoutFullAxis[axis()])}
-                style={{
-                  [layoutSize[axis()]]: `${child().percent * 100}%`,
-                }}
-              >
-                <ViewPanelNode
-                  node={() => child().node}
-                  updateNode={(fn) =>
-                    props.updateSplit((split) =>
-                      PanelNode.Split({
-                        ...split,
-                        children: Array.modify(
-                          split.children,
-                          idx,
-                          (child) => ({
-                            percent: child.percent,
-                            node: fn(child.node),
-                          }),
-                        ),
-                      }),
-                    )
-                  }
-                  parentSplitAxis={() => Option.some(axis())}
-                />
-              </div>
+        {(child, idx) => (
+          <>
+            <div
+              class={cn("flex border-theme-border", layoutFullAxis[axis()])}
+              style={{
+                [layoutSize[axis()]]: `${child().percent * 100}%`,
+              }}
+            >
+              <ViewPanelNode
+                node={() => child().node}
+                updateNode={(fn) =>
+                  props.updateSplit((split) =>
+                    PanelNode.Split({
+                      ...split,
+                      children: Array.modify(split.children, idx, (child) => ({
+                        percent: child.percent,
+                        node: fn(child.node),
+                      })),
+                    }),
+                  )
+                }
+                parentSplitAxis={() => Option.some(axis())}
+              />
+            </div>
 
-              <Show when={idx !== props.split().children.length - 1}>
-                <SplitResizeHandle
-                  updateSplit={(fn) => props.updateSplit(fn)}
-                  currentChild={child}
-                  nextChild={() => props.split().children[idx + 1]}
-                  idx={() => idx}
-                  axis={() => props.split().axis}
-                />
-              </Show>
-            </>
-          );
-        }}
+            <Show when={idx !== props.split().children.length - 1}>
+              <SplitResizeHandle
+                updateSplit={(fn) => props.updateSplit(fn)}
+                currentChild={child}
+                nextChild={() => props.split().children[idx + 1]}
+                idx={() => idx}
+                axis={() => props.split().axis}
+              />
+            </Show>
+          </>
+        )}
       </Index>
 
       <Show when={tabHovered()}>
@@ -620,7 +614,7 @@ const SplitDropOverlay: Component<{
 }> = (props) => {
   const axis = (): SplitAxis => props.split().axis;
 
-  type SideInfo = {
+  type DropInfo = {
     ref: HTMLDivElement | undefined;
     hovered: Accessor<boolean>;
     setHovered: Setter<boolean>;
@@ -630,7 +624,7 @@ const SplitDropOverlay: Component<{
   const Sides = ["left", "right", "top", "bottom"] as const;
   type Side = (typeof Sides)[number];
 
-  const infos: Record<Side, SideInfo> = Sides.reduce(
+  const sideInfos: Record<Side, DropInfo> = Sides.reduce(
     (acc, side) => {
       const [hovered, setHovered] = createSignal(false);
       acc[side] = {
@@ -651,17 +645,26 @@ const SplitDropOverlay: Component<{
       };
       return acc;
     },
-    {} as Record<Side, SideInfo>,
+    {} as Record<Side, DropInfo>,
   );
+
+  // the state shouldn't change during a drag
+  // eslint-disable-next-line solid/reactivity
+  const middleInfos: DropInfo[] = props.split().children.map((_, idx) => {
+    const [hovered, setHovered] = createSignal(false);
+    return {
+      ref: undefined,
+      hovered,
+      setHovered,
+      idx: Integer(idx + 1),
+    };
+  });
 
   onMount(() => {
     const cleanups: CleanupFn[] = [];
 
-    for (const side of Sides) {
-      const info = infos[side];
-
-      if (!info.ref) continue;
-
+    const setupDropTarget = (info: DropInfo): void => {
+      if (!info.ref) return;
       const cleanup = dropTargetForElements({
         element: info.ref,
 
@@ -682,6 +685,15 @@ const SplitDropOverlay: Component<{
         onDrop: () => info.setHovered(false),
       });
       cleanups.push(cleanup);
+    };
+
+    for (const side of Sides) {
+      const info = sideInfos[side];
+      setupDropTarget(info);
+    }
+
+    for (const info of middleInfos) {
+      setupDropTarget(info);
     }
 
     onCleanup(() => {
@@ -693,7 +705,7 @@ const SplitDropOverlay: Component<{
     <>
       <div
         class={cn(
-          "absolute top-0 bottom-0 left-0 right-0 z-10",
+          "absolute top-0 bottom-0 left-0 right-0 z-20",
           "grid",
           "grid-cols-[2rem_1fr_3rem_1fr_2rem]",
           "grid-rows-[2rem_1fr_3rem_1fr_2rem]",
@@ -703,60 +715,66 @@ const SplitDropOverlay: Component<{
         <Show when={axis() === "vertical"}>
           {/* top */}
           <div
-            ref={infos.top.ref}
+            ref={sideInfos.top.ref}
             class={cn(
               "bg-green-400 pointer-events-auto",
               "col-3 row-1",
-              infos.top.hovered() && "bg-green-400/20",
+              sideInfos.top.hovered() && "bg-green-400/20",
             )}
           />
           {/* bottom */}
           <div
-            ref={infos.bottom.ref}
+            ref={sideInfos.bottom.ref}
             class={cn(
               "bg-green-400 pointer-events-auto",
               "col-3 row-5",
-              infos.bottom.hovered() && "bg-green-400/20",
+              sideInfos.bottom.hovered() && "bg-green-400/20",
             )}
           />
         </Show>
         <Show when={axis() === "horizontal"}>
           {/* left */}
           <div
-            ref={infos.left.ref}
+            ref={sideInfos.left.ref}
             class={cn(
               "bg-green-400 pointer-events-auto",
               "col-1 row-3",
-              infos.left.hovered() && "bg-green-400/20",
+              sideInfos.left.hovered() && "bg-green-400/20",
             )}
           />
           {/* right */}
           <div
-            ref={infos.right.ref}
+            ref={sideInfos.right.ref}
             class={cn(
               "bg-green-400 pointer-events-auto",
               "col-5 row-3",
-              infos.right.hovered() && "bg-green-400/20",
+              sideInfos.right.hovered() && "bg-green-400/20",
             )}
           />
         </Show>
       </div>
 
-      <For each={props.split().children}>
+      <Index each={props.split().children}>
         {(_, idx) => {
           // accumulate the sizes of children up to the current
           const percent = (): number => {
             let accum = 0;
-            for (let i = 0; i <= idx(); i += 1)
+            for (let i = 0; i <= idx; i += 1)
               accum += props.split().children[i].percent;
             assert(accum < 1);
             return accum;
           };
 
+          const info = (): DropInfo => middleInfos[idx];
+
           return (
-            <Show when={idx() !== props.split().children.length - 1}>
+            <Show when={idx !== props.split().children.length - 1}>
               <div
-                class={cn("absolute bg-purple-600 self-center")}
+                ref={info().ref}
+                class={cn(
+                  "absolute bg-purple-600 self-center z-20",
+                  info().hovered() && "bg-purple-600/20",
+                )}
                 style={{
                   ...(axis() === "vertical"
                     ? {
@@ -774,7 +792,7 @@ const SplitDropOverlay: Component<{
             </Show>
           );
         }}
-      </For>
+      </Index>
     </>
   );
 };
@@ -1136,12 +1154,12 @@ export const ViewPanelNodeTabs: Component<{
               onClick={() => {
                 // false positive
                 // eslint-disable-next-line solid/reactivity
-                props.updateTabs((tabs) => {
-                  return tabsSelect({
+                props.updateTabs((tabs) =>
+                  tabsSelect({
                     tabs,
                     index: Option.some(Integer(idx())),
-                  }).pipe(Effect.runSync);
-                });
+                  }).pipe(Effect.runSync),
+                );
               }}
               onCloseClick={() => {
                 console.warn("TODO: tab close click");
