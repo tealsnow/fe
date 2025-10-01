@@ -56,11 +56,16 @@ import {
   sidebarToggle,
   splitUpdateChildPercent,
   tabsSelect,
+  splitAxisCross,
+  updateNodesInWorkspace,
+  WorkspaceSidebar,
 } from "./data";
 
 export type UpdateFn<T> = (fn: (_: T) => T) => void;
 
 export const ViewRoot: Component = () => {
+  const ctx = usePanelContext();
+
   onMount(() => {
     const cleanup = monitorForElements({
       onDrop: ({ source, location }) => {
@@ -70,7 +75,7 @@ export const ViewRoot: Component = () => {
         if (!destination) return;
         console.log("drop target count: ", location.current.dropTargets.length);
 
-        const handleDragDataForTabOnDropTargetDataForTab = (
+        const handle_DragDataForTab_on_DropTargetDataForTab = (
           drag: DragDataForTab,
           dropTarget: DropTargetDataForTab,
         ): void => {
@@ -84,14 +89,14 @@ export const ViewRoot: Component = () => {
             dropTarget.updateTabs((tabs) =>
               tabsAddTab({
                 tabs,
-                newLeaf: drag.node,
+                newLeaf: drag.leaf,
                 idx: Option.getOrUndefined(dropTarget.idx),
               }).pipe(Effect.runSync),
             );
           });
         };
 
-        const handleDragDataForTabOnDropTargetSplitInsert = (
+        const handle_DragDataForTab_on_DropTargetSplitInsert = (
           drag: DragDataForTab,
           dropTarget: DropTargetSplitInsert,
         ): void => {
@@ -107,10 +112,147 @@ export const ViewRoot: Component = () => {
                 split,
                 child: PanelNode.makeTabs({
                   active: Integer(0),
-                  children: [drag.node],
+                  children: [drag.leaf],
                 }),
                 idx: dropTarget.idx,
               }).pipe(Effect.runSync),
+            );
+          });
+        };
+
+        const handle_DragDataForTab_on_DropTargetSplitTabs = (
+          drag: DragDataForTab,
+          dropTarget: DropTargetSplitTabs,
+        ): void => {
+          batch(() => {
+            drag.updateTabs((tabs) =>
+              PanelNode.Tabs({
+                ...tabs,
+                children: tabs.children.filter((_, idx) => idx !== drag.idx),
+              }),
+            );
+
+            const makeNewSplit = (
+              axis: SplitAxis,
+              existingNode: PanelNode,
+            ): PanelNode => {
+              return PanelNode.makeSplit({
+                axis,
+                children: Match.value(dropTarget.side).pipe(
+                  Match.whenOr("left", "top", () => [
+                    PanelNode.makeTabs({
+                      active: Integer(0),
+                      children: [drag.leaf],
+                    }),
+                    existingNode,
+                  ]),
+                  Match.whenOr("right", "bottom", () => [
+                    existingNode,
+                    PanelNode.makeTabs({
+                      active: Integer(0),
+                      children: [drag.leaf],
+                    }),
+                  ]),
+                  Match.exhaustive,
+                ),
+              });
+            };
+
+            const makeNewSplitForRoot = (node: PanelNode): PanelNode => {
+              return makeNewSplit(
+                Match.value(dropTarget.side).pipe(
+                  Match.withReturnType<SplitAxis>(),
+                  Match.whenOr("left", "right", () => "horizontal"),
+                  Match.whenOr("top", "bottom", () => "vertical"),
+                  Match.exhaustive,
+                ),
+                node,
+              );
+            };
+
+            const tabsEqual = (
+              tabs: PanelNode.Tabs,
+              node: PanelNode,
+            ): boolean => PanelNode.$is("Tabs")(node) && node.id === tabs.id;
+
+            Match.value(dropTarget.tabs).pipe(
+              Match.when(
+                (tabs) => tabsEqual(tabs, ctx.workspace.root),
+                () =>
+                  ctx.setWorkspace("root", (root) => makeNewSplitForRoot(root)),
+              ),
+              Match.when(
+                (tabs) => tabsEqual(tabs, ctx.workspace.sidebars.left.node),
+                () =>
+                  ctx.setWorkspace("sidebars", "left", (left) =>
+                    WorkspaceSidebar({
+                      ...left,
+                      node: makeNewSplitForRoot(left.node),
+                    }),
+                  ),
+              ),
+              Match.when(
+                (tabs) => tabsEqual(tabs, ctx.workspace.sidebars.right.node),
+                () =>
+                  ctx.setWorkspace("sidebars", "right", (right) =>
+                    WorkspaceSidebar({
+                      ...right,
+                      node: makeNewSplitForRoot(right.node),
+                    }),
+                  ),
+              ),
+              Match.when(
+                (tabs) => tabsEqual(tabs, ctx.workspace.sidebars.bottom.node),
+                () =>
+                  ctx.setWorkspace("sidebars", "bottom", (bottom) =>
+                    WorkspaceSidebar({
+                      ...bottom,
+                      node: makeNewSplitForRoot(bottom.node),
+                    }),
+                  ),
+              ),
+              Match.orElse(() => {
+                ctx.setWorkspace((workspace) =>
+                  updateNodesInWorkspace({
+                    workspace,
+                    update: (split) => {
+                      if (!PanelNode.$is("Split")(split)) return Option.none();
+
+                      const idx = split.children.findIndex((c) =>
+                        tabsEqual(dropTarget.tabs, c.node),
+                      );
+                      if (idx === -1) return Option.none();
+
+                      return Option.some(
+                        PanelNode.Split({
+                          ...split,
+                          children: Array.modifyOption(
+                            split.children,
+                            idx,
+                            (c) => ({
+                              ...c,
+                              node: makeNewSplit(
+                                splitAxisCross[split.axis],
+                                c.node,
+                              ),
+                            }),
+                          ).pipe(
+                            Option.getOrThrowWith(
+                              () =>
+                                "unreachable: we just checked that the array contains this child",
+                            ),
+                          ),
+                        }),
+                      );
+                    },
+                  }).pipe(
+                    Option.getOrThrowWith(
+                      () =>
+                        "failed to find parent split of tabs to turn into a split",
+                    ),
+                  ),
+                );
+              }),
             );
           });
         };
@@ -126,7 +268,10 @@ export const ViewRoot: Component = () => {
                 DropTargetDataForTab.$is(destination),
             },
             ({ source, destination }) => {
-              handleDragDataForTabOnDropTargetDataForTab(source, destination);
+              handle_DragDataForTab_on_DropTargetDataForTab(
+                source,
+                destination,
+              );
             },
           ),
           Match.when(
@@ -136,7 +281,19 @@ export const ViewRoot: Component = () => {
                 DropTargetSplitInsert.$is(destination),
             },
             ({ source, destination }) =>
-              handleDragDataForTabOnDropTargetSplitInsert(source, destination),
+              handle_DragDataForTab_on_DropTargetSplitInsert(
+                source,
+                destination,
+              ),
+          ),
+          Match.when(
+            {
+              source: (source) => DragDataForTab.$is(source),
+              destination: (destination) =>
+                DropTargetSplitTabs.$is(destination),
+            },
+            ({ source, destination }) =>
+              handle_DragDataForTab_on_DropTargetSplitTabs(source, destination),
           ),
           Match.orElse(() => {
             console.debug("no drop source/target pairs were matched");
@@ -621,10 +778,7 @@ const SplitDropOverlay: Component<{
     idx: Integer;
   };
 
-  const Sides = ["left", "right", "top", "bottom"] as const;
-  type Side = (typeof Sides)[number];
-
-  const sideInfos: Record<Side, DropInfo> = Sides.reduce(
+  const sideInfos: Record<DropSide, DropInfo> = DropSide.reduce(
     (acc, side) => {
       const [hovered, setHovered] = createSignal(false);
       acc[side] = {
@@ -645,7 +799,7 @@ const SplitDropOverlay: Component<{
       };
       return acc;
     },
-    {} as Record<Side, DropInfo>,
+    {} as Record<DropSide, DropInfo>,
   );
 
   // the state shouldn't change during a drag
@@ -687,7 +841,7 @@ const SplitDropOverlay: Component<{
       cleanups.push(cleanup);
     };
 
-    for (const side of Sides) {
+    for (const side of DropSide) {
       const info = sideInfos[side];
       setupDropTarget(info);
     }
@@ -1201,15 +1355,103 @@ export const ViewPanelNodeTabs: Component<{
       <ViewPanelNodeLeafContent render={() => activeTabContent()} />
 
       <Show when={tabHovered()}>
-        <TabsDropOverlay parentSplitAxis={props.parentSplitAxis} />
+        <TabsDropOverlay
+          tabs={props.tabs}
+          updateTabs={props.updateTabs}
+          parentSplitAxis={props.parentSplitAxis}
+        />
       </Show>
     </div>
   );
 };
 
 const TabsDropOverlay: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
   parentSplitAxis: () => Option.Option<SplitAxis>;
 }> = (props) => {
+  let centerRef!: HTMLDivElement;
+  const [centerHovered, setCenterHovered] = createSignal(false);
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: centerRef,
+
+      getData: () =>
+        DropTargetDataForTab({
+          tabs: props.tabs(),
+          updateTabs: props.updateTabs,
+          idx: Option.none(),
+        }),
+
+      canDrop: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) return true;
+        return false;
+      },
+
+      onDragEnter: () => setCenterHovered(true),
+      onDragLeave: () => setCenterHovered(false),
+      onDrop: () => setCenterHovered(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  type SideDropInfo = {
+    ref: HTMLDivElement | undefined;
+    hovered: Accessor<boolean>;
+    setHovered: Setter<boolean>;
+    side: DropSide;
+  };
+
+  const sideInfos: Record<DropSide, SideDropInfo> = DropSide.reduce(
+    (acc, side) => {
+      const [hovered, setHovered] = createSignal(false);
+      acc[side] = {
+        ref: undefined,
+        hovered,
+        setHovered,
+        side,
+      };
+      return acc;
+    },
+    {} as Record<DropSide, SideDropInfo>,
+  );
+
+  onMount(() => {
+    const cleanups: CleanupFn[] = [];
+
+    const setupDropTarget = (info: SideDropInfo): void => {
+      if (!info.ref) return;
+      const cleanup = dropTargetForElements({
+        element: info.ref,
+
+        getData: () =>
+          DropTargetSplitTabs({
+            tabs: props.tabs(),
+            side: info.side,
+          }),
+
+        canDrop: ({ source }) => {
+          if (DragDataForTab.$is(source.data)) return true;
+          return false;
+        },
+
+        onDragEnter: () => info.setHovered(true),
+        onDragLeave: () => info.setHovered(false),
+        onDrop: () => info.setHovered(false),
+      });
+      cleanups.push(cleanup);
+    };
+
+    for (const side of DropSide) {
+      const info = sideInfos[side];
+      setupDropTarget(info);
+    }
+
+    onCleanup(() => {
+      for (const cleanup of cleanups) cleanup();
+    });
+  });
+
   return (
     <div
       class={cn(
@@ -1221,7 +1463,14 @@ const TabsDropOverlay: Component<{
       )}
     >
       {/* center */}
-      <div class={cn("bg-orange-400 pointer-events-auto", "col-3 row-3")} />
+      <div
+        ref={centerRef}
+        class={cn(
+          "bg-orange-400 pointer-events-auto",
+          "col-3 row-3",
+          centerHovered() && "bg-orange-400/20",
+        )}
+      />
 
       <Show
         when={
@@ -1231,9 +1480,23 @@ const TabsDropOverlay: Component<{
         }
       >
         {/* left */}
-        <div class={cn("bg-blue-900 pointer-events-auto", "col-2 row-3")} />
+        <div
+          ref={sideInfos.left.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-2 row-3",
+            sideInfos.left.hovered() && "bg-blue-900/20",
+          )}
+        />
         {/* right */}
-        <div class={cn("bg-blue-900 pointer-events-auto", "col-4 row-3")} />
+        <div
+          ref={sideInfos.right.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-4 row-3",
+            sideInfos.right.hovered() && "bg-blue-900/20",
+          )}
+        />
       </Show>
       <Show
         when={
@@ -1244,9 +1507,23 @@ const TabsDropOverlay: Component<{
         }
       >
         {/* top */}
-        <div class={cn("bg-blue-900 pointer-events-auto", "col-3 row-2")} />
+        <div
+          ref={sideInfos.top.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-3 row-2",
+            sideInfos.top.hovered() && "bg-blue-900/20",
+          )}
+        />
         {/* bottom */}
-        <div class={cn("bg-blue-900 pointer-events-auto", "col-3 row-4")} />
+        <div
+          ref={sideInfos.bottom.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-3 row-4",
+            sideInfos.bottom.hovered() && "bg-blue-900/20",
+          )}
+        />
       </Show>
     </div>
   );
@@ -1289,7 +1566,7 @@ export const ViewTabHandle: Component<{
           DragDataForTab({
             tabs: props.tabs(),
             updateTabs: props.updateTabs,
-            node: props.leaf(),
+            leaf: props.leaf(),
             idx: props.idx(),
           }),
 
@@ -1416,7 +1693,7 @@ export type DragDataForTab = Readonly<{
   _tag: "DragDataForTab";
   tabs: PanelNode.Tabs;
   updateTabs: UpdateFn<PanelNode.Tabs>;
-  node: Leaf;
+  leaf: Leaf;
   idx: Integer;
 }>;
 export const DragDataForTab = taggedCtor<DragDataForTab>("DragDataForTab");
@@ -1441,6 +1718,18 @@ export const DropTargetSplitInsert = taggedCtor<DropTargetSplitInsert>(
   "DropTargetSplitInsert",
 );
 
+export const DropSide = ["left", "right", "top", "bottom"] as const;
+export type DropSide = (typeof DropSide)[number];
+
+export type DropTargetSplitTabs = Readonly<{
+  _tag: "DropTargetSplitTabs";
+  tabs: PanelNode.Tabs;
+  side: DropSide;
+}>;
+export const DropTargetSplitTabs = taggedCtor<DropTargetSplitTabs>(
+  "DropTargetSplitTabs",
+);
+
 export namespace View {
   export const Root = ViewRoot;
   export const PanelTitlebar = ViewPanelTitlebar;
@@ -1450,7 +1739,6 @@ export namespace View {
   export const PanelNodeSplit = ViewPanelNodeSplit;
   export const PanelNodeTabs = ViewPanelNodeTabs;
   export const TabHandle = ViewTabHandle;
-  // export const PanelNodeLeaf = ViewPanelNodeLeaf;
   export const PanelNodeLeafContent = ViewPanelNodeLeafContent;
 }
 export default View;

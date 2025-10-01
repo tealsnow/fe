@@ -1,5 +1,5 @@
 import { Component } from "solid-js";
-import { Array, Data, Effect, Option } from "effect";
+import { Array, Data, Effect, Match, Option } from "effect";
 
 import Integer from "~/lib/Integer";
 import Percent from "~/lib/Percent";
@@ -8,11 +8,11 @@ import { PickPartial } from "~/lib/type_helpers";
 import assert from "~/lib/assert";
 
 export type Leaf = {
-  id: LeafID;
+  id: UUID;
 };
 export const Leaf = Data.case<Leaf>();
 
-export const makeLeaf = (id: LeafID = UUID.make()): Leaf => Leaf({ id });
+export const makeLeaf = (id: UUID = UUID.make()): Leaf => Leaf({ id });
 
 export type PanelNode = Data.TaggedEnum<{
   Split: {
@@ -20,6 +20,7 @@ export type PanelNode = Data.TaggedEnum<{
     children: SplitChild[];
   };
   Tabs: {
+    id: UUID;
     active: Option.Option<Integer>;
     children: Leaf[];
   };
@@ -62,25 +63,30 @@ export namespace PanelNode {
     {
       active,
       children,
-    }: Omit<PanelNode.Tabs, "_tag" | "active"> & {
+    }: Omit<PanelNode.Tabs, "_tag" | "active" | "id"> & {
       active?: Integer;
     } = { children: [] },
   ): PanelNode.Tabs =>
     PanelNode.Tabs({
+      id: UUID.make(),
       active: Option.fromNullable(active),
       children,
     });
 }
 
 export type SplitAxis = "horizontal" | "vertical";
+export const splitAxisCross: {
+  horizontal: "vertical";
+  vertical: "horizontal";
+} = {
+  horizontal: "vertical",
+  vertical: "horizontal",
+};
 
 export type SplitChild = {
   percent: Percent;
   node: PanelNode;
 };
-
-export type LeafID = UUID;
-export const LeafID = UUID;
 
 export type LeafContent = {
   title: string;
@@ -88,7 +94,7 @@ export type LeafContent = {
 };
 export const LeafContent = Data.case<LeafContent>();
 
-export type LeafRecord = Record<LeafID, Option.Option<LeafContent>>;
+export type LeafRecord = Record<UUID, Option.Option<LeafContent>>;
 
 export type Workspace = {
   root: PanelNode;
@@ -265,4 +271,84 @@ export const sidebarToggle = ({
     update: {
       enabled: !sidebars[side].enabled,
     },
+  });
+
+export const updateNodes = ({
+  node,
+  update,
+}: {
+  node: PanelNode;
+  update: (node: PanelNode) => Option.Option<PanelNode>;
+}): Option.Option<PanelNode> =>
+  Option.gen(function* () {
+    const updated = update(node);
+    if (Option.isSome(updated)) return yield* updated;
+
+    return yield* Match.value(node).pipe(
+      Match.tag("Split", (split) =>
+        Option.gen(function* () {
+          let matched = false;
+
+          const newChildren: typeof split.children = [];
+          for (const c of split.children) {
+            const updated = update(c.node);
+
+            if (Option.isSome(updated)) matched = true;
+
+            newChildren.push({
+              ...c,
+              node: Option.getOrElse(updated, () => c.node),
+            });
+          }
+
+          if (!matched) return yield* Option.none();
+
+          return PanelNode.Split({ ...split, children: newChildren });
+        }),
+      ),
+      Match.tag("Tabs", () => Option.none()),
+      Match.exhaustive,
+    );
+  });
+
+export const updateNodesInWorkspace = ({
+  workspace,
+  update,
+}: {
+  workspace: Workspace;
+  update: (node: PanelNode) => Option.Option<PanelNode>;
+}): Option.Option<Workspace> =>
+  Option.gen(function* () {
+    let matched = false;
+
+    const test = (node: PanelNode): PanelNode => {
+      const updated = updateNodes({ node, update });
+      if (Option.isSome(updated)) matched = true;
+      return Option.getOrElse(updated, () => node);
+    };
+
+    const root = test(workspace.root);
+    const left = test(workspace.sidebars.left.node);
+    const right = test(workspace.sidebars.right.node);
+    const bottom = test(workspace.sidebars.bottom.node);
+
+    if (!matched) return yield* Option.none();
+
+    return Workspace({
+      root,
+      sidebars: {
+        left: {
+          ...workspace.sidebars.left,
+          node: left,
+        },
+        right: {
+          ...workspace.sidebars.right,
+          node: right,
+        },
+        bottom: {
+          ...workspace.sidebars.bottom,
+          node: bottom,
+        },
+      },
+    });
   });
