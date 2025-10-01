@@ -3,7 +3,6 @@ import {
   onCleanup,
   onMount,
   Show,
-  For,
   Index,
   Setter,
   Component,
@@ -16,28 +15,18 @@ import {
   notifyPromise,
 } from "~/lib/notifications";
 
-import { Icon, IconKind, iconKinds, icons } from "~/assets/icons";
+import { Icon, iconKinds, icons } from "~/assets/icons";
 
 import * as Theme from "~/ui/Theme";
 import Button from "~/ui/components/Button";
-
-// import { setupDebugPanels } from "~/ui/panels/panels";
-// import PanelsRoot from "~/ui/panels/panels";
-// import {
-//   PanelContextProvider,
-//   usePanelContext,
-// } from "~/ui/panels/PanelContext";
-// import * as Panel from "~/ui/panels/Panel";
-
 import StatusBar, {
   StatusBarContextProvider,
   useStatusBarContext,
   StatusBarItem,
 } from "~/ui/StatusBar";
+import { useWindowContext, WindowContextProvider } from "~/ui/Window";
 
-// import { Test as Panel2Test } from "~/ui/panels2/test";
-import { Test as Panel3Test } from "~/ui/panel3/test";
-import { useWindowContext, WindowContextProvider } from "./ui/Window";
+import { Test as PanelsTest } from "~/ui/Panels/test";
 
 export const App: Component = () => {
   return (
@@ -68,9 +57,7 @@ const AfterWindow: Component = () => {
     >
       <NotificationProvider>
         <StatusBarContextProvider>
-          {/*<PanelContextProvider initialTitlebar={Titlebar}>*/}
           <Root />
-          {/*</PanelContextProvider>*/}
         </StatusBarContextProvider>
       </NotificationProvider>
     </Theme.ThemeContextProvider>
@@ -78,7 +65,7 @@ const AfterWindow: Component = () => {
 };
 
 const Root: Component = () => {
-  const [showNoise, setShowNoise] = createSignal(true);
+  const [showNoise, _setShowNoise] = createSignal(true);
 
   const windowCtx = useWindowContext();
   const themeCtx = Theme.useThemeContext();
@@ -152,67 +139,9 @@ const Root: Component = () => {
         <BackgroundNoise class={themeCtx.theme().windowRounding} />
       </Show>
 
-      {/*<PanelsRoot />*/}
-
-      {/*<div class="flex grow">asdf</div>*/}
-
-      {/*<Panel2Test />*/}
-
-      {/*<Titlebar />*/}
-
-      <Panel3Test />
-
-      {/*<ThemeShowcase />*/}
+      <PanelsTest />
 
       <StatusBar />
-    </div>
-  );
-};
-
-const Titlebar: Component = () => {
-  type WindowButton = {
-    icon: () => IconKind;
-    onClick: () => void;
-  };
-
-  const windowCtx = useWindowContext();
-
-  const windowButtons = (): WindowButton[] => [
-    {
-      icon: () => "window_minimize",
-      onClick: windowCtx.minimize,
-    },
-    {
-      icon: () =>
-        windowCtx.maximized() ? "window_restore" : "window_maximize",
-      onClick: windowCtx.toggleMaximize,
-    },
-    {
-      icon: () => "close",
-      onClick: windowCtx.close,
-    },
-  ];
-
-  return (
-    <div class="flex flex-row h-6 w-full items-center window-drag border-b border-theme-border">
-      <Icon icon={icons["fe"]} noDefaultStyles class="size-4 mx-1" />
-
-      <div class="grow h-full block" />
-
-      <div class="flex h-full -window-drag">
-        <For each={windowButtons()}>
-          {(button) => (
-            <div
-              class="hover:bg-theme-icon-base-fill
-                active:bg-theme-icon-active-fill inline-flex h-full w-8
-                items-center justify-center hover:cursor-pointer"
-              onClick={button.onClick}
-            >
-              <Icon icon={icons[button.icon()]} class="size-4" />
-            </div>
-          )}
-        </For>
-      </div>
     </div>
   );
 };
@@ -269,7 +198,7 @@ const BackgroundNoise: Component<{
   );
 };
 
-const Dbg: Component<{
+const _Dbg: Component<{
   setShowNoise: Setter<boolean>;
 }> = (props) => {
   const Settings: Component = () => {
@@ -506,7 +435,7 @@ const Dbg: Component<{
   );
 };
 
-const ThemeShowcase: Component = () => {
+const _ThemeShowcase: Component = () => {
   const Colors: Component = () => {
     return (
       <div class="flex flex-row justify-evenly text-center">
