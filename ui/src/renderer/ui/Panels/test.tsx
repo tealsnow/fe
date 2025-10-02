@@ -24,6 +24,7 @@ const ActualTest: Component = () => {
           children: [
             ctx.createLeaf({
               title: "workspace dbg",
+              tooltip: "json dump of workspace",
               render: () => {
                 return (
                   <div class="flex flex-col p-1">
@@ -34,6 +35,7 @@ const ActualTest: Component = () => {
             }),
             ctx.createLeaf({
               title: "right split dbg",
+              tooltip: "json dump of workspace right split",
               render: () => {
                 const rightSplit = ctx.workspace.sidebars.right.node;
                 return (
@@ -54,14 +56,18 @@ const ActualTest: Component = () => {
               children: [
                 ctx.createLeaf({
                   title: "foo",
+                  tooltip: "foo",
                   render: () => <>foo content</>,
                 }),
                 ctx.createLeaf({
                   title: "bar",
+                  tooltip: "bar",
                   render: () => <>bar content</>,
                 }),
                 ctx.createLeaf({
                   title: "long tab name",
+                  tooltip:
+                    "even longer tooltip, I mean like real fucking long, too long some might say",
                   render: () => <>content</>,
                 }),
               ],
@@ -77,6 +83,7 @@ const ActualTest: Component = () => {
                   children: [
                     ctx.createLeaf({
                       title: "right top",
+                      tooltip: "right top",
                       render: () => <>right top content</>,
                     }),
                   ],
@@ -85,6 +92,7 @@ const ActualTest: Component = () => {
                   children: [
                     ctx.createLeaf({
                       title: "wow",
+                      tooltip: "wow",
                       render: () => <></>,
                     }),
                   ],
@@ -96,6 +104,7 @@ const ActualTest: Component = () => {
                       children: [
                         ctx.createLeaf({
                           title: "right bottom left",
+                          tooltip: "right bottom left",
                           render: () => <>right bottom left content</>,
                         }),
                       ],
@@ -104,10 +113,12 @@ const ActualTest: Component = () => {
                       children: [
                         ctx.createLeaf({
                           title: "tab 1",
+                          tooltip: "tab 1",
                           render: () => <></>,
                         }),
                         ctx.createLeaf({
                           title: "tab 2",
+                          tooltip: "tab 2",
                           render: () => <></>,
                         }),
                       ],

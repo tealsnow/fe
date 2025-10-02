@@ -8,13 +8,16 @@ export type StatusBarItem = Data.TaggedEnum<{
   divider: {};
   text: {
     value: () => string;
+    tooltip: () => string;
   };
   textButton: {
     value: () => string;
+    tooltip: () => string;
     onClick: () => void;
   };
   iconButton: {
     icon: () => IconKind;
+    tooltip: () => string;
     onClick: () => void;
   };
 }>;

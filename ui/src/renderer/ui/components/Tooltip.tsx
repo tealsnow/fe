@@ -9,7 +9,7 @@ import { cn } from "~/lib/cn";
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
 const Root: Component<TooltipPrimitive.TooltipRootProps> = (props) => {
-  return <TooltipPrimitive.Root gutter={4} {...props} />;
+  return <TooltipPrimitive.Root gutter={4} openDelay={1000} {...props} />;
 };
 
 type TooltipContentProps<T extends ValidComponent = "div"> =
@@ -23,7 +23,7 @@ const TooltipContent = <T extends ValidComponent = "div">(
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         class={cn(
-          "z-50 origin-[var(--kb-popover-content-transform-origin)] overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
+          "z-50 origin-[var(--kb-popover-content-transform-origin)] overflow-hidden rounded-sm border border-theme-border bg-theme-background px-1 py-0.5 pt-1 text-sm text-theme-text shadow-md animate-in fade-in-0 zoom-in-95 duration-100 select-text selection:bg-theme-selection",
           local.class,
         )}
         {...others}

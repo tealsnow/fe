@@ -116,6 +116,7 @@ const Root: Component = () => {
     const [cleanup] = statusBarCtx.addItem({
       item: StatusBarItem.iconButton({
         icon: () => "bell",
+        tooltip: () => "notifications",
         onClick: () => {
           console.log("clicked!");
         },
@@ -349,18 +350,22 @@ const _Dbg: Component<{
 
     onMount(() => {
       const [cleanup1, _id1] = statusBarCtx.addItem({
-        item: StatusBarItem.text({ value: startText }),
+        item: StatusBarItem.text({
+          value: startText,
+          tooltip: () => "a",
+        }),
         alignment: "left",
       });
 
       const [cleanup2, id2] = statusBarCtx.addItem({
-        item: StatusBarItem.text({ value: () => "asdf" }),
+        item: StatusBarItem.text({ value: () => "asdf", tooltip: () => "b" }),
         alignment: "right",
       });
 
       const [cleanup3, _id3] = statusBarCtx.addItem({
         item: StatusBarItem.textButton({
           value: () => "button",
+          tooltip: () => "c",
           onClick: () => {
             console.log("clicked!");
           },
@@ -371,6 +376,7 @@ const _Dbg: Component<{
       const [cleanup4, _id4] = statusBarCtx.addItem({
         item: StatusBarItem.textButton({
           value: () => "other button",
+          tooltip: () => "d",
           onClick: () => {
             console.log("clicked!");
           },
@@ -382,6 +388,7 @@ const _Dbg: Component<{
       const [cleanup5, _id5] = statusBarCtx.addItem({
         item: StatusBarItem.iconButton({
           icon: () => "bell",
+          tooltip: () => "e",
           onClick: () => {
             console.log("bell!");
           },

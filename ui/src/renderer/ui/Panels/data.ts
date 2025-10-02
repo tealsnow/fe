@@ -90,6 +90,7 @@ export type SplitChild = {
 
 export type LeafContent = {
   title: string;
+  tooltip: string;
   render: Component<{}>;
 };
 export const LeafContent = Data.case<LeafContent>();

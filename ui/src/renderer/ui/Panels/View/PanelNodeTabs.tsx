@@ -7,6 +7,7 @@ import {
   createSignal,
   Setter,
   Accessor,
+  createMemo,
 } from "solid-js";
 import { render as solidRender } from "solid-js/web";
 import { Option, Effect } from "effect";
@@ -26,7 +27,8 @@ import cn from "~/lib/cn";
 import Integer from "~/lib/Integer";
 import { UpdateFn } from "~/lib/UpdateFn";
 
-import Button from "~/ui/components/Button";
+import Button, { ButtonProps } from "~/ui/components/Button";
+import Tooltip from "~/ui/components/Tooltip";
 
 import { useContext } from "../Context";
 import { PanelNode, SplitAxis, Leaf, tabsSelect } from "../data";
@@ -39,6 +41,11 @@ import {
   DropTargetSplitTabs,
 } from "./dnd";
 import LeafContent from "./LeafContent";
+import { PolymorphicCallbackProps } from "@kobalte/core/polymorphic";
+import {
+  TooltipTriggerProps,
+  TooltipTriggerRenderProps,
+} from "@kobalte/core/tooltip";
 
 export const ViewPanelNodeTabs: Component<{
   tabs: () => PanelNode.Tabs;
@@ -165,16 +172,25 @@ export const ViewPanelNodeTabs: Component<{
         />
 
         <div class="flex items-center border-l border-theme-border h-full">
-          <Button
-            as={Icon}
-            icon={icons["add"]}
-            variant="icon"
-            size="icon"
-            class="p-1 ml-1"
-            onClick={() => {
-              console.warn("TODO: new tab");
-            }}
-          />
+          <Tooltip>
+            <Tooltip.Trigger
+              aria-describedby=""
+              as={(
+                props: PolymorphicCallbackProps<
+                  ButtonProps,
+                  TooltipTriggerProps,
+                  TooltipTriggerRenderProps
+                >,
+              ) => <Button as={Icon} icon={icons["add"]} {...props} />}
+              variant="icon"
+              size="icon"
+              class="p-1 ml-1"
+              onClick={() => {
+                console.warn("TODO: new tab");
+              }}
+            />
+            <Tooltip.Content>new tab</Tooltip.Content>
+          </Tooltip>
         </div>
       </PanelTitlebar>
 
@@ -376,11 +392,15 @@ export const ViewTabHandle: Component<{
   const [dragging, setDragging] = createSignal(false);
   const [hasDrop, setHasDrop] = createSignal(false);
 
-  const title = (): string =>
+  const titleAndTooltip = createMemo((): { title: string; tooltip: string } =>
     Option.getOrElse(
-      Option.map(ctx.getLeaf(props.leaf().id), (leaf) => leaf.title),
-      () => "<none leaf>",
-    );
+      Option.map(ctx.getLeaf(props.leaf().id), ({ title, tooltip }) => ({
+        title,
+        tooltip,
+      })),
+      () => ({ title: "<none leaf>", tooltip: "leaf has no content" }),
+    ),
+  );
 
   let ref!: HTMLDivElement;
   onMount(() => {
@@ -409,7 +429,8 @@ export const ViewTabHandle: Component<{
                 () => (
                   <ViewTabHandleImpl
                     class="h-6 border text-theme-text bg-theme-background"
-                    title={title}
+                    title={() => titleAndTooltip().title}
+                    tooltip={() => titleAndTooltip().tooltip}
                   />
                 ),
                 container,
@@ -452,7 +473,8 @@ export const ViewTabHandle: Component<{
         dragging() && "text-transparent",
         hasDrop() && "bg-theme-panel-tab-background-drop-target",
       )}
-      title={title}
+      title={() => titleAndTooltip().title}
+      tooltip={() => titleAndTooltip().tooltip}
       onClick={() => {
         if (selected()) return;
         props.onClick();
@@ -466,37 +488,51 @@ const ViewTabHandleImpl: Component<{
   ref?: HTMLDivElement;
   class?: string;
   title: () => string;
+  tooltip: () => string;
   onClick?: () => void;
   onCloseClick?: () => void;
 }> = (props) => {
   return (
-    <div
-      ref={props.ref}
-      class={cn(
-        "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
-        props.class,
-      )}
-      onClick={() => props.onClick?.()}
-    >
-      {/* icon placeholder */}
-      <div class="size-3.5" />
+    <Tooltip>
+      <Tooltip.Trigger
+        as="div"
+        ref={props.ref}
+        class={cn(
+          "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
+          props.class,
+        )}
+        onClick={() => props.onClick?.()}
+      >
+        {/* icon placeholder */}
+        <div class="size-3.5" />
 
-      {props.title()}
+        {props.title()}
 
-      <Button
-        as={Icon}
-        icon={icons["close"]}
-        variant="icon"
-        size="icon"
-        class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"
-        noOnClickToOnMouseDown
-        onClick={(event) => {
-          if (!props.onCloseClick) return;
-          event.stopPropagation();
-          props.onCloseClick();
-        }}
-      />
-    </div>
+        <Tooltip>
+          <Tooltip.Trigger
+            aria-describedby=""
+            as={(
+              props: PolymorphicCallbackProps<
+                ButtonProps,
+                TooltipTriggerProps,
+                TooltipTriggerRenderProps
+              >,
+            ) => <Button as={Icon} icon={icons["close"]} {...props} />}
+            variant="icon"
+            size="icon"
+            class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"
+            noOnClickToOnMouseDown
+            onClick={(event) => {
+              if (!props.onCloseClick) return;
+              event.stopPropagation();
+              props.onCloseClick();
+            }}
+          />
+          <Tooltip.Content>close tab</Tooltip.Content>
+        </Tooltip>
+      </Tooltip.Trigger>
+      <Tooltip.Content>{props.tooltip()}</Tooltip.Content>
+    </Tooltip>
   );
 };
 

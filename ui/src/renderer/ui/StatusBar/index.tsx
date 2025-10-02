@@ -1,18 +1,18 @@
-import { Component, Index, Switch } from "solid-js";
+import { Component, Index, Show, Switch } from "solid-js";
 
 import { Icon, icons } from "~/assets/icons";
 
 import { MatchTag } from "~/lib/MatchTag";
 
 import Button from "~/ui/components/Button";
+import Tooltip from "~/ui/components/Tooltip";
 
 import { useStatusBarContext } from "./ContextProvider";
 import { StatusBarItem } from "./Context";
 export * from "./ContextProvider";
 export * from "./Context";
 
-export type StatusBarProps = {};
-export const StatusBar: Component<StatusBarProps> = () => {
+export const StatusBar: Component<{}> = () => {
   const ctx = useStatusBarContext();
 
   return (
@@ -32,33 +32,45 @@ export const StatusBar: Component<StatusBarProps> = () => {
 
 const RenderItem: Component<{ item: () => StatusBarItem }> = (props) => {
   return (
-    <Switch>
-      <MatchTag on={props.item()} tag="divider">
-        {() => <div class="w-[1px] h-4 bg-theme-border" />}
-      </MatchTag>
-      <MatchTag on={props.item()} tag="text">
-        {(text) => <p>{text().value()}</p>}
-      </MatchTag>
-      <MatchTag on={props.item()} tag="textButton">
-        {(button) => (
-          <Button
-            variant="icon"
-            size="small"
-            class="border-transparent text-xs py-0"
-            onClick={button().onClick}
-          >
-            {button().value()}
-          </Button>
-        )}
-      </MatchTag>
-      <MatchTag on={props.item()} tag="iconButton">
-        {(button) => (
-          <Button variant="icon" size="icon" onClick={button().onClick}>
-            <Icon icon={icons[button().icon()]} />
-          </Button>
-        )}
-      </MatchTag>
-    </Switch>
+    <Tooltip>
+      <Tooltip.Trigger>
+        <Switch>
+          <MatchTag on={props.item()} tag="divider">
+            {() => <div class="w-[1px] h-4 bg-theme-border" />}
+          </MatchTag>
+          <MatchTag on={props.item()} tag="text">
+            {(text) => <p>{text().value()}</p>}
+          </MatchTag>
+          <MatchTag on={props.item()} tag="textButton">
+            {(button) => (
+              <Button
+                variant="icon"
+                size="small"
+                class="border-transparent text-xs py-0"
+                onClick={button().onClick}
+              >
+                {button().value()}
+              </Button>
+            )}
+          </MatchTag>
+          <MatchTag on={props.item()} tag="iconButton">
+            {(button) => (
+              <Button variant="icon" size="icon" onClick={button().onClick}>
+                <Icon icon={icons[button().icon()]} />
+              </Button>
+            )}
+          </MatchTag>
+        </Switch>
+      </Tooltip.Trigger>
+      <Show when={props.item()["tooltip"] !== undefined}>
+        <Tooltip.Content>
+          {
+            // @ts-expect-error 2339: we did just check
+            props.item().tooltip()
+          }
+        </Tooltip.Content>
+      </Show>
+    </Tooltip>
   );
 };
 

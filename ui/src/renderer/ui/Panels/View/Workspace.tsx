@@ -7,6 +7,7 @@ import { cn } from "~/lib/cn";
 
 import { useWindowContext } from "~/ui/Window";
 import Button from "~/ui/components/Button";
+import Tooltip from "~/ui/components/Tooltip";
 
 import { useContext } from "../Context";
 import {
@@ -164,6 +165,7 @@ export const WorkspaceTitlebar: Component<{
 
   type WindowButton = {
     icon: () => IconKind;
+    tooltip: () => string;
     onClick: () => void;
   };
 
@@ -173,7 +175,6 @@ export const WorkspaceTitlebar: Component<{
   type WindowIconRecord = Record<WindowIconKind, IconKind>;
   type WindowIcons = {
     record: WindowIconRecord;
-    noDefaultStyles: boolean;
     class: string | undefined;
     iconClass: string | undefined;
   };
@@ -190,7 +191,6 @@ export const WorkspaceTitlebar: Component<{
       class: "size-6 rounded-xl group hover:bg-transparent",
       iconClass:
         "stroke-theme-icon-base-transparent fill-theme-icon-base-stroke group-hover:bg-theme-icon-base-fill rounded-xl",
-      noDefaultStyles: false,
     })),
     Match.orElse(() => ({
       record: {
@@ -201,13 +201,13 @@ export const WorkspaceTitlebar: Component<{
       },
       class: "h-full w-10 rounded-none",
       iconClass: undefined,
-      noDefaultStyles: false,
     })),
   );
 
   const windowButtons = (): WindowButton[] => [
     {
       icon: () => windowIcons.record.minimize,
+      tooltip: () => "minimize window",
       onClick: windowCtx.minimize,
     },
     {
@@ -215,11 +215,51 @@ export const WorkspaceTitlebar: Component<{
         windowCtx.maximized()
           ? windowIcons.record.restore
           : windowIcons.record.maximize,
+      tooltip: () =>
+        windowCtx.maximized() ? "restore window" : "maximize window",
       onClick: windowCtx.toggleMaximize,
     },
     {
       icon: () => windowIcons.record.close,
+      tooltip: () => "close window",
       onClick: windowCtx.close,
+    },
+  ];
+
+  type SidebarToggleButton = {
+    class: string;
+    tooltip: string;
+    enabled: () => boolean;
+    toggle: () => void;
+  };
+
+  const sidebarToggleButtons: SidebarToggleButton[] = [
+    {
+      class: "rotate-90",
+      tooltip: "toggle left sidebar",
+      enabled: () => props.sidebars().left.enabled,
+      toggle: () =>
+        ctx.setWorkspace("sidebars", (sidebars) =>
+          sidebarToggle({ sidebars, side: "left" }).pipe(Effect.runSync),
+        ),
+    },
+    {
+      class: "",
+      tooltip: "toggle bottom sidebar",
+      enabled: () => props.sidebars().bottom.enabled,
+      toggle: () =>
+        ctx.setWorkspace("sidebars", (sidebars) =>
+          sidebarToggle({ sidebars, side: "bottom" }).pipe(Effect.runSync),
+        ),
+    },
+    {
+      class: "-rotate-90",
+      tooltip: "toggle right sidebar",
+      enabled: () => props.sidebars().right.enabled,
+      toggle: () =>
+        ctx.setWorkspace("sidebars", (sidebars) =>
+          sidebarToggle({ sidebars, side: "right" }).pipe(Effect.runSync),
+        ),
     },
   ];
 
@@ -228,49 +268,31 @@ export const WorkspaceTitlebar: Component<{
       <Icon icon={icons["fe"]} noDefaultStyles class="size-4 mx-1" />
 
       <div class="flex flex-row h-full items-center gap-0.5 -window-drag">
-        <Index
-          each={[
-            {
-              class: "rotate-90",
-              get: () => props.sidebars().left.enabled,
-              toggle: () =>
-                ctx.setWorkspace("sidebars", (sidebars) =>
-                  sidebarToggle({ sidebars, side: "left" }).pipe(
-                    Effect.runSync,
-                  ),
-                ),
-            },
-            {
-              class: "",
-              get: () => props.sidebars().bottom.enabled,
-              toggle: () =>
-                ctx.setWorkspace("sidebars", (sidebars) =>
-                  sidebarToggle({ sidebars, side: "bottom" }).pipe(
-                    Effect.runSync,
-                  ),
-                ),
-            },
-            {
-              class: "-rotate-90",
-              get: () => props.sidebars().right.enabled,
-              toggle: () =>
-                ctx.setWorkspace("sidebars", (sidebars) =>
-                  sidebarToggle({ sidebars, side: "right" }).pipe(
-                    Effect.runSync,
-                  ),
-                ),
-            },
-          ]}
-        >
-          {(bar) => (
-            <Button
-              as={Icon}
-              icon={icons[bar().get() ? "sidebar_enabled" : "sidebar_disabled"]}
-              class={cn("fill-transparent", bar().class)}
-              size="icon"
-              variant="icon"
-              onClick={() => bar().toggle()}
-            />
+        <Index each={sidebarToggleButtons}>
+          {(toggle) => (
+            <Tooltip>
+              {/* slightly unorthodox way to use tooltips
+                  this is to avoid an issue where the tooltip would show
+                  instantly when the button was clicked */}
+              <Button
+                as={Tooltip.Trigger}
+                size="icon"
+                variant="icon"
+                onClick={() => toggle().toggle()}
+              >
+                <Icon
+                  class={cn("fill-transparent", toggle().class)}
+                  icon={
+                    icons[
+                      toggle().enabled()
+                        ? "sidebar_enabled"
+                        : "sidebar_disabled"
+                    ]
+                  }
+                />
+              </Button>
+              <Tooltip.Content>{toggle().tooltip}</Tooltip.Content>
+            </Tooltip>
           )}
         </Index>
       </div>
@@ -280,19 +302,22 @@ export const WorkspaceTitlebar: Component<{
       <div class="flex h-full -window-drag">
         <For each={windowButtons()}>
           {(button) => (
-            <Button
-              variant="icon"
-              size="icon"
-              class={windowIcons.class}
-              noOnClickToOnMouseDown
-              onClick={button.onClick}
-            >
-              <Icon
-                icon={icons[button.icon()]}
-                noDefaultStyles={windowIcons.noDefaultStyles}
-                class={windowIcons.iconClass}
-              />
-            </Button>
+            <Tooltip>
+              <Tooltip.Trigger
+                as={Button}
+                variant="icon"
+                size="icon"
+                class={windowIcons.class}
+                noOnClickToOnMouseDown
+                onClick={button.onClick}
+              >
+                <Icon
+                  icon={icons[button.icon()]}
+                  class={windowIcons.iconClass}
+                />
+              </Tooltip.Trigger>
+              <Tooltip.Content>{button.tooltip()}</Tooltip.Content>
+            </Tooltip>
           )}
         </For>
       </div>

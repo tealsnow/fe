@@ -26,7 +26,6 @@ export const icons: Icons = flattenArrayOfObjects(
 ) as Icons;
 
 export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
-  // kind: IconKind;
   icon: IconComponent;
   children?: never;
   noDefaultStyles?: boolean;
@@ -34,8 +33,6 @@ export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
 
 export const Icon: Component<IconProps> = (props) => {
   const [local, rest] = splitProps(props, ["class", "icon"]);
-
-  // const icon = (): IconComponent => icons[local.kind];
 
   return (
     <Dynamic
