@@ -3,25 +3,26 @@ import {
   createEffect,
   createSignal,
   ParentProps,
-  useContext,
+  useContext as solidUseContext,
 } from "solid-js";
 import { createStore } from "solid-js/store";
+import { trackStore } from "@solid-primitives/deep";
+import { Console, DateTime, Effect, Option } from "effect";
+
+import UUID from "~/lib/UUID";
+
 import {
   LeafRecord,
   makeLeaf,
   PanelNode,
   Workspace,
   WorkspaceSidebar,
-} from "./data";
-import { trackStore } from "@solid-primitives/deep";
-import { Console, DateTime, Effect, Option } from "effect";
+} from "../data";
 
-import UUID from "~/lib/UUID";
+import Context from "./ContextImpl";
 
-import { PanelContext } from "./Context";
-
-export const usePanelContext = (): PanelContext => {
-  const ctx = useContext(PanelContext);
+export const useContext = (): Context => {
+  const ctx = solidUseContext(Context);
   if (!ctx)
     throw new Error(
       "Cannot use PanelContext outside of a PanelContextProvider",
@@ -29,7 +30,7 @@ export const usePanelContext = (): PanelContext => {
   return ctx;
 };
 
-export const PanelContextProvider: Component<
+export const ContextProvider: Component<
   ParentProps<{
     initial?: {
       leafRecord: LeafRecord;
@@ -80,13 +81,13 @@ export const PanelContextProvider: Component<
     ).pipe(Effect.runSync);
   });
 
-  const getLeaf: PanelContext["getLeaf"] = (id) => {
+  const getLeaf: Context["getLeaf"] = (id) => {
     const content = leafRecord[id];
     if (!content) return Option.none();
     return content;
   };
 
-  const createLeaf: PanelContext["createLeaf"] = (maybeContent) => {
+  const createLeaf: Context["createLeaf"] = (maybeContent) => {
     const content = Option.fromNullable(maybeContent);
     const id = UUID.make();
     setLeafRecord((record) => ({ ...record, [id]: content }));
@@ -94,7 +95,7 @@ export const PanelContextProvider: Component<
   };
 
   return (
-    <PanelContext.Provider
+    <Context.Provider
       value={{
         workspace,
         setWorkspace,
@@ -116,6 +117,6 @@ export const PanelContextProvider: Component<
       }}
     >
       {props.children}
-    </PanelContext.Provider>
+    </Context.Provider>
   );
 };

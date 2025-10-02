@@ -1,0 +1,503 @@
+import {
+  Component,
+  For,
+  onMount,
+  Show,
+  onCleanup,
+  createSignal,
+  Setter,
+  Accessor,
+} from "solid-js";
+import { render as solidRender } from "solid-js/web";
+import { Option, Effect } from "effect";
+
+import {
+  draggable,
+  dropTargetForElements,
+} from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
+import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview";
+import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
+import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
+
+import { Icon, icons } from "~/assets/icons";
+
+import cn from "~/lib/cn";
+import Integer from "~/lib/Integer";
+import { UpdateFn } from "~/lib/UpdateFn";
+
+import Button from "~/ui/components/Button";
+
+import { useContext } from "../Context";
+import { PanelNode, SplitAxis, Leaf, tabsSelect } from "../data";
+
+import PanelTitlebar from "./PanelTitlebar";
+import {
+  DragDataForTab,
+  DropSide,
+  DropTargetDataForTab,
+  DropTargetSplitTabs,
+} from "./dnd";
+import LeafContent from "./LeafContent";
+
+export const ViewPanelNodeTabs: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
+  parentSplitAxis: () => Option.Option<SplitAxis>;
+}> = (props) => {
+  const ctx = useContext();
+
+  const active = (): Option.Option<Leaf> =>
+    // false positive
+    // eslint-disable-next-line solid/reactivity
+    Option.flatMap(props.tabs().active, (idx) => {
+      if (idx >= props.tabs().children.length) return Option.none();
+      return Option.some(props.tabs().children[idx]);
+    });
+
+  const [hasDrop, setHasDrop] = createSignal(false);
+
+  let tabDropRef!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: tabDropRef,
+
+      getData: () =>
+        DropTargetDataForTab({
+          tabs: props.tabs(),
+          updateTabs: props.updateTabs,
+          idx: Option.none(),
+        }),
+
+      canDrop: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) return true;
+
+        return false;
+      },
+
+      onDragEnter: () => setHasDrop(true),
+      onDragLeave: () => setHasDrop(false),
+      onDrop: () => setHasDrop(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  const activeTabContent = (): Component<{}> =>
+    active().pipe(
+      Option.flatMap(({ id }) =>
+        ctx.getLeaf(id).pipe(Option.map((content) => content.render)),
+      ),
+      Option.getOrElse(() => () => (
+        <div class="flex w-full h-full items-center justify-center">
+          <p>no tab selected</p>
+        </div>
+      )),
+    );
+
+  const [tabHovered, setTabHovered] = createSignal(false);
+
+  let ref!: HTMLDivElement;
+
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: ref,
+
+      onDragStart: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragEnter: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(true);
+      },
+      onDragLeave: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) setTabHovered(false);
+      },
+      onDrop: () => setTabHovered(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  return (
+    <div
+      ref={ref}
+      class="flex flex-col relative w-full h-full"
+      data-tabs-panel-root
+    >
+      <PanelTitlebar class="px-1">
+        <For each={props.tabs().children}>
+          {(child, idx) => (
+            <ViewTabHandle
+              tabs={props.tabs}
+              updateTabs={props.updateTabs}
+              active={() => props.tabs().active}
+              idx={() => Integer(idx())}
+              leaf={() => child}
+              onClick={() => {
+                // false positive
+                // eslint-disable-next-line solid/reactivity
+                props.updateTabs((tabs) =>
+                  tabsSelect({
+                    tabs,
+                    index: Option.some(Integer(idx())),
+                  }).pipe(Effect.runSync),
+                );
+              }}
+              onCloseClick={() => {
+                console.warn("TODO: tab close click");
+              }}
+            />
+          )}
+        </For>
+
+        <div
+          ref={tabDropRef}
+          class={cn(
+            "grow h-full min-w-5",
+            hasDrop() && "bg-theme-panel-tab-background-drop-target",
+          )}
+          onClick={() =>
+            props.updateTabs((tabs) =>
+              tabsSelect({
+                tabs,
+                index: Option.none(),
+              }).pipe(Effect.runSync),
+            )
+          }
+        />
+
+        <div class="flex items-center border-l border-theme-border h-full">
+          <Button
+            as={Icon}
+            icon={icons["add"]}
+            variant="icon"
+            size="icon"
+            class="p-1 ml-1"
+            onClick={() => {
+              console.warn("TODO: new tab");
+            }}
+          />
+        </div>
+      </PanelTitlebar>
+
+      <LeafContent render={() => activeTabContent()} />
+
+      <Show when={tabHovered()}>
+        <TabsDropOverlay
+          tabs={props.tabs}
+          updateTabs={props.updateTabs}
+          parentSplitAxis={props.parentSplitAxis}
+        />
+      </Show>
+    </div>
+  );
+};
+
+const TabsDropOverlay: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
+  parentSplitAxis: () => Option.Option<SplitAxis>;
+}> = (props) => {
+  let centerRef!: HTMLDivElement;
+  const [centerHovered, setCenterHovered] = createSignal(false);
+  onMount(() => {
+    const cleanup = dropTargetForElements({
+      element: centerRef,
+
+      getData: () =>
+        DropTargetDataForTab({
+          tabs: props.tabs(),
+          updateTabs: props.updateTabs,
+          idx: Option.none(),
+        }),
+
+      canDrop: ({ source }) => {
+        if (DragDataForTab.$is(source.data)) return true;
+        return false;
+      },
+
+      onDragEnter: () => setCenterHovered(true),
+      onDragLeave: () => setCenterHovered(false),
+      onDrop: () => setCenterHovered(false),
+    });
+    onCleanup(() => cleanup());
+  });
+
+  type SideDropInfo = {
+    ref: HTMLDivElement | undefined;
+    hovered: Accessor<boolean>;
+    setHovered: Setter<boolean>;
+    side: DropSide;
+  };
+
+  const sideInfos: Record<DropSide, SideDropInfo> = DropSide.reduce(
+    (acc, side) => {
+      const [hovered, setHovered] = createSignal(false);
+      acc[side] = {
+        ref: undefined,
+        hovered,
+        setHovered,
+        side,
+      };
+      return acc;
+    },
+    {} as Record<DropSide, SideDropInfo>,
+  );
+
+  onMount(() => {
+    const cleanups: CleanupFn[] = [];
+
+    const setupDropTarget = (info: SideDropInfo): void => {
+      if (!info.ref) return;
+      const cleanup = dropTargetForElements({
+        element: info.ref,
+
+        getData: () =>
+          DropTargetSplitTabs({
+            tabs: props.tabs(),
+            side: info.side,
+          }),
+
+        canDrop: ({ source }) => {
+          if (DragDataForTab.$is(source.data)) return true;
+          return false;
+        },
+
+        onDragEnter: () => info.setHovered(true),
+        onDragLeave: () => info.setHovered(false),
+        onDrop: () => info.setHovered(false),
+      });
+      cleanups.push(cleanup);
+    };
+
+    for (const side of DropSide) {
+      const info = sideInfos[side];
+      setupDropTarget(info);
+    }
+
+    onCleanup(() => {
+      for (const cleanup of cleanups) cleanup();
+    });
+  });
+
+  return (
+    <div
+      class={cn(
+        "absolute top-0 bottom-0 left-0 right-0 z-10",
+        "grid",
+        "grid-cols-[1fr_3rem_3rem_3rem_1fr]",
+        "grid-rows-[1fr_3rem_3rem_3rem_1fr]",
+        "pointer-events-none",
+      )}
+    >
+      {/* center */}
+      <div
+        ref={centerRef}
+        class={cn(
+          "bg-orange-400 pointer-events-auto",
+          "col-3 row-3",
+          centerHovered() && "bg-orange-400/20",
+        )}
+      />
+
+      <Show
+        when={
+          props
+            .parentSplitAxis()
+            .pipe(Option.getOrElse<SplitAxis>(() => "vertical")) === "vertical"
+        }
+      >
+        {/* left */}
+        <div
+          ref={sideInfos.left.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-2 row-3",
+            sideInfos.left.hovered() && "bg-blue-900/20",
+          )}
+        />
+        {/* right */}
+        <div
+          ref={sideInfos.right.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-4 row-3",
+            sideInfos.right.hovered() && "bg-blue-900/20",
+          )}
+        />
+      </Show>
+      <Show
+        when={
+          props
+            .parentSplitAxis()
+            .pipe(Option.getOrElse<SplitAxis>(() => "horizontal")) ===
+          "horizontal"
+        }
+      >
+        {/* top */}
+        <div
+          ref={sideInfos.top.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-3 row-2",
+            sideInfos.top.hovered() && "bg-blue-900/20",
+          )}
+        />
+        {/* bottom */}
+        <div
+          ref={sideInfos.bottom.ref}
+          class={cn(
+            "bg-blue-900 pointer-events-auto",
+            "col-3 row-4",
+            sideInfos.bottom.hovered() && "bg-blue-900/20",
+          )}
+        />
+      </Show>
+    </div>
+  );
+};
+
+export const ViewTabHandle: Component<{
+  tabs: () => PanelNode.Tabs;
+  updateTabs: UpdateFn<PanelNode.Tabs>;
+  active: () => Option.Option<Integer>;
+  idx: () => Integer;
+  leaf: () => Leaf;
+  onClick: () => void;
+  onCloseClick: () => void;
+}> = (props) => {
+  const ctx = useContext();
+
+  const selected = (): boolean =>
+    // false positive
+    // eslint-disable-next-line solid/reactivity
+    Option.map(props.active(), (i) => i === props.idx()).pipe(
+      Option.getOrElse(() => false),
+    );
+
+  const [dragging, setDragging] = createSignal(false);
+  const [hasDrop, setHasDrop] = createSignal(false);
+
+  const title = (): string =>
+    Option.getOrElse(
+      Option.map(ctx.getLeaf(props.leaf().id), (leaf) => leaf.title),
+      () => "<none leaf>",
+    );
+
+  let ref!: HTMLDivElement;
+  onMount(() => {
+    const cleanup = pdndCombine(
+      draggable({
+        element: ref,
+
+        getInitialData: () =>
+          DragDataForTab({
+            tabs: props.tabs(),
+            updateTabs: props.updateTabs,
+            leaf: props.leaf(),
+            idx: props.idx(),
+          }),
+
+        onGenerateDragPreview: ({ nativeSetDragImage }) => {
+          setDragging(true);
+
+          setCustomNativeDragPreview({
+            getOffset: pointerOutsideOfPreview({
+              x: "calc(var(--spacing) * 2)",
+              y: "calc(var(--spacing) * 2)",
+            }),
+            render: ({ container }) =>
+              solidRender(
+                () => (
+                  <ViewTabHandleImpl
+                    class="h-6 border text-theme-text bg-theme-background"
+                    title={title}
+                  />
+                ),
+                container,
+              ),
+            nativeSetDragImage,
+          });
+        },
+        onDrop: () => setDragging(false),
+      }),
+      dropTargetForElements({
+        element: ref,
+
+        getData: () =>
+          DropTargetDataForTab({
+            tabs: props.tabs(),
+            updateTabs: props.updateTabs,
+            idx: Option.some(props.idx()),
+          }),
+
+        canDrop: ({ source }) => {
+          if (DragDataForTab.$is(source.data)) return true;
+
+          return false;
+        },
+
+        onDragEnter: () => setHasDrop(true),
+        onDragLeave: () => setHasDrop(false),
+        onDrop: () => setHasDrop(false),
+      }),
+    );
+    onCleanup(() => cleanup());
+  });
+
+  return (
+    <ViewTabHandleImpl
+      ref={ref}
+      class={cn(
+        "relative first:border-l border-r cursor-pointer hover:bg-theme-panel-tab-background-active transition-colors duration-100",
+        selected() && "bg-theme-panel-tab-background-active",
+        dragging() && "text-transparent",
+        hasDrop() && "bg-theme-panel-tab-background-drop-target",
+      )}
+      title={title}
+      onClick={() => {
+        if (selected()) return;
+        props.onClick();
+      }}
+      onCloseClick={props.onCloseClick}
+    />
+  );
+};
+
+const ViewTabHandleImpl: Component<{
+  ref?: HTMLDivElement;
+  class?: string;
+  title: () => string;
+  onClick?: () => void;
+  onCloseClick?: () => void;
+}> = (props) => {
+  return (
+    <div
+      ref={props.ref}
+      class={cn(
+        "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
+        props.class,
+      )}
+      onClick={() => props.onClick?.()}
+    >
+      {/* icon placeholder */}
+      <div class="size-3.5" />
+
+      {props.title()}
+
+      <Button
+        as={Icon}
+        icon={icons["close"]}
+        variant="icon"
+        size="icon"
+        class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"
+        noOnClickToOnMouseDown
+        onClick={(event) => {
+          if (!props.onCloseClick) return;
+          event.stopPropagation();
+          props.onCloseClick();
+        }}
+      />
+    </div>
+  );
+};
+
+export default ViewPanelNodeTabs;

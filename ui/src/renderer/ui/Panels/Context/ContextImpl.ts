@@ -5,9 +5,9 @@ import { Option } from "effect";
 import UUID from "~/lib/UUID";
 // import createHotStableContext from "~/lib/createHotStableContext";
 
-import { Leaf, LeafContent, LeafRecord, Workspace } from "./data";
+import { Leaf, LeafContent, LeafRecord, Workspace } from "../data";
 
-export type PanelContext = {
+export type Context = {
   workspace: Store<Workspace>;
   setWorkspace: SetStoreFunction<Workspace>;
 
@@ -22,5 +22,7 @@ export type PanelContext = {
   createLeaf: (content?: LeafContent) => Leaf;
 };
 // export const PanelContext =
-//   createHotStableContext<PanelContext>("PanelContext");
-export const PanelContext = createContext<PanelContext>();
+//   createHotStableContext<Context>("PanelContext");
+export const Context = createContext<Context>();
+
+export default Context;

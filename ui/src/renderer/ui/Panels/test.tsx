@@ -3,25 +3,23 @@ import { batch, Component, onMount } from "solid-js";
 import Percent from "~/lib/Percent";
 import Integer from "~/lib/Integer";
 
-import { PanelNode, WorkspaceSidebar } from "./data";
-import { PanelContextProvider, usePanelContext } from "./ContextProvider";
-import View from "./View";
+import * as Panels from "./index";
 
 export const Test: Component<{}> = () => {
   return (
-    <PanelContextProvider>
+    <Panels.Context.Provider>
       <ActualTest />
-    </PanelContextProvider>
+    </Panels.Context.Provider>
   );
 };
 
 const ActualTest: Component = () => {
-  const ctx = usePanelContext();
+  const ctx = Panels.useContext();
 
   onMount(() => {
     batch(() => {
       ctx.setWorkspace({
-        root: PanelNode.makeTabs({
+        root: Panels.PanelNode.makeTabs({
           active: Integer(0),
           children: [
             ctx.createLeaf({
@@ -49,10 +47,10 @@ const ActualTest: Component = () => {
           ],
         }),
         sidebars: {
-          left: WorkspaceSidebar({
+          left: Panels.WorkspaceSidebar({
             size: Percent.from(15),
             enabled: true,
-            node: PanelNode.makeTabs({
+            node: Panels.PanelNode.makeTabs({
               children: [
                 ctx.createLeaf({
                   title: "foo",
@@ -69,13 +67,13 @@ const ActualTest: Component = () => {
               ],
             }),
           }),
-          right: WorkspaceSidebar({
+          right: Panels.WorkspaceSidebar({
             size: Percent.from(35),
             enabled: true,
-            node: PanelNode.makeSplit({
+            node: Panels.PanelNode.makeSplit({
               axis: "vertical",
               children: [
-                PanelNode.makeTabs({
+                Panels.PanelNode.makeTabs({
                   children: [
                     ctx.createLeaf({
                       title: "right top",
@@ -83,7 +81,7 @@ const ActualTest: Component = () => {
                     }),
                   ],
                 }),
-                PanelNode.makeTabs({
+                Panels.PanelNode.makeTabs({
                   children: [
                     ctx.createLeaf({
                       title: "wow",
@@ -91,10 +89,10 @@ const ActualTest: Component = () => {
                     }),
                   ],
                 }),
-                PanelNode.makeSplit({
+                Panels.PanelNode.makeSplit({
                   axis: "horizontal",
                   children: [
-                    PanelNode.makeTabs({
+                    Panels.PanelNode.makeTabs({
                       children: [
                         ctx.createLeaf({
                           title: "right bottom left",
@@ -102,7 +100,7 @@ const ActualTest: Component = () => {
                         }),
                       ],
                     }),
-                    PanelNode.makeTabs({
+                    Panels.PanelNode.makeTabs({
                       children: [
                         ctx.createLeaf({
                           title: "tab 1",
@@ -119,14 +117,14 @@ const ActualTest: Component = () => {
               ],
             }),
           }),
-          bottom: WorkspaceSidebar({
+          bottom: Panels.WorkspaceSidebar({
             enabled: false,
-            node: PanelNode.makeTabs(),
+            node: Panels.PanelNode.makeTabs(),
           }),
         },
       });
     });
   });
 
-  return <View.Root />;
+  return <Panels.View.Root />;
 };

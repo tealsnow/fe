@@ -1,6 +1,9 @@
 import { type JSX, Match } from "solid-js";
 
-function MatchTag<T extends { _tag: string }, S extends T["_tag"]>(props: {
+export function MatchTag<
+  T extends { _tag: string },
+  S extends T["_tag"],
+>(props: {
   on: T | undefined;
   tag: S;
   children: (value: () => Extract<T, { _tag: S }>) => JSX.Element;
@@ -12,4 +15,4 @@ function MatchTag<T extends { _tag: string }, S extends T["_tag"]>(props: {
   );
 }
 
-export { MatchTag };
+export default MatchTag;
