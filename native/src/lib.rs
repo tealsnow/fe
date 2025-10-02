@@ -31,7 +31,7 @@ pub fn print_cwd() -> napi::Result<()> {
         println!("File: {:?}", entry?.path());
     }
 
-    return Ok(());
+    Ok(())
 }
 
 #[napi]

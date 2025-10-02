@@ -1,1 +1,2 @@
 .user-data
+electron.vite.config.*.mjs
