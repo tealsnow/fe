@@ -14,8 +14,8 @@ import { cn } from "~/lib/cn";
 
 import { Icon, icons } from "~/assets/icons";
 
-import { useThemeContext } from "~/ui/Theme";
 import Button, { ButtonProps } from "~/ui/components/Button";
+import * as Theme from "~/ui/Theme";
 
 const DialogRoot = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -23,10 +23,10 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal: Component<DialogPrimitive.DialogPortalProps> = (props) => {
   const [, rest] = splitProps(props, ["children"]);
 
-  const themeContext = useThemeContext();
+  const themeCtx = Theme.useContext();
 
   return (
-    <DialogPrimitive.Portal mount={themeContext.rootElement()} {...rest}>
+    <DialogPrimitive.Portal mount={themeCtx.rootElement()} {...rest}>
       <div class="fixed inset-0 z-50 flex items-start justify-center sm:items-center">
         {props.children}
       </div>

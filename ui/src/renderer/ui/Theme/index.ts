@@ -1,20 +1,13 @@
-import Color from "color";
-
-import { DeepPartial } from "~/lib/type_helpers";
-
-import {
-  Theme,
-  ThemeColors,
-  Base16Theme,
-  autoThemeColors,
-  autoThemeIconTuple,
-} from "@fe/theme";
 export * from "@fe/theme";
-
 export * from "./Context";
 export * from "./ContextProvider";
+export * from "./Showcase";
 
-const gruvbox_dark_hard_base_16: Base16Theme = {
+import Color from "color";
+
+import * as Theme from "@fe/theme";
+
+const gruvbox_dark_hard_base_16: Theme.Base16Theme = {
   base00: "#1d2021",
   base01: "#3c3836",
   base02: "#504945",
@@ -33,48 +26,9 @@ const gruvbox_dark_hard_base_16: Base16Theme = {
   base0F: "#d65d0e",
 };
 
-export const themeFromBase16 = (
-  base16: Base16Theme,
-  colors: ThemeColors,
-  overrides?: DeepPartial<Theme>,
-): Theme => {
-  return {
-    background: overrides?.background ?? base16.base00,
-    text: overrides?.text ?? base16.base05,
-    deemphasis: overrides?.deemphasis ?? base16.base04,
-    selection: overrides?.selection ?? base16.base02,
-    border: overrides?.border ?? base16.base02,
-    panel: {
-      tab: {
-        background: {
-          idle: overrides?.panel?.tab?.background?.idle ?? base16.base00,
-          active: overrides?.panel?.tab?.background?.active ?? base16.base01,
-          dropTarget:
-            overrides?.panel?.tab?.background?.dropTarget ?? base16.base03,
-        },
-      },
-    },
-    icon: {
-      base: autoThemeIconTuple(
-        overrides?.icon?.base?.stroke ?? base16.base04,
-        overrides?.icon?.base?.fill,
-      ),
-      active: autoThemeIconTuple(
-        overrides?.icon?.active?.stroke ?? base16.base06,
-        overrides?.icon?.active?.fill,
-      ),
-    },
-    statusbar: {
-      background: overrides?.statusbar?.background ?? base16.base01,
-    },
-    colors,
-    windowRounding: "large",
-  };
-};
-
-export const defaultTheme = themeFromBase16(
+export const defaultThemeColors = Theme.themeColorsFromBase16(
   gruvbox_dark_hard_base_16,
-  autoThemeColors({
+  Theme.autoColors({
     red: "#cc241d",
     orange: "#fe8019",
     yellow: "#d79921",
@@ -96,3 +50,8 @@ export const defaultTheme = themeFromBase16(
     },
   },
 );
+
+export const defaultTheme: Theme.Theme = {
+  colors: defaultThemeColors,
+  windowRounding: "large",
+};

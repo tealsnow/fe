@@ -35,12 +35,15 @@ importers:
 
   theme:
     dependencies:
+      '@traversable/zod':
+        specifier: ^0.0.56
+        version: 0.0.56(fast-check@3.23.2)(zod@4.1.11)
       color:
         specifier: ^5.0.0
         version: 5.0.0
       zod:
-        specifier: ^4.1.5
-        version: 4.1.5
+        specifier: ^4.1.11
+        version: 4.1.11
 
   ui:
     dependencies:
@@ -111,8 +114,8 @@ importers:
         specifier: ^11.1.0
         version: 11.1.0
       zod:
-        specifier: ^4.0.14
-        version: 4.1.5
+        specifier: ^4.1.11
+        version: 4.1.11
     devDependencies:
       '@effect/vitest':
         specifier: ~0.25.1
@@ -783,6 +786,11 @@ packages:
   '@jridgewell/trace-mapping@0.3.30':
     resolution: {integrity: sha512-GQ7Nw5G2lTu/BtHTKfXhKHok2WGetd4XYcVKGx00SjAk8GMwgJM3zr6zORiPGuOE+/vkc90KtTosSSvaCjKb2Q==}
 
+  '@kobalte/core@0.12.6':
+    resolution: {integrity: sha512-+Ta2o2wEqZ2fCqLMkvjT40VHNmcFKdGe8TNDVQbbMPk66qoU6g/DDRFR/Ib7eAjb+C95VoIyk6zaafos2VOo0w==}
+    peerDependencies:
+      solid-js: ^1.8.15
+
   '@kobalte/core@0.13.11':
     resolution: {integrity: sha512-hK7TYpdib/XDb/r/4XDBFaO9O+3ZHz4ZWryV4/3BfES+tSQVgg2IJupDnztKXB0BqbSRy/aWlHKw1SPtNPYCFQ==}
     peerDependencies:
@@ -1347,6 +1355,11 @@ packages:
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
 
+  '@solid-primitives/deep@0.2.10':
+    resolution: {integrity: sha512-uzhXr/cMABsGkTcV3yuviZjTDmj44wb2JetuJ5O8NCugz4Ug/6XlPjT8ISMPYV7eCbC/gFhgt7e60+TRpl2Upg==}
+    peerDependencies:
+      solid-js: ^1.6.12
+
   '@solid-primitives/deep@0.3.3':
     resolution: {integrity: sha512-YnCV2OFbBlNYlww0lSD7oDpk9zN20KQWr699s6euwd6+oRE1nbI+vqrfYuqC7E0WPDfk0DIG+ylY1xvY31ZlTg==}
     peerDependencies:
@@ -1379,6 +1392,11 @@ packages:
 
   '@solid-primitives/memo@1.4.3':
     resolution: {integrity: sha512-CA+n9yaoqbYm+My5tY2RWb6EE16tVyehM4GzwQF4vCwvjYPAYk1JSRIVuMC0Xuj5ExD2XQJE5E2yAaKY2HTUsg==}
+    peerDependencies:
+      solid-js: ^1.6.12
+
+  '@solid-primitives/mutation-observer@1.2.2':
+    resolution: {integrity: sha512-liLPjizzwJTTp6BjRgkVhX21DeJn+A+5TMxidy7iXhfsxwDOlH7jFoDmy5pyFMz8zXdQEUo/CTGpuWQJGOxeVg==}
     peerDependencies:
       solid-js: ^1.6.12
 
@@ -1547,6 +1565,30 @@ packages:
   '@tootallnate/once@2.0.0':
     resolution: {integrity: sha512-XCuKFP5PS55gnMVu3dty8KPatLqUoy/ZYzDzAGCQ8JNFCkLXzmI7vNHCR+XpbZaMWQK/vQubr7PkYq8g470J/A==}
     engines: {node: '>= 10'}
+
+  '@traversable/json@0.0.52':
+    resolution: {integrity: sha512-QddhvjiJULZw6z/OhHE0YchZfKr1LRvRvs5dZqGpYb0UB3GpWSn/2fIJjYTOCT0pG95QhuxexPpKky6eihFBLA==}
+    peerDependencies:
+      '@traversable/registry': ^0.0.49
+      fast-check: 3 - 4
+    peerDependenciesMeta:
+      fast-check:
+        optional: true
+
+  '@traversable/registry@0.0.49':
+    resolution: {integrity: sha512-uof62gHhyf5MebDkjQMeJj1yIAQkCbCcJYl848b4A+jFnUXxo2NUuHi0NIZOeG3r+XgNSF4MapDED89tFM6iLA==}
+
+  '@traversable/zod-types@0.0.30':
+    resolution: {integrity: sha512-BbVyKLvxNpuVouwkLGf7NRNUuMauJBZFr3z4Qy1KZgiAFEryXTLZfJV1Sf98k+naDDj6zaHQD66NsTUTQ7upqw==}
+    peerDependencies:
+      '@traversable/json': ^0.0.52
+      '@traversable/registry': ^0.0.49
+      zod: '4'
+
+  '@traversable/zod@0.0.56':
+    resolution: {integrity: sha512-7GefB+VXtL1EVljRKrJLx4fEc7aS4WXh0i+V4owfh3vqdl5U4bOe1UXDFB5x94nkMKFlPiQuGonQANZjXG343g==}
+    peerDependencies:
+      zod: '4'
 
   '@trysound/sax@0.2.0':
     resolution: {integrity: sha512-L7z9BgrNEcYyUYtF+HaEfiS5ebkh9jXqbszz7pC0hRBPaatV0XjSD3+eHrpqFemQfgwiFF0QPIarnIihIDn7OA==}
@@ -4224,8 +4266,8 @@ packages:
     resolution: {integrity: sha512-9qv4rlDiopXg4E69k+vMHjNN63YFMe9sZMrdlvKnCjlCRWeCBswPPMPUfx+ipsAWq1LXHe70RcbaHdJJpS6hyQ==}
     engines: {node: '>= 10'}
 
-  zod@4.1.5:
-    resolution: {integrity: sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg==}
+  zod@4.1.11:
+    resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
 
 snapshots:
 
@@ -4822,6 +4864,15 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@kobalte/core@0.12.6(solid-js@1.9.9)':
+    dependencies:
+      '@floating-ui/dom': 1.7.4
+      '@internationalized/date': 3.9.0
+      '@internationalized/number': 3.6.5
+      '@kobalte/utils': 0.9.1(solid-js@1.9.9)
+      solid-js: 1.9.9
+      solid-prevent-scroll: 0.1.10(solid-js@1.9.9)
+
   '@kobalte/core@0.13.11(solid-js@1.9.9)':
     dependencies:
       '@floating-ui/dom': 1.7.4
@@ -5295,6 +5346,11 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
+  '@solid-primitives/deep@0.2.10(solid-js@1.9.9)':
+    dependencies:
+      '@solid-primitives/memo': 1.4.3(solid-js@1.9.9)
+      solid-js: 1.9.9
+
   '@solid-primitives/deep@0.3.3(solid-js@1.9.9)':
     dependencies:
       '@solid-primitives/memo': 1.4.3(solid-js@1.9.9)
@@ -5330,6 +5386,11 @@ snapshots:
   '@solid-primitives/memo@1.4.3(solid-js@1.9.9)':
     dependencies:
       '@solid-primitives/scheduled': 1.5.2(solid-js@1.9.9)
+      '@solid-primitives/utils': 6.3.2(solid-js@1.9.9)
+      solid-js: 1.9.9
+
+  '@solid-primitives/mutation-observer@1.2.2(solid-js@1.9.9)':
+    dependencies:
       '@solid-primitives/utils': 6.3.2(solid-js@1.9.9)
       solid-js: 1.9.9
 
@@ -5470,6 +5531,29 @@ snapshots:
       vite: 7.1.5(@types/node@22.18.1)(jiti@2.5.1)(lightningcss@1.30.1)
 
   '@tootallnate/once@2.0.0': {}
+
+  '@traversable/json@0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2)':
+    dependencies:
+      '@traversable/registry': 0.0.49
+    optionalDependencies:
+      fast-check: 3.23.2
+
+  '@traversable/registry@0.0.49': {}
+
+  '@traversable/zod-types@0.0.30(@traversable/json@0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2))(@traversable/registry@0.0.49)(zod@4.1.11)':
+    dependencies:
+      '@traversable/json': 0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2)
+      '@traversable/registry': 0.0.49
+      zod: 4.1.11
+
+  '@traversable/zod@0.0.56(fast-check@3.23.2)(zod@4.1.11)':
+    dependencies:
+      '@traversable/json': 0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2)
+      '@traversable/registry': 0.0.49
+      '@traversable/zod-types': 0.0.30(@traversable/json@0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2))(@traversable/registry@0.0.49)(zod@4.1.11)
+      zod: 4.1.11
+    transitivePeerDependencies:
+      - fast-check
 
   '@trysound/sax@0.2.0': {}
 
@@ -8401,4 +8485,4 @@ snapshots:
       compress-commons: 4.1.2
       readable-stream: 3.6.2
 
-  zod@4.1.5: {}
+  zod@4.1.11: {}

@@ -2,7 +2,7 @@ import { Match } from "effect";
 
 import createHotStableContext from "~/lib/createHotStableContext";
 
-import Theme from "@fe/theme";
+import * as Theme from "@fe/theme";
 
 export type TailwindWindowRounding =
   | "rounded-none"
@@ -10,13 +10,13 @@ export type TailwindWindowRounding =
   | "rounded-md"
   | "rounded-lg";
 
-export type TransformedTheme = Omit<Theme, "windowRounding"> & {
+export type TransformedTheme = Omit<Theme.Theme, "windowRounding"> & {
   windowRounding: TailwindWindowRounding;
   _tag: "transformed";
 };
 
 export const TransformedTheme = (
-  theme: Theme | TransformedTheme,
+  theme: Theme.Theme | TransformedTheme,
 ): TransformedTheme => {
   if (theme["_tag"] === "transformed") return theme as TransformedTheme;
 
@@ -33,9 +33,8 @@ export const TransformedTheme = (
   });
 };
 
-export type ThemeContext = {
+export type Context = {
   theme: () => TransformedTheme;
   rootElement: () => HTMLElement;
 };
-export const ThemeContext =
-  createHotStableContext<ThemeContext>("ThemeContext");
+export const Context = createHotStableContext<Context>("ThemeContext");

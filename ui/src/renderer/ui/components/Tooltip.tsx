@@ -8,7 +8,7 @@ import { cn } from "~/lib/cn";
 
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
-const Root: Component<TooltipPrimitive.TooltipRootProps> = (props) => {
+const TooltipRoot: Component<TooltipPrimitive.TooltipRootProps> = (props) => {
   return <TooltipPrimitive.Root gutter={4} openDelay={1000} {...props} />;
 };
 
@@ -32,11 +32,10 @@ const TooltipContent = <T extends ValidComponent = "div">(
   );
 };
 
-export { Root as TooltipRoot, TooltipTrigger, TooltipContent };
+export { TooltipRoot, TooltipTrigger, TooltipContent };
 
-export const Tooltip = Object.assign(Root, {
+export const Tooltip = Object.assign(TooltipRoot, {
   Trigger: TooltipTrigger,
   Content: TooltipContent,
 });
-
 export default Tooltip;

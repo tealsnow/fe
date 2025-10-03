@@ -1,21 +1,19 @@
-import { useContext, Component, ParentProps } from "solid-js";
+import { useContext as solidUseContext, ParentComponent } from "solid-js";
 
 import { cn } from "~/lib/cn";
 
-import Theme, { themeCssStyles } from "@fe/theme";
+import * as Theme from "@fe/theme";
 
-import { ThemeContext, TransformedTheme } from "./Context";
+import { Context, TransformedTheme } from "./Context";
 
-export const ThemeContextProvider: Component<
-  ParentProps<{
-    theme?: Theme;
-    class?: string;
-    applyRounding?: boolean;
-  }>
-> = (props) => {
+export const Provider: ParentComponent<{
+  theme?: Theme.Theme;
+  class?: string;
+  applyRounding?: boolean;
+}> = (props) => {
   let ref!: HTMLDivElement;
 
-  const prevContext = useContext(ThemeContext);
+  const prevContext = solidUseContext(Context);
 
   const theme = (): TransformedTheme => {
     if (props.theme) return TransformedTheme(props.theme);
@@ -26,7 +24,7 @@ export const ThemeContextProvider: Component<
   };
 
   return (
-    <ThemeContext.Provider
+    <Context.Provider
       value={{
         theme: () => theme(),
         rootElement: () =>
@@ -36,7 +34,7 @@ export const ThemeContextProvider: Component<
     >
       <div
         ref={ref}
-        style={themeCssStyles(theme())}
+        style={Theme.themeColorsCssStyles(theme().colors)}
         class={cn(
           "text-theme-text selection:bg-theme-selection",
           props.applyRounding && theme().windowRounding,
@@ -45,12 +43,15 @@ export const ThemeContextProvider: Component<
       >
         {props.children}
       </div>
-    </ThemeContext.Provider>
+    </Context.Provider>
   );
 };
 
-export const useThemeContext = (): ThemeContext => {
-  const theme = useContext(ThemeContext);
-  if (!theme) throw new Error("useTheme must be used within a ThemeProvider");
+export const useContext = (): Context => {
+  const theme = solidUseContext(Context);
+  if (!theme)
+    throw new Error(
+      "cannot use Theme Context outside of a Theme Context Provider",
+    );
   return theme;
 };

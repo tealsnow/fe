@@ -3,7 +3,6 @@ import {
   onCleanup,
   onMount,
   Show,
-  Index,
   Setter,
   Component,
   For,
@@ -11,7 +10,7 @@ import {
 
 import { Effect, Option } from "effect";
 
-import { Icon, iconKinds, icons } from "~/assets/icons";
+import { Icon, icons } from "~/assets/icons";
 
 import { cn } from "~/lib/cn";
 import Integer from "~/lib/Integer";
@@ -40,12 +39,12 @@ const AfterWindow: Component = () => {
   //  As is stands this works just fine, if and when we do a theme preview
   //  we can just use the provider, unless we want to show what toasts would
   //  look like...
-  Theme.applyTheme(Theme.defaultTheme);
+  Theme.applyThemeColors(Theme.defaultTheme.colors);
 
   const windowCtx = Window.useContext();
 
   return (
-    <Theme.ThemeContextProvider
+    <Theme.Provider
       theme={Theme.defaultTheme}
       class="flex w-screen h-screen"
       applyRounding={!windowCtx.maximized()}
@@ -57,7 +56,7 @@ const AfterWindow: Component = () => {
           </Panels.Context.Provider>
         </StatusBar.Provider>
       </Notif.Provider>
-    </Theme.ThemeContextProvider>
+    </Theme.Provider>
   );
 };
 
@@ -65,7 +64,7 @@ const Root: Component = () => {
   const [showNoise, setShowNoise] = createSignal(true);
 
   const windowCtx = Window.useContext();
-  const themeCtx = Theme.useThemeContext();
+  const themeCtx = Theme.useContext();
   const statusBarCtx = StatusBar.useContext();
   const panelCtx = Panels.useContext();
   const notifCtx = Notif.useContext();
@@ -85,7 +84,7 @@ const Root: Component = () => {
             panelCtx.createLeaf({
               title: "theme showcase",
               tooltip: "showcase all aspects of the current theme",
-              render: () => <ThemeShowcase />,
+              render: () => <Theme.Showcase />,
             }),
           ],
         }),
@@ -515,87 +514,6 @@ const Dbg: Component<{
       <NotificationsTest />
       {/*<hr />
       <StatusBarTest />*/}
-    </div>
-  );
-};
-
-const ThemeShowcase: Component = () => {
-  const Colors: Component = () => {
-    return (
-      <div class="flex flex-row justify-evenly text-center">
-        <Index each={Theme.colors}>
-          {(color) => {
-            return (
-              <div
-                class="m-1 flex size-16 flex-grow flex-row content-center
-                  items-center justify-center gap-2 border-2 shadow-md"
-                style={{
-                  background: `var(--theme-colors-${color()}-background)`,
-                  "border-color": `var(--theme-colors-${color()}-border)`,
-                }}
-              >
-                <div
-                  class="size-5 border-2"
-                  style={{
-                    background: `var(--theme-colors-${color()}-base)`,
-                    "border-color": `var(--theme-colors-${color()}-border)`,
-                  }}
-                />
-                {color()}
-              </div>
-            );
-          }}
-        </Index>
-      </div>
-    );
-  };
-
-  const Icons: Component = () => {
-    return (
-      <div class="flex flex-row flex-wrap justify-evenly text-center">
-        <Index each={iconKinds}>
-          {(kind) => {
-            return (
-              <div
-                class="m-1 flex-grow flex-col content-center items-center
-                  justify-center rounded-sm p-2 text-xs shadow-md"
-              >
-                {kind()}
-                <Icon
-                  icon={icons[kind()]}
-                  noDefaultStyles={kind() === "fe"}
-                  class="size-10"
-                />
-              </div>
-            );
-          }}
-        </Index>
-      </div>
-    );
-  };
-
-  return (
-    <div class="flex-col overflow-auto w-full">
-      <Colors />
-      <Icons />
-      <Index each={Theme.themeDescFlat}>
-        {(item) => {
-          return (
-            <div
-              class="m-1 flex flex-row items-center gap-2 border border-black
-                p-1"
-            >
-              <div
-                class="size-6 border border-black"
-                style={{
-                  background: `var(--theme-${item().join("-")})`,
-                }}
-              />
-              <p class="font-mono">{item().join("-")}</p>
-            </div>
-          );
-        }}
-      </Index>
     </div>
   );
 };
