@@ -285,8 +285,8 @@ export const WorkspaceTitlebar: Component<{
                   icon={
                     icons[
                       toggle().enabled()
-                        ? "sidebar_enabled"
-                        : "sidebar_disabled"
+                        ? "sidebar_indicator_enabled"
+                        : "sidebar_indicator_disabled"
                     ]
                   }
                 />

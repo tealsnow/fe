@@ -133,7 +133,7 @@ export const ThemeSchema = z.object({
   icon: z.object({
     base: ThemeIconTupleSchema,
     active: ThemeIconTupleSchema,
-    // disabled, muted
+    // muted: ThemeIconTupleSchema,
   }),
   statusbar: z.object({
     background: z.string(),

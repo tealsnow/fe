@@ -1,3 +1,5 @@
+/* @refresh reload */
+
 import {
   Component,
   For,
@@ -21,6 +23,12 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { combine as pdndCombine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { CleanupFn } from "@atlaskit/pragmatic-drag-and-drop/dist/types/internal-types";
 
+import { PolymorphicCallbackProps } from "@kobalte/core/polymorphic";
+import {
+  TooltipTriggerProps,
+  TooltipTriggerRenderProps,
+} from "@kobalte/core/tooltip";
+
 import { Icon, icons } from "~/assets/icons";
 
 import cn from "~/lib/cn";
@@ -41,11 +49,7 @@ import {
   DropTargetSplitTabs,
 } from "./dnd";
 import LeafContent from "./LeafContent";
-import { PolymorphicCallbackProps } from "@kobalte/core/polymorphic";
-import {
-  TooltipTriggerProps,
-  TooltipTriggerRenderProps,
-} from "@kobalte/core/tooltip";
+import RenderDropPoint from "./RenderDropPoint";
 
 export const ViewPanelNodeTabs: Component<{
   tabs: () => PanelNode.Tabs;
@@ -294,24 +298,49 @@ const TabsDropOverlay: Component<{
     });
   });
 
+  const sidePositions: Record<DropSide, string> = {
+    left: "col-2 row-3",
+    right: "col-4 row-3",
+    top: "col-3 row-2",
+    bottom: "col-3 row-4",
+  };
+
+  const sideIconClass: Record<DropSide, string> = {
+    left: "rotate-90",
+    right: "-rotate-90",
+    top: "rotate-180",
+    bottom: "",
+  };
+
+  const RenderSideDropPoint: Component<{ side: DropSide }> = (props) => {
+    return (
+      <RenderDropPoint
+        ref={sideInfos[props.side].ref}
+        icon="dnd_tabs_side"
+        tooltip={`create split to the ${props.side}`}
+        hovered={sideInfos[props.side].hovered}
+        class={sidePositions[props.side]}
+        iconClass={sideIconClass[props.side]}
+      />
+    );
+  };
+
   return (
     <div
       class={cn(
         "absolute top-0 bottom-0 left-0 right-0 z-10",
         "grid",
-        "grid-cols-[1fr_3rem_3rem_3rem_1fr]",
-        "grid-rows-[1fr_3rem_3rem_3rem_1fr]",
+        "grid-cols-[1fr_36px_36px_36px_1fr]",
+        "grid-rows-[1fr_36px_36px_36px_1fr]",
         "pointer-events-none",
       )}
     >
-      {/* center */}
-      <div
+      <RenderDropPoint
         ref={centerRef}
-        class={cn(
-          "bg-orange-400 pointer-events-auto",
-          "col-3 row-3",
-          centerHovered() && "bg-orange-400/20",
-        )}
+        icon="dnd_tabs_middle"
+        tooltip="append tab"
+        hovered={centerHovered}
+        class="col-3 row-3"
       />
 
       <Show
@@ -321,24 +350,8 @@ const TabsDropOverlay: Component<{
             .pipe(Option.getOrElse<SplitAxis>(() => "vertical")) === "vertical"
         }
       >
-        {/* left */}
-        <div
-          ref={sideInfos.left.ref}
-          class={cn(
-            "bg-blue-900 pointer-events-auto",
-            "col-2 row-3",
-            sideInfos.left.hovered() && "bg-blue-900/20",
-          )}
-        />
-        {/* right */}
-        <div
-          ref={sideInfos.right.ref}
-          class={cn(
-            "bg-blue-900 pointer-events-auto",
-            "col-4 row-3",
-            sideInfos.right.hovered() && "bg-blue-900/20",
-          )}
-        />
+        <RenderSideDropPoint side="left" />
+        <RenderSideDropPoint side="right" />
       </Show>
       <Show
         when={
@@ -348,24 +361,8 @@ const TabsDropOverlay: Component<{
           "horizontal"
         }
       >
-        {/* top */}
-        <div
-          ref={sideInfos.top.ref}
-          class={cn(
-            "bg-blue-900 pointer-events-auto",
-            "col-3 row-2",
-            sideInfos.top.hovered() && "bg-blue-900/20",
-          )}
-        />
-        {/* bottom */}
-        <div
-          ref={sideInfos.bottom.ref}
-          class={cn(
-            "bg-blue-900 pointer-events-auto",
-            "col-3 row-4",
-            sideInfos.bottom.hovered() && "bg-blue-900/20",
-          )}
-        />
+        <RenderSideDropPoint side="top" />
+        <RenderSideDropPoint side="bottom" />
       </Show>
     </div>
   );
@@ -428,7 +425,7 @@ export const ViewTabHandle: Component<{
               solidRender(
                 () => (
                   <ViewTabHandleImpl
-                    class="h-6 border text-theme-text bg-theme-background"
+                    class="h-6 border text-theme-text bg-theme-background opacity-75"
                     title={() => titleAndTooltip().title}
                     tooltip={() => titleAndTooltip().tooltip}
                   />

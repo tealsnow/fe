@@ -1,3 +1,5 @@
+/* @refresh reload */
+
 import {
   Component,
   Index,
@@ -7,6 +9,8 @@ import {
   createSignal,
   Setter,
   Accessor,
+  For,
+  JSX,
 } from "solid-js";
 import { Option, Match, Array } from "effect";
 
@@ -23,6 +27,7 @@ import { PanelNode, SplitAxis } from "../data";
 import { DragDataForTab, DropSide, DropTargetSplitInsert } from "./dnd";
 import ViewPanelNode from "./PanelNode";
 import { SplitResizeHandle } from "./ResizeHandle";
+import RenderDropPoint from "./RenderDropPoint";
 
 export const ViewPanelNodeSplit: Component<{
   split: () => PanelNode.Split;
@@ -209,61 +214,73 @@ const SplitDropOverlay: Component<{
     });
   });
 
+  const sidePositions: Record<DropSide, string> = {
+    left: "col-1 row-3",
+    right: "col-5 row-3",
+    top: "col-3 row-1",
+    bottom: "col-3 row-5",
+  };
+
+  const sideIconsClass: Record<DropSide, string> = {
+    left: "rotate-90",
+    right: "-rotate-90",
+    top: "rotate-180",
+    bottom: "",
+  };
+
+  const RenderAppendDropPoint: Component<{ side: DropSide }> = (props) => {
+    return (
+      <RenderDropPoint
+        ref={sideInfos[props.side].ref}
+        icon="dnd_split_append"
+        tooltip={`append to split on ${props.side}`}
+        hovered={sideInfos[props.side].hovered}
+        class={sidePositions[props.side]}
+        iconClass={sideIconsClass[props.side]}
+      />
+    );
+  };
+
+  const RenderInsertDropPoint: Component<{
+    idx: number;
+    style: JSX.CSSProperties;
+  }> = (props) => {
+    return (
+      <RenderDropPoint
+        ref={middleInfos[props.idx].ref}
+        style={props.style}
+        icon="dnd_split_insert"
+        tooltip="insert tab in split"
+        hovered={middleInfos[props.idx].hovered}
+        class="absolute self-center z-50"
+        iconClass={cn(axis() === "horizontal" ? "rotate-90" : "")}
+      />
+    );
+  };
+
   return (
     <>
       <div
         class={cn(
           "absolute top-0 bottom-0 left-0 right-0 z-20",
           "grid",
-          "grid-cols-[2rem_1fr_3rem_1fr_2rem]",
-          "grid-rows-[2rem_1fr_3rem_1fr_2rem]",
+          "grid-cols-[36px_1fr_36px_1fr_36px]",
+          "grid-rows-[36px_1fr_36px_1fr_36px]",
           "pointer-events-none",
         )}
       >
-        <Show when={axis() === "vertical"}>
-          {/* top */}
-          <div
-            ref={sideInfos.top.ref}
-            class={cn(
-              "bg-green-400 pointer-events-auto",
-              "col-3 row-1",
-              sideInfos.top.hovered() && "bg-green-400/20",
-            )}
-          />
-          {/* bottom */}
-          <div
-            ref={sideInfos.bottom.ref}
-            class={cn(
-              "bg-green-400 pointer-events-auto",
-              "col-3 row-5",
-              sideInfos.bottom.hovered() && "bg-green-400/20",
-            )}
-          />
-        </Show>
         <Show when={axis() === "horizontal"}>
-          {/* left */}
-          <div
-            ref={sideInfos.left.ref}
-            class={cn(
-              "bg-green-400 pointer-events-auto",
-              "col-1 row-3",
-              sideInfos.left.hovered() && "bg-green-400/20",
-            )}
-          />
-          {/* right */}
-          <div
-            ref={sideInfos.right.ref}
-            class={cn(
-              "bg-green-400 pointer-events-auto",
-              "col-5 row-3",
-              sideInfos.right.hovered() && "bg-green-400/20",
-            )}
-          />
+          <RenderAppendDropPoint side="left" />
+          <RenderAppendDropPoint side="right" />
+        </Show>
+        <Show when={axis() === "vertical"}>
+          <RenderAppendDropPoint side="top" />
+          <RenderAppendDropPoint side="bottom" />
         </Show>
       </div>
 
-      <Index each={props.split().children}>
-        {(_, idx) => {
+      <For each={Array.range(0, props.split().children.length - 2)}>
+        {(idx) => {
           // accumulate the sizes of children up to the current
           const percent = (): number => {
             let accum = 0;
@@ -273,34 +290,22 @@ const SplitDropOverlay: Component<{
             return accum;
           };
 
-          const info = (): DropInfo => middleInfos[idx];
-
           return (
-            <Show when={idx !== props.split().children.length - 1}>
-              <div
-                ref={info().ref}
-                class={cn(
-                  "absolute bg-purple-600 self-center z-20",
-                  info().hovered() && "bg-purple-600/20",
-                )}
-                style={{
-                  ...(axis() === "vertical"
-                    ? {
-                        width: "3rem",
-                        height: "2rem",
-                        top: `calc(${percent() * 100}% - 2rem / 2`,
-                      }
-                    : {
-                        width: "2rem",
-                        height: "3rem",
-                        left: `calc(${percent() * 100}% - 2rem / 2`,
-                      }),
-                }}
-              />
-            </Show>
+            <RenderInsertDropPoint
+              idx={idx}
+              style={{
+                ...(axis() === "vertical"
+                  ? {
+                      top: `calc(${percent() * 100}% - 36px / 2`,
+                    }
+                  : {
+                      left: `calc(${percent() * 100}% - 36px / 2`,
+                    }),
+              }}
+            />
           );
         }}
-      </Index>
+      </For>
     </>
   );
 };
