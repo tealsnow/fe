@@ -1,10 +1,9 @@
-import { Brand, Data } from "effect";
-import { createContext } from "solid-js";
-import * as uuid from "uuid";
+import { createContext, VoidComponent } from "solid-js";
+import { Data } from "effect";
 
-import { IconKind } from "~/assets/icons";
+import UUID from "~/lib/UUID";
 
-export type StatusBarItem = Data.TaggedEnum<{
+export type BarItem = Data.TaggedEnum<{
   divider: {};
   text: {
     value: () => string;
@@ -16,41 +15,30 @@ export type StatusBarItem = Data.TaggedEnum<{
     onClick: () => void;
   };
   iconButton: {
-    icon: () => IconKind;
+    icon: VoidComponent;
     tooltip: () => string;
     onClick: () => void;
   };
 }>;
-export const StatusBarItem = Data.taggedEnum<StatusBarItem>();
+export const BarItem = Data.taggedEnum<BarItem>();
 
-export type IdStatusBarItem = StatusBarItem & { id: StatusBarItemId };
+export type IdBarItem = BarItem & { id: UUID };
 
-export type StatusBarItemId = string & Brand.Brand<"StatusBarItemId">;
-const StatusBarItemIdCtor = Brand.refined<StatusBarItemId>(
-  (str) => uuid.validate(str),
-  (str) => Brand.error(`expected id ('${str}') to be a uuid`),
-);
-export const StatusBarItemId = (): StatusBarItemId =>
-  StatusBarItemIdCtor(uuid.v4());
+export type Alignment = "left" | "right";
 
-export type StatusBarAlignment = "left" | "right";
-
-export type StatusBarItemMap = Record<StatusBarItemId, IdStatusBarItem>;
-export type StatusBarItems = Record<StatusBarAlignment, StatusBarItemId[]>;
+export type BarItemMap = Record<UUID, IdBarItem>;
+export type BarItems = Record<Alignment, UUID[]>;
 
 export type StatusBarItemCleanup = () => void;
 
-export type StatusBarContext = {
-  readonly item_map: () => StatusBarItemMap;
-  readonly items: () => StatusBarItems;
+export type Context = {
+  readonly item_map: () => BarItemMap;
+  readonly items: () => BarItems;
   addItem: (
     opts: {
-      item: StatusBarItem;
-      alignment: StatusBarAlignment;
-    } & (
-      | { after?: StatusBarItemId; before?: never }
-      | { after?: never; before?: StatusBarItemId }
-    ),
-  ) => [StatusBarItemCleanup, StatusBarItemId];
+      item: BarItem;
+      alignment: Alignment;
+    } & ({ after?: UUID; before?: never } | { after?: never; before?: UUID }),
+  ) => [StatusBarItemCleanup, UUID];
 };
-export const StatusBarContext = createContext<StatusBarContext>();
+export const Context = createContext<Context>();

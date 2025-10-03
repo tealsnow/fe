@@ -5,9 +5,9 @@ import { Icon, IconKind, icons } from "~/assets/icons";
 
 import { cn } from "~/lib/cn";
 
-import { useWindowContext } from "~/ui/Window";
 import Button from "~/ui/components/Button";
 import Tooltip from "~/ui/components/Tooltip";
+import * as Window from "~/ui/Window";
 
 import { useContext } from "../Context";
 import {
@@ -169,7 +169,7 @@ export const WorkspaceTitlebar: Component<{
     onClick: () => void;
   };
 
-  const windowCtx = useWindowContext();
+  const windowCtx = Window.useContext();
 
   type WindowIconKind = "close" | "maximize" | "restore" | "minimize";
   type WindowIconRecord = Record<WindowIconKind, IconKind>;

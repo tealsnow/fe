@@ -38,7 +38,7 @@ export const ThemeContextProvider: Component<
         ref={ref}
         style={themeCssStyles(theme())}
         class={cn(
-          "bg-theme-background text-theme-text selection:bg-theme-selection",
+          "text-theme-text selection:bg-theme-selection",
           props.applyRounding && theme().windowRounding,
           props.class,
         )}

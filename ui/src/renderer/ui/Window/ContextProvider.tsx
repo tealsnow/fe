@@ -2,16 +2,13 @@ import {
   createSignal,
   onCleanup,
   onMount,
-  useContext,
-  ParentProps,
-  Component,
+  useContext as solidUseContext,
+  ParentComponent,
 } from "solid-js";
-import { WindowContext } from "./Context";
 
-export type WindowContextProviderProps = ParentProps<{}>;
-export const WindowContextProvider: Component<WindowContextProviderProps> = (
-  props,
-) => {
+import { Context } from "./Context";
+
+export const Provider: ParentComponent<{}> = (props) => {
   const [maximized, setMaximized] = createSignal(
     window.electron.ipcRenderer.sendSync("get window/isMaximized"),
   );
@@ -32,7 +29,7 @@ export const WindowContextProvider: Component<WindowContextProviderProps> = (
   });
 
   return (
-    <WindowContext.Provider
+    <Context.Provider
       value={{
         maximized,
         minimize: () => window.electron.ipcRenderer.send("window/minimize"),
@@ -42,15 +39,15 @@ export const WindowContextProvider: Component<WindowContextProviderProps> = (
       }}
     >
       {props.children}
-    </WindowContext.Provider>
+    </Context.Provider>
   );
 };
 
-export const useWindowContext = (): WindowContext => {
-  const ctx = useContext(WindowContext);
+export const useContext = (): Context => {
+  const ctx = solidUseContext(Context);
   if (!ctx)
     throw new Error(
-      "Cannot use useWindowContext outside of a WindowContextProvider",
+      "Cannot use Window Context outside of a Window Context Provider",
     );
   return ctx;
 };

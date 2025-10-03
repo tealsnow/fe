@@ -6,33 +6,28 @@ import {
   Index,
   Setter,
   Component,
+  For,
 } from "solid-js";
 
-import { cn } from "~/lib/cn";
-import {
-  NotificationProvider,
-  notify,
-  notifyPromise,
-} from "~/lib/notifications";
+import { Effect, Option } from "effect";
 
 import { Icon, iconKinds, icons } from "~/assets/icons";
 
+import { cn } from "~/lib/cn";
+import Integer from "~/lib/Integer";
+import * as Notif from "~/lib/Notif";
+
 import * as Theme from "~/ui/Theme";
 import Button from "~/ui/components/Button";
-import StatusBar, {
-  StatusBarContextProvider,
-  useStatusBarContext,
-  StatusBarItem,
-} from "~/ui/StatusBar";
-import { useWindowContext, WindowContextProvider } from "~/ui/Window";
-
-import { Test as PanelsTest } from "~/ui/Panels/test";
+import * as StatusBar from "~/ui/StatusBar";
+import * as Window from "~/ui/Window";
+import * as Panels from "~/ui/Panels";
 
 export const App: Component = () => {
   return (
-    <WindowContextProvider>
+    <Window.Provider>
       <AfterWindow />
-    </WindowContextProvider>
+    </Window.Provider>
   );
 };
 
@@ -47,7 +42,7 @@ const AfterWindow: Component = () => {
   //  look like...
   Theme.applyTheme(Theme.defaultTheme);
 
-  const windowCtx = useWindowContext();
+  const windowCtx = Window.useContext();
 
   return (
     <Theme.ThemeContextProvider
@@ -55,73 +50,147 @@ const AfterWindow: Component = () => {
       class="flex w-screen h-screen"
       applyRounding={!windowCtx.maximized()}
     >
-      <NotificationProvider>
-        <StatusBarContextProvider>
-          <Root />
-        </StatusBarContextProvider>
-      </NotificationProvider>
+      <Notif.Provider>
+        <StatusBar.Provider>
+          <Panels.Context.Provider>
+            <Root />
+          </Panels.Context.Provider>
+        </StatusBar.Provider>
+      </Notif.Provider>
     </Theme.ThemeContextProvider>
   );
 };
 
 const Root: Component = () => {
-  const [showNoise, _setShowNoise] = createSignal(true);
+  const [showNoise, setShowNoise] = createSignal(true);
 
-  const windowCtx = useWindowContext();
+  const windowCtx = Window.useContext();
   const themeCtx = Theme.useThemeContext();
-
-  // onMount(() => {
-  //   // setupDebugPanels();
-  //   // return;
-
-  //   const { tree, setTree } = usePanelContext();
-
-  //   Effect.gen(function* () {
-  //     const root = tree.root;
-
-  //     const tabs = yield* Panel.Node.Parent.create(
-  //       setTree,
-  //       {
-  //         layout: Panel.Layout.Tabs(),
-  //       },
-  //       { addTo: root },
-  //     );
-
-  //     yield* Panel.Node.Leaf.create(
-  //       setTree,
-  //       {
-  //         title: "dbg",
-  //         content: Option.some(async () => ({
-  //           default: () => <Dbg setShowNoise={setShowNoise} />,
-  //         })),
-  //       },
-  //       { addTo: tabs },
-  //     );
-  //     yield* Panel.Node.Leaf.create(
-  //       setTree,
-  //       {
-  //         title: "theme showcase",
-  //         content: Option.some(async () => ({
-  //           default: () => <ThemeShowcase />,
-  //         })),
-  //       },
-  //       { addTo: tabs },
-  //     );
-  //   }).pipe(effectEdgeRunSync);
-  // });
-
-  const statusBarCtx = useStatusBarContext();
+  const statusBarCtx = StatusBar.useContext();
+  const panelCtx = Panels.useContext();
+  const notifCtx = Notif.useContext();
 
   onMount(() => {
-    const [cleanup] = statusBarCtx.addItem({
-      item: StatusBarItem.iconButton({
-        icon: () => "bell",
+    panelCtx.setWorkspace((workspace) =>
+      Panels.Workspace({
+        ...workspace,
+        root: Panels.PanelNode.makeTabs({
+          active: Integer(0),
+          children: [
+            panelCtx.createLeaf({
+              title: "dbg",
+              tooltip: "testing stuff",
+              render: () => <Dbg setShowNoise={setShowNoise} />,
+            }),
+            panelCtx.createLeaf({
+              title: "theme showcase",
+              tooltip: "showcase all aspects of the current theme",
+              render: () => <ThemeShowcase />,
+            }),
+          ],
+        }),
+        sidebars: Panels.WorkspaceSidebars({
+          left: Panels.WorkspaceSidebar({
+            enabled: false,
+            node: Panels.PanelNode.makeTabs(),
+          }),
+          right: Panels.WorkspaceSidebar({
+            enabled: false,
+            node: Panels.PanelNode.makeTabs(),
+          }),
+          bottom: Panels.WorkspaceSidebar({
+            enabled: false,
+            node: Panels.PanelNode.makeTabs(),
+          }),
+        }),
+      }),
+    );
+
+    const notificationPanelId = panelCtx.createLeaf({
+      title: "notifications",
+      tooltip: "notifications",
+      render: () => (
+        <div class="w-full h-full p-2 flex flex-col gap-1">
+          <For each={notifCtx.notifications}>
+            {(entry) => (
+              <div class="border-theme-border border p-2 rounded-md">
+                {entry.content}
+              </div>
+            )}
+          </For>
+        </div>
+      ),
+    });
+
+    const [cleanup, _id] = statusBarCtx.addItem({
+      alignment: "right",
+      item: StatusBar.BarItem.iconButton({
+        icon: () => <Icon icon={icons["bell"]} />,
         tooltip: () => "notifications",
         onClick: () => {
-          console.log("clicked!");
+          const sidebars = panelCtx.workspace.sidebars;
+
+          if (Panels.PanelNode.$is("Tabs")(sidebars.right.node)) {
+            // right is tabs
+
+            const notifPanelIdx = sidebars.right.node.children.findIndex(
+              (child) => child.id === notificationPanelId.id,
+            );
+            if (notifPanelIdx !== -1) {
+              // notif panel is in right
+              if (
+                !sidebars.right.node.active.pipe(
+                  Option.map((idx) => idx === notifPanelIdx),
+                  Option.getOrElse(() => false),
+                )
+              )
+                // notif panel is not active
+                panelCtx.setWorkspace("sidebars", (sidebars) =>
+                  Panels.WorkspaceSidebars({
+                    ...sidebars,
+                    right: Panels.WorkspaceSidebar({
+                      ...sidebars.right,
+                      // @ts-expect-error 2345
+                      node: Panels.PanelNode.Tabs({
+                        ...sidebars.right.node,
+                        active: Option.some(Integer(notifPanelIdx)),
+                      }),
+                    }),
+                  }),
+                );
+            } else {
+              // notif panel is not in right
+              panelCtx.setWorkspace("sidebars", (sidebars) =>
+                Panels.WorkspaceSidebars({
+                  ...sidebars,
+                  right: Panels.WorkspaceSidebar({
+                    ...sidebars.right,
+                    node: Panels.tabsAddTab({
+                      // @ts-expect-error 2322
+                      tabs: sidebars.right.node,
+                      newLeaf: notificationPanelId,
+                    }).pipe(Effect.runSync),
+                  }),
+                }),
+              );
+            }
+
+            if (!sidebars.right.enabled)
+              // notif panel is not enabled
+              panelCtx.setWorkspace("sidebars", (sidebars) =>
+                Panels.WorkspaceSidebars({
+                  ...sidebars,
+                  right: Panels.WorkspaceSidebar({
+                    ...sidebars.right,
+                    enabled: true,
+                  }),
+                }),
+              );
+          } else {
+            console.warn("TODO: right sidebar is not tabs");
+          }
         },
       }),
-      alignment: "right",
     });
     onCleanup(() => cleanup());
   });
@@ -129,7 +198,7 @@ const Root: Component = () => {
   return (
     <div
       class={cn(
-        "flex flex-col grow relative",
+        "bg-theme-background flex flex-col grow relative",
         !windowCtx.maximized() && [
           themeCtx.theme().windowRounding,
           "electron-corner-smoothing-[60%] border border-theme-border",
@@ -140,9 +209,9 @@ const Root: Component = () => {
         <BackgroundNoise class={themeCtx.theme().windowRounding} />
       </Show>
 
-      <PanelsTest />
+      <Panels.View.Root />
 
-      <StatusBar />
+      <StatusBar.StatusBar />
     </div>
   );
 };
@@ -153,7 +222,7 @@ const BackgroundNoise: Component<{
   return (
     <svg
       class={cn(
-        "w-full h-full absolute inset-0 pointer-events-none overflow-none",
+        "w-full h-full absolute inset-0 pointer-events-none",
         props.class,
       )}
       style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
@@ -199,7 +268,7 @@ const BackgroundNoise: Component<{
   );
 };
 
-const _Dbg: Component<{
+const Dbg: Component<{
   setShowNoise: Setter<boolean>;
 }> = (props) => {
   const Settings: Component = () => {
@@ -256,40 +325,43 @@ const _Dbg: Component<{
   };
 
   const NotificationsTest: Component = () => {
+    const ctx = Notif.useContext();
     return (
       <div class="flex flex-col m-2">
         <h3 class="text-lg underline">Notifications</h3>
 
         <div class="flex flex-row flex-wrap gap-2">
-          <Button onClick={() => notify("def")}>default</Button>
+          <Button onClick={() => ctx.notify("def")}>default</Button>
 
           <Button
             onClick={() => {
               setTimeout(() => {
-                notify("one sec later");
+                ctx.notify("one sec later");
               }, 1000);
             }}
           >
             in one second
           </Button>
 
-          <Button onClick={() => notify("success", { type: "success" })}>
+          <Button onClick={() => ctx.notify("success", { level: "success" })}>
             success
           </Button>
 
-          <Button onClick={() => notify("error", { type: "error" })}>
+          <Button onClick={() => ctx.notify("error", { level: "error" })}>
             error
           </Button>
 
-          <Button onClick={() => notify("warning", { type: "warning" })}>
+          <Button onClick={() => ctx.notify("warning", { level: "warning" })}>
             warning
           </Button>
 
-          <Button onClick={() => notify("info", { type: "info" })}>info</Button>
+          <Button onClick={() => ctx.notify("info", { level: "info" })}>
+            info
+          </Button>
 
           <Button
             onClick={() => {
-              notify(
+              ctx.notify(
                 (props) => {
                   return (
                     <div class="flex flex-col gap-3 px-2">
@@ -315,7 +387,7 @@ const _Dbg: Component<{
                     </div>
                   );
                 },
-                { duration: false },
+                { durationMs: false },
               );
             }}
           >
@@ -329,11 +401,13 @@ const _Dbg: Component<{
                   Math.random() > 0.5 ? resolve() : reject();
                 }, 2000);
               });
-              notifyPromise(succeedOrFail, {
-                pending: "Processing your request...",
-                success: "Request completed successfully!",
-                error: "Request failed. Please try again.",
-              }).catch(() => {});
+              ctx
+                .notifyPromise(succeedOrFail, {
+                  pending: "Processing your request...",
+                  success: "Request completed successfully!",
+                  error: "Request failed. Please try again.",
+                })
+                .catch(() => {});
             }}
           >
             promise
@@ -344,13 +418,13 @@ const _Dbg: Component<{
   };
 
   const StatusBarTest: Component = () => {
-    const statusBarCtx = useStatusBarContext();
+    const statusBarCtx = StatusBar.useContext();
 
     const [startText, setStartText] = createSignal("foo bar");
 
     onMount(() => {
       const [cleanup1, _id1] = statusBarCtx.addItem({
-        item: StatusBarItem.text({
+        item: StatusBar.BarItem.text({
           value: startText,
           tooltip: () => "a",
         }),
@@ -358,12 +432,15 @@ const _Dbg: Component<{
       });
 
       const [cleanup2, id2] = statusBarCtx.addItem({
-        item: StatusBarItem.text({ value: () => "asdf", tooltip: () => "b" }),
+        item: StatusBar.BarItem.text({
+          value: () => "asdf",
+          tooltip: () => "b",
+        }),
         alignment: "right",
       });
 
       const [cleanup3, _id3] = statusBarCtx.addItem({
-        item: StatusBarItem.textButton({
+        item: StatusBar.BarItem.textButton({
           value: () => "button",
           tooltip: () => "c",
           onClick: () => {
@@ -374,7 +451,7 @@ const _Dbg: Component<{
       });
 
       const [cleanup4, _id4] = statusBarCtx.addItem({
-        item: StatusBarItem.textButton({
+        item: StatusBar.BarItem.textButton({
           value: () => "other button",
           tooltip: () => "d",
           onClick: () => {
@@ -386,7 +463,7 @@ const _Dbg: Component<{
       });
 
       const [cleanup5, _id5] = statusBarCtx.addItem({
-        item: StatusBarItem.iconButton({
+        item: StatusBar.BarItem.iconButton({
           icon: () => "bell",
           tooltip: () => "e",
           onClick: () => {
@@ -397,7 +474,7 @@ const _Dbg: Component<{
       });
 
       const [cleanup6, _id6] = statusBarCtx.addItem({
-        item: StatusBarItem.divider(),
+        item: StatusBar.BarItem.divider(),
         alignment: "left",
       });
 
@@ -442,7 +519,7 @@ const _Dbg: Component<{
   );
 };
 
-const _ThemeShowcase: Component = () => {
+const ThemeShowcase: Component = () => {
   const Colors: Component = () => {
     return (
       <div class="flex flex-row justify-evenly text-center">

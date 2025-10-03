@@ -1,19 +1,18 @@
-import { Component, Index, Show, Switch } from "solid-js";
+export * from "./Context";
+export * from "./ContextProvider";
 
-import { Icon, icons } from "~/assets/icons";
+import { Component, Index, Show, Switch } from "solid-js";
 
 import { MatchTag } from "~/lib/MatchTag";
 
 import Button from "~/ui/components/Button";
 import Tooltip from "~/ui/components/Tooltip";
 
-import { useStatusBarContext } from "./ContextProvider";
-import { StatusBarItem } from "./Context";
-export * from "./ContextProvider";
-export * from "./Context";
+import { useContext } from "./ContextProvider";
+import { BarItem } from "./Context";
 
 export const StatusBar: Component<{}> = () => {
-  const ctx = useStatusBarContext();
+  const ctx = useContext();
 
   return (
     <div class="flex flex-row w-full min-h-6 max-h-6 border-theme-border border-t items-center px-1 py-[1px] text-xs gap-1">
@@ -30,7 +29,7 @@ export const StatusBar: Component<{}> = () => {
   );
 };
 
-const RenderItem: Component<{ item: () => StatusBarItem }> = (props) => {
+const RenderItem: Component<{ item: () => BarItem }> = (props) => {
   return (
     <Tooltip>
       <Tooltip.Trigger>
@@ -56,7 +55,7 @@ const RenderItem: Component<{ item: () => StatusBarItem }> = (props) => {
           <MatchTag on={props.item()} tag="iconButton">
             {(button) => (
               <Button variant="icon" size="icon" onClick={button().onClick}>
-                <Icon icon={icons[button().icon()]} />
+                {button().icon({})}
               </Button>
             )}
           </MatchTag>
@@ -73,5 +72,3 @@ const RenderItem: Component<{ item: () => StatusBarItem }> = (props) => {
     </Tooltip>
   );
 };
-
-export default StatusBar;

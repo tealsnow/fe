@@ -1,17 +1,19 @@
-import { batch, Component, ParentProps, useContext } from "solid-js";
+import {
+  batch,
+  Component,
+  ParentProps,
+  useContext as solidUseContext,
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
-import {
-  StatusBarContext,
-  StatusBarItemId,
-  StatusBarItemMap,
-  StatusBarItems,
-} from "./Context";
+import UUID from "~/lib/UUID";
 
-export const StatusBarContextProvider: Component<ParentProps<{}>> = (props) => {
+import { Context, BarItemMap, BarItems } from "./Context";
+
+export const Provider: Component<ParentProps<{}>> = (props) => {
   const [store, setStore] = createStore<{
-    item_map: StatusBarItemMap;
-    items: StatusBarItems;
+    item_map: BarItemMap;
+    items: BarItems;
   }>({
     item_map: {},
     items: {
@@ -21,13 +23,13 @@ export const StatusBarContextProvider: Component<ParentProps<{}>> = (props) => {
   });
 
   return (
-    <StatusBarContext.Provider
+    <Context.Provider
       value={{
         item_map: () => store.item_map,
         items: () => store.items,
 
         addItem: (opts) => {
-          const id = StatusBarItemId();
+          const id = UUID.make();
           const ided = Object.assign(opts.item, { id });
 
           batch(() => {
@@ -75,15 +77,15 @@ export const StatusBarContextProvider: Component<ParentProps<{}>> = (props) => {
       }}
     >
       {props.children}
-    </StatusBarContext.Provider>
+    </Context.Provider>
   );
 };
 
-export const useStatusBarContext = (): StatusBarContext => {
-  const ctx = useContext(StatusBarContext);
+export const useContext = (): Context => {
+  const ctx = solidUseContext(Context);
   if (!ctx)
     throw new Error(
-      "Cannot use StatusBarContext outside of a StatusBarContextProvider",
+      "Cannot use StatusBar Context outside of a StatusBar Context Provider",
     );
   return ctx;
 };
