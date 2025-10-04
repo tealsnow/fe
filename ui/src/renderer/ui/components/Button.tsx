@@ -10,11 +10,8 @@ import { cn } from "~/lib/cn";
 
 import { ColorKind } from "~/ui/Theme";
 
-// @FIXME: in some cases the focus ring causes the outline to be white
-//   not for all variants, but some. I have tried a multitude of fixes, but
-//   nothing seems to be working
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1 whitespace-nowrap text-center content-center transition-colors duration-100 cursor-pointer outline-(--button-border) ring-(--button-border) border-(--button-border) focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-1 whitespace-nowrap text-center content-center transition-colors duration-100 cursor-pointer outline-(--button-border) outline-0 ring-(--button-border) border-(--button-border) focus-visible:ring-1 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       size: {

@@ -36,8 +36,8 @@ importers:
   theme:
     dependencies:
       '@traversable/zod':
-        specifier: ^0.0.56
-        version: 0.0.56(fast-check@3.23.2)(zod@4.1.11)
+        specifier: ^0.0.57
+        version: 0.0.57(fast-check@3.23.2)(zod@4.1.11)
       color:
         specifier: ^5.0.0
         version: 5.0.0
@@ -71,6 +71,9 @@ importers:
       '@solid-primitives/destructure':
         specifier: ^0.2.2
         version: 0.2.2(solid-js@1.9.9)
+      '@solid-primitives/event-listener':
+        specifier: ^2.4.3
+        version: 2.4.3(solid-js@1.9.9)
       '@solid-primitives/storage':
         specifier: ^4.3.3
         version: 4.3.3(solid-js@1.9.9)
@@ -80,6 +83,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      cmdk-solid:
+        specifier: ^1.1.2
+        version: 1.1.2(solid-js@1.9.9)
       color:
         specifier: ^5.0.0
         version: 5.0.0
@@ -1585,8 +1591,8 @@ packages:
       '@traversable/registry': ^0.0.49
       zod: '4'
 
-  '@traversable/zod@0.0.56':
-    resolution: {integrity: sha512-7GefB+VXtL1EVljRKrJLx4fEc7aS4WXh0i+V4owfh3vqdl5U4bOe1UXDFB5x94nkMKFlPiQuGonQANZjXG343g==}
+  '@traversable/zod@0.0.57':
+    resolution: {integrity: sha512-oOSaBQitiav6QrwPZFF8GY1J2VDKDeA/GQTgsi2E6D8dn6V+5jcji+Qp2zRz6XDGUzfJy+Xda+2LqzwDT2G8nA==}
     peerDependencies:
       zod: '4'
 
@@ -2083,6 +2089,11 @@ packages:
   clsx@2.1.1:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
+
+  cmdk-solid@1.1.2:
+    resolution: {integrity: sha512-E0g6bwr2Z92Ib1K2WHwGsq6xsrkVVSN1oe5YTg8LCV3iIwtyZORwmR+8n0xrecqycdhgAar8vWUjtB1OJt9tiA==}
+    peerDependencies:
+      solid-js: ^1.8.0
 
   code-block-writer@13.0.3:
     resolution: {integrity: sha512-Oofo0pq3IKnsFtuHqSF7TqBfr71aeyZDVJ0HpmqB7FBM2qEigL0iPONSCZSO9pE9dZTAxANe5XHG9Uy0YMv8cg==}
@@ -5546,7 +5557,7 @@ snapshots:
       '@traversable/registry': 0.0.49
       zod: 4.1.11
 
-  '@traversable/zod@0.0.56(fast-check@3.23.2)(zod@4.1.11)':
+  '@traversable/zod@0.0.57(fast-check@3.23.2)(zod@4.1.11)':
     dependencies:
       '@traversable/json': 0.0.52(@traversable/registry@0.0.49)(fast-check@3.23.2)
       '@traversable/registry': 0.0.49
@@ -6200,6 +6211,14 @@ snapshots:
   clone@1.0.4: {}
 
   clsx@2.1.1: {}
+
+  cmdk-solid@1.1.2(solid-js@1.9.9):
+    dependencies:
+      '@kobalte/core': 0.12.6(solid-js@1.9.9)
+      '@kobalte/utils': 0.9.1(solid-js@1.9.9)
+      '@solid-primitives/deep': 0.2.10(solid-js@1.9.9)
+      '@solid-primitives/mutation-observer': 1.2.2(solid-js@1.9.9)
+      solid-js: 1.9.9
 
   code-block-writer@13.0.3: {}
 

@@ -1,9 +1,8 @@
 import Color from "color";
 import { z } from "zod";
 import { zx } from "@traversable/zod";
-import { Path } from "@traversable/zod/to-paths";
 
-// z.config({ jitless: true });
+z.config({ jitless: true });
 
 export const ColorKindSchema = z.enum([
   "red",
@@ -245,12 +244,6 @@ export const flattenZodSchemaPaths = (
 };
 
 export const themeColorsDescFlat = flattenZodSchemaPaths(ThemeColorsSchema);
-
-// // this should work, but theres a bug with records
-// export const flattenZodSchemaPaths = (
-//   schema: z.ZodTypeAny,
-//   prefix: string[] = [],
-// ): string[][] => zx.toPaths(schema).map((p) => [...prefix, p.toString()]);
 
 export const applyThemeColors = (colors: ThemeColors): void => {
   themeColorsDescFlat.map((path) => {

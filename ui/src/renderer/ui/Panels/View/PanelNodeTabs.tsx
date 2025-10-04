@@ -34,6 +34,7 @@ import { Icon, icons } from "~/assets/icons";
 import cn from "~/lib/cn";
 import Integer from "~/lib/Integer";
 import { UpdateFn } from "~/lib/UpdateFn";
+import * as Notif from "~/lib/Notif";
 
 import Button, { ButtonProps } from "~/ui/components/Button";
 import Tooltip from "~/ui/components/Tooltip";
@@ -127,6 +128,8 @@ export const ViewPanelNodeTabs: Component<{
     onCleanup(() => cleanup());
   });
 
+  const notifCtx = Notif.useContext();
+
   return (
     <div
       ref={ref}
@@ -154,6 +157,7 @@ export const ViewPanelNodeTabs: Component<{
               }}
               onCloseClick={() => {
                 console.warn("TODO: tab close click");
+                notifCtx.notify("TODO: close tab", { level: "warning" });
               }}
             />
           )}
@@ -191,6 +195,7 @@ export const ViewPanelNodeTabs: Component<{
               class="p-1 ml-1"
               onClick={() => {
                 console.warn("TODO: new tab");
+                notifCtx.notify("TODO: new tab", { level: "warning" });
               }}
             />
             <Tooltip.Content>new tab</Tooltip.Content>
@@ -528,7 +533,9 @@ const ViewTabHandleImpl: Component<{
           <Tooltip.Content>close tab</Tooltip.Content>
         </Tooltip>
       </Tooltip.Trigger>
-      <Tooltip.Content>{props.tooltip()}</Tooltip.Content>
+      <Show when={props.tooltip().length !== 0}>
+        <Tooltip.Content>{props.tooltip()}</Tooltip.Content>
+      </Show>
     </Tooltip>
   );
 };

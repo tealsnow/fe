@@ -2,13 +2,12 @@ import {
   createSignal,
   onCleanup,
   onMount,
-  Show,
-  Setter,
   Component,
   For,
+  VoidComponent,
 } from "solid-js";
 
-import { Effect, Option } from "effect";
+import { Effect, Match, Option } from "effect";
 
 import { Icon, icons } from "~/assets/icons";
 
@@ -16,11 +15,18 @@ import { cn } from "~/lib/cn";
 import Integer from "~/lib/Integer";
 import * as Notif from "~/lib/Notif";
 
+import Command from "~/ui/components/Command";
+import Noise from "~/ui/components/Noise";
+
 import * as Theme from "~/ui/Theme";
-import Button from "~/ui/components/Button";
 import * as StatusBar from "~/ui/StatusBar";
 import * as Window from "~/ui/Window";
 import * as Panels from "~/ui/Panels";
+
+import Dbg from "./Dbg";
+import Dialog from "./ui/components/Dialog";
+import Button from "./ui/components/Button";
+import { DocumentEventListener } from "@solid-primitives/event-listener";
 
 export const App: Component = () => {
   return (
@@ -76,6 +82,11 @@ const Root: Component = () => {
         root: Panels.PanelNode.makeTabs({
           active: Integer(0),
           children: [
+            panelCtx.createLeaf({
+              title: "command palette",
+              tooltip: "",
+              render: () => <CommandPaletteTest />,
+            }),
             panelCtx.createLeaf({
               title: "dbg",
               tooltip: "testing stuff",
@@ -195,325 +206,109 @@ const Root: Component = () => {
   });
 
   return (
-    <div
+    <Noise
       class={cn(
-        "bg-theme-background flex flex-col grow relative",
+        "flex flex-col grow relative",
         !windowCtx.maximized() && [
           themeCtx.theme().windowRounding,
           "electron-corner-smoothing-[60%] border border-theme-border",
         ],
       )}
+      enabled={showNoise()}
     >
-      <Show when={showNoise()}>
-        <BackgroundNoise class={themeCtx.theme().windowRounding} />
-      </Show>
-
       <Panels.View.Root />
 
       <StatusBar.StatusBar />
-    </div>
+    </Noise>
   );
 };
 
-const BackgroundNoise: Component<{
-  class?: string;
-}> = (props) => {
-  return (
-    <svg
-      class={cn(
-        "w-full h-full absolute inset-0 pointer-events-none",
-        props.class,
-      )}
-      style={{ opacity: 0.3, "mix-blend-mode": "soft-light" }}
-    >
-      <filter id="noiseFilter" x={0} y={0} width="100%" height="100%">
-        <feTurbulence
-          type="fractalNoise"
-          // type="turbulence"
-          baseFrequency="0.32"
-          numOctaves={2}
-          stitchTiles="stitch"
-          result="turbulence"
-        />
-        <feComponentTransfer in="turbulence" result="darken">
-          <feFuncR type="linear" slope="0.8" intercept="0" />
-          <feFuncG type="linear" slope="0.8" intercept="0" />
-          <feFuncB type="linear" slope="0.8" intercept="0" />
-        </feComponentTransfer>
-        <feDisplacementMap
-          in="sourceGraphic"
-          in2="darken"
-          scale={25}
-          xChannelSelector="R"
-          yChannelSelector="G"
-          result="displacement"
-        />
-        <feBlend
-          mode="multiply"
-          in="sourceGraphic"
-          in2="displacement"
-          result="multiply"
-        />
-        <feColorMatrix in="multiply" type="saturate" values="0" />
-      </filter>
+const CommandPaletteTest: VoidComponent = () => {
+  const [open, setOpen] = createSignal(false);
 
-      <rect
-        width="100%"
-        height="100%"
-        filter="url(#noiseFilter)"
-        fill="transparent"
+  let commandRef: HTMLDivElement | undefined;
+
+  return (
+    <div class="size-full flex p-2">
+      <DocumentEventListener
+        onKeypress={(e) => {
+          if (e.ctrlKey && e.key === "k") setOpen(true);
+        }}
       />
-    </svg>
-  );
-};
-
-const Dbg: Component<{
-  setShowNoise: Setter<boolean>;
-}> = (props) => {
-  const Settings: Component = () => {
-    return (
-      <div class="flex flex-col m-2">
-        <h3 class="text-lg underline">Settings</h3>
-
-        <Button
-          class="w-fit"
-          onClick={() => {
-            props.setShowNoise((old) => !old);
-          }}
+      <Dialog open={open()} onOpenChange={setOpen}>
+        <Dialog.Trigger as={Button} class="size-fit">
+          Open
+        </Dialog.Trigger>
+        <Dialog.Content
+          noCloseButton
+          class="border-0 w-1/2 bg-none shadow-none max-h-1/2"
         >
-          toggle background noise
-        </Button>
-      </div>
-    );
-  };
-
-  const NativeTest: Component = () => {
-    const plus100 = window.api.native.plus100(5);
-    const greet = window.api.native.greet("world");
-    const numCpus = window.api.native.getNumCpus();
-
-    return (
-      <div class="flex flex-col gap-2 w-fit m-2">
-        <h3 class="text-lg underline">Native Test</h3>
-
-        <p>plus100: '{plus100}'</p>
-        <p>greet: '{greet}'</p>
-        <p>numCpus: '{numCpus}'</p>
-        <Button
-          onClick={() =>
-            window.api.native.printArray(new Uint8Array([1, 2, 3, 4, 5]))
-          }
-        >
-          Print array
-        </Button>
-        <Button onClick={() => window.electron.ipcRenderer.send("ping")}>
-          ipc test (ping)
-        </Button>
-        <Button onClick={() => window.electron.ipcRenderer.send("reload")}>
-          ipc reload
-        </Button>
-        {/*<Button onClick={() => window.electron.ipcRenderer.send("restart")}>
-          ipc restart
-        </Button>*/}
-        <Button onClick={() => window.api.native.printCwd()}>print cwd</Button>
-        <Button onClick={() => window.api.native.printArch()}>
-          print arch
-        </Button>
-      </div>
-    );
-  };
-
-  const NotificationsTest: Component = () => {
-    const ctx = Notif.useContext();
-    return (
-      <div class="flex flex-col m-2">
-        <h3 class="text-lg underline">Notifications</h3>
-
-        <div class="flex flex-row flex-wrap gap-2">
-          <Button onClick={() => ctx.notify("def")}>default</Button>
-
-          <Button
-            onClick={() => {
-              setTimeout(() => {
-                ctx.notify("one sec later");
-              }, 1000);
+          <Command
+            ref={commandRef}
+            label="Command Palette"
+            loop
+            onKeyDown={(e) => {
+              if (e.target === commandRef) {
+                Match.value(e.key).pipe(
+                  Match.when("Escape", () => {
+                    setOpen(false);
+                  }),
+                  // Match.when("j", () => {
+                  //   console.log("down");
+                  // }),
+                  // Match.when("k", () => {
+                  //   console.log("up");
+                  // }),
+                );
+              } else {
+                if (e.key === "Escape") {
+                  commandRef?.focus();
+                  e.preventDefault();
+                  return;
+                }
+              }
             }}
           >
-            in one second
-          </Button>
+            <Command.Input placeholder="Type a command or search..." />
+            <Command.List>
+              <Command.Empty>No results found.</Command.Empty>
 
-          <Button onClick={() => ctx.notify("success", { level: "success" })}>
-            success
-          </Button>
+              <Command.Group heading="Suggestions">
+                <Command.Item
+                  onSelect={() => {
+                    console.log("calender selected");
+                  }}
+                >
+                  <span>Calender</span>
+                </Command.Item>
+                <Command.Item keywords={["face"]}>
+                  <span>Search Emoji</span>
+                </Command.Item>
+                <Command.Item disabled>
+                  <span>Launch</span>
+                </Command.Item>
+              </Command.Group>
 
-          <Button onClick={() => ctx.notify("error", { level: "error" })}>
-            error
-          </Button>
+              <Command.Separator />
 
-          <Button onClick={() => ctx.notify("warning", { level: "warning" })}>
-            warning
-          </Button>
-
-          <Button onClick={() => ctx.notify("info", { level: "info" })}>
-            info
-          </Button>
-
-          <Button
-            onClick={() => {
-              ctx.notify(
-                (props) => {
-                  return (
-                    <div class="flex flex-col gap-3 px-2">
-                      <p>Are you sure?</p>
-
-                      <div class="flex flex-row gap-2">
-                        <Button
-                          color="green"
-                          size="small"
-                          onClick={() => props.notif.dismiss("yes")}
-                        >
-                          Yes
-                        </Button>
-
-                        <Button
-                          color="red"
-                          size="small"
-                          onClick={() => props.notif.dismiss("no")}
-                        >
-                          No
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                },
-                { durationMs: false },
-              );
-            }}
-          >
-            confirm
-          </Button>
-
-          <Button
-            onClick={() => {
-              const succeedOrFail = new Promise<void>((resolve, reject) => {
-                setTimeout(() => {
-                  Math.random() > 0.5 ? resolve() : reject();
-                }, 2000);
-              });
-              ctx
-                .notifyPromise(succeedOrFail, {
-                  pending: "Processing your request...",
-                  success: "Request completed successfully!",
-                  error: "Request failed. Please try again.",
-                })
-                .catch(() => {});
-            }}
-          >
-            promise
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  const StatusBarTest: Component = () => {
-    const statusBarCtx = StatusBar.useContext();
-
-    const [startText, setStartText] = createSignal("foo bar");
-
-    onMount(() => {
-      const [cleanup1, _id1] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.text({
-          value: startText,
-          tooltip: () => "a",
-        }),
-        alignment: "left",
-      });
-
-      const [cleanup2, id2] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.text({
-          value: () => "asdf",
-          tooltip: () => "b",
-        }),
-        alignment: "right",
-      });
-
-      const [cleanup3, _id3] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.textButton({
-          value: () => "button",
-          tooltip: () => "c",
-          onClick: () => {
-            console.log("clicked!");
-          },
-        }),
-        alignment: "left",
-      });
-
-      const [cleanup4, _id4] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.textButton({
-          value: () => "other button",
-          tooltip: () => "d",
-          onClick: () => {
-            console.log("clicked!");
-          },
-        }),
-        alignment: "right",
-        after: id2,
-      });
-
-      const [cleanup5, _id5] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.iconButton({
-          icon: () => "bell",
-          tooltip: () => "e",
-          onClick: () => {
-            console.log("bell!");
-          },
-        }),
-        alignment: "right",
-      });
-
-      const [cleanup6, _id6] = statusBarCtx.addItem({
-        item: StatusBar.BarItem.divider(),
-        alignment: "left",
-      });
-
-      onCleanup(() => {
-        cleanup1();
-        cleanup2();
-        cleanup3();
-        cleanup4();
-        cleanup5();
-        cleanup6();
-      });
-    });
-
-    return (
-      <div class="flex flex-col gap-2 p-2">
-        <h3 class="text-lg underline">Status Bar</h3>
-
-        <Button
-          color="green"
-          onClick={() => {
-            setStartText("updated!");
-          }}
-        >
-          Update text
-        </Button>
-      </div>
-    );
-  };
-
-  const _ignore = StatusBarTest;
-
-  return (
-    <div class="flex flex-col w-full gap-2">
-      <Settings />
-      <hr />
-      <NativeTest />
-      <hr />
-      <NotificationsTest />
-      {/*<hr />
-      <StatusBarTest />*/}
+              <Command.Group heading="Settings">
+                <Command.Item>
+                  <span>Profile</span>
+                  <Command.Shortcut>Ctrl-P</Command.Shortcut>
+                </Command.Item>
+                <Command.Item>
+                  <span>Mail</span>
+                  <Command.Shortcut>Ctrl-B</Command.Shortcut>
+                </Command.Item>
+                <Command.Item>
+                  <span>Open Settings</span>
+                  <Command.Shortcut>Ctrl-S</Command.Shortcut>
+                </Command.Item>
+              </Command.Group>
+            </Command.List>
+          </Command>
+        </Dialog.Content>
+      </Dialog>
     </div>
   );
 };

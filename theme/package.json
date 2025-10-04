@@ -8,7 +8,7 @@
     "./src/Theme.ts"
   ],
   "dependencies": {
-    "@traversable/zod": "^0.0.56",
+    "@traversable/zod": "^0.0.57",
     "color": "^5.0.0",
     "zod": "^4.1.11"
   }
