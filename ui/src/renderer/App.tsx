@@ -7,6 +7,7 @@ import {
   VoidComponent,
   createEffect,
 } from "solid-js";
+import { DocumentEventListener } from "@solid-primitives/event-listener";
 
 import { Effect, Match, Option } from "effect";
 
@@ -25,10 +26,11 @@ import * as StatusBar from "~/ui/StatusBar";
 import * as Window from "~/ui/Window";
 import * as Panels from "~/ui/Panels";
 
-import Dbg from "./Dbg";
-import Dialog from "./ui/components/Dialog";
-import Button from "./ui/components/Button";
-import { DocumentEventListener } from "@solid-primitives/event-listener";
+import Dialog from "~/ui/components/Dialog";
+import Button from "~/ui/components/Button";
+
+import Dbg from "~/Dbg";
+import CanvasTest from "~/CanvasTest";
 
 export const App: Component = () => {
   return (
@@ -84,6 +86,11 @@ const Root: Component = () => {
         root: Panels.PanelNode.makeTabs({
           active: Integer(0),
           children: [
+            panelCtx.createLeaf({
+              title: "canvas",
+              tooltip: "canvas test",
+              render: () => <CanvasTest />,
+            }),
             panelCtx.createLeaf({
               title: "text editing",
               tooltip: "text editing test",
@@ -336,6 +343,7 @@ const TextEditing: VoidComponent = () => {
   //  - clicking to move caret
   //  - delete
   //  - home, end
+  //  - undo redo
   // Theres certainly more, but that all just for parity for a basic text input.
   // Theres still the modal editing to do.
   // My idea is to have a global manager at the top level that will manage modes
@@ -353,14 +361,23 @@ const TextEditing: VoidComponent = () => {
   // own.
   //
   // The second approach is the DOM based one, this is less performant but goes
-  // directly through the dom, and thus is multiline aware and allows us to go
+  // directly through the dom, and thus is multiline aware and allows us to
   // use the DOM line breaking logic and is generally less overall work for us.
   //
   // As it stands, the DOM approach uses more code and is less performant,
   // but supports line breaking.
   //
   // The canvas approach uses less code and is more performant, but does not
-  // work for multiline. We'd have to make our own solution
+  // work for multiline. We'd have to make our own solution.
+  // I think for maximal control (and performance) we will go with the canvas
+  // solution. It'll be more work, but I suspect we will have to do less
+  // fighting with the DOM to get exactly what we want in the end.
+
+  // text split into multiple lines
+  // index for current line
+  // index for where in current line
+  // selection? wait until modal stuff is implemented (visual mode)?
+  // this is very much a chicken and egg situation
 
   let containerRef!: HTMLDivElement;
   let textAreaRef!: HTMLTextAreaElement;
