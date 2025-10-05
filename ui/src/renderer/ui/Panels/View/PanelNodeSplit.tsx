@@ -82,7 +82,7 @@ export const ViewPanelNodeSplit: Component<{
         {(child, idx) => (
           <>
             <div
-              class={cn("flex border-theme-border", layoutFullAxis[axis()])}
+              class={cn("flex", layoutFullAxis[axis()])}
               style={{
                 [layoutSize[axis()]]: `${child().percent * 100}%`,
               }}

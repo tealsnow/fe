@@ -10,7 +10,7 @@ export const PanelTitlebar: ParentComponent<{
       <div
         ref={ref}
         class={cn(
-          "absolute left-0 right-0 top-0 bottom-0 flex flex-row items-center border-theme-border border-b overflow-x-scroll no-scrollbar",
+          "absolute left-0 right-0 top-0 bottom-0 flex flex-row items-center border-b overflow-x-scroll no-scrollbar",
           props.class,
         )}
         onWheel={(ev) => {

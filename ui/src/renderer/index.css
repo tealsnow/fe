@@ -27,8 +27,6 @@ pre {
   *,
   ::before,
   ::after {
-    /* TODO: remove all instances of border-theme-border */
-    /* applies default border color */
     @apply border-theme-border;
   }
 

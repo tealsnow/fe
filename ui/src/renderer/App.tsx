@@ -126,9 +126,7 @@ const Root: Component = () => {
         <div class="w-full h-full p-2 flex flex-col gap-1">
           <For each={notifCtx.notifications}>
             {(entry) => (
-              <div class="border-theme-border border p-2 rounded-md">
-                {entry.content}
-              </div>
+              <div class="border p-2 rounded-md">{entry.content}</div>
             )}
           </For>
         </div>
@@ -214,7 +212,7 @@ const Root: Component = () => {
         "flex flex-col grow relative",
         !windowCtx.maximized() && [
           themeCtx.theme().windowRounding,
-          "electron-corner-smoothing-[60%] border border-theme-border",
+          "electron-corner-smoothing-[60%] border",
         ],
       )}
       enabled={showNoise()}

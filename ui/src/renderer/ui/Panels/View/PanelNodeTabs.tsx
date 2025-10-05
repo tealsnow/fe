@@ -179,7 +179,7 @@ export const ViewPanelNodeTabs: Component<{
           }
         />
 
-        <div class="flex items-center border-l border-theme-border h-full">
+        <div class="flex items-center border-l h-full">
           <Tooltip>
             <Tooltip.Trigger
               aria-describedby=""
@@ -500,7 +500,7 @@ const ViewTabHandleImpl: Component<{
         as="div"
         ref={props.ref}
         class={cn(
-          "flex items-center h-full pt-0.5 px-0.5 gap-0.5 border-theme-border text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
+          "flex items-center h-full pt-0.5 px-0.5 gap-0.5 text-sm bg-theme-panel-tab-background-idle group overflow-clip whitespace-nowrap",
           props.class,
         )}
         onClick={() => props.onClick?.()}

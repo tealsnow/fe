@@ -49,7 +49,7 @@ export const Workspace: VoidComponent = () => {
         <div
           data-sidebar-root
           data-sidebar-side={props.side}
-          class="relative flex border-theme-border"
+          class="relative flex"
           style={{
             [sizeType[props.side]]: sidebarSize(props.side),
           }}

@@ -21,7 +21,7 @@ const CommandRoot: ParentComponent<CommandPrimitive.CommandRootProps> = (
   return (
     <CommandPrimitive.CommandRoot
       class={cn(
-        "flex size-full flex-col overflow-hidden rounded-md bg-theme-background text-theme-text blur-none border-theme-border border shadow-md",
+        "flex size-full flex-col overflow-hidden rounded-md bg-theme-background text-theme-text blur-none border shadow-md",
         local.class,
       )}
       {...others}
@@ -51,10 +51,7 @@ const CommandInput: VoidComponent<CommandPrimitive.CommandInputProps> = (
   const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <div
-      class="flex items-center border-theme-border border-b px-3"
-      cmdk-input-wrapper=""
-    >
+    <div class="flex items-center border-b px-3" cmdk-input-wrapper="">
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 24 24"

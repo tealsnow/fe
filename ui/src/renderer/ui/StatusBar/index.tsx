@@ -15,7 +15,7 @@ export const StatusBar: Component<{}> = () => {
   const ctx = useContext();
 
   return (
-    <div class="flex flex-row w-full min-h-6 max-h-6 border-theme-border border-t items-center px-1 py-[1px] text-xs gap-1">
+    <div class="flex flex-row w-full min-h-6 max-h-6 border-t items-center px-1 py-[1px] text-xs gap-1">
       <Index each={ctx.items().left}>
         {(id) => <RenderItem item={() => ctx.item_map()[id()]} />}
       </Index>
