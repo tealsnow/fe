@@ -68,9 +68,6 @@ importers:
       '@solid-primitives/deep':
         specifier: ^0.3.3
         version: 0.3.3(solid-js@1.9.9)
-      '@solid-primitives/destructure':
-        specifier: ^0.2.2
-        version: 0.2.2(solid-js@1.9.9)
       '@solid-primitives/event-listener':
         specifier: ^2.4.3
         version: 2.4.3(solid-js@1.9.9)
@@ -1368,11 +1365,6 @@ packages:
 
   '@solid-primitives/deep@0.3.3':
     resolution: {integrity: sha512-YnCV2OFbBlNYlww0lSD7oDpk9zN20KQWr699s6euwd6+oRE1nbI+vqrfYuqC7E0WPDfk0DIG+ylY1xvY31ZlTg==}
-    peerDependencies:
-      solid-js: ^1.6.12
-
-  '@solid-primitives/destructure@0.2.2':
-    resolution: {integrity: sha512-ZMpWUdzAxH/ezFNXCea+h2TWgjBsVh43Ad8oRG7qzDMOGjsLvS3pbaG++8oB3DtF2G4bfDiangKz0cxgM4MYww==}
     peerDependencies:
       solid-js: ^1.6.12
 
@@ -5365,11 +5357,6 @@ snapshots:
   '@solid-primitives/deep@0.3.3(solid-js@1.9.9)':
     dependencies:
       '@solid-primitives/memo': 1.4.3(solid-js@1.9.9)
-      solid-js: 1.9.9
-
-  '@solid-primitives/destructure@0.2.2(solid-js@1.9.9)':
-    dependencies:
-      '@solid-primitives/utils': 6.3.2(solid-js@1.9.9)
       solid-js: 1.9.9
 
   '@solid-primitives/event-listener@2.4.3(solid-js@1.9.9)':

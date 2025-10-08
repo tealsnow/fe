@@ -1,10 +1,9 @@
 import { createSignal, Index, VoidComponent } from "solid-js";
 
-import { Icon, IconKind, icons } from "~/assets/icons";
-
 import cn from "~/lib/cn";
 
 import Switch from "~/ui/components/Switch";
+import Icon, { IconKind, Icons } from "~/ui/components/Icon";
 
 import * as Theme from "~/ui/Theme";
 
@@ -45,7 +44,7 @@ export const Showcase: VoidComponent = () => {
     );
   };
 
-  const Icons: VoidComponent = () => {
+  const AllIcons: VoidComponent = () => {
     const [fill, setFill] = createSignal(true);
 
     return (
@@ -73,9 +72,8 @@ export const Showcase: VoidComponent = () => {
                 <div class="m-1 flex-grow flex-col content-center items-center justify-center rounded-sm p-2 text-xs shadow-md">
                   {kind()}
                   <Icon
-                    icon={icons[kind()]}
-                    noDefaultStyles={kind() === "fe"}
-                    class={cn("size-10", !fill() && "fill-none")}
+                    icon={Icons[kind()]}
+                    class={cn("size-10", fill() ? "" : "fill-none")}
                   />
                 </div>
               );
@@ -115,7 +113,7 @@ export const Showcase: VoidComponent = () => {
   return (
     <div class="flex-col overflow-auto w-full">
       <Colors />
-      <Icons />
+      <AllIcons />
       <ThemeSpec />
     </div>
   );

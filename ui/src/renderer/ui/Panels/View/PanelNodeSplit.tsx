@@ -232,7 +232,7 @@ const SplitDropOverlay: Component<{
     return (
       <RenderDropPoint
         ref={sideInfos[props.side].ref}
-        icon="dnd_split_append"
+        icon="DndSplitAppend"
         tooltip={`append to split on ${props.side}`}
         hovered={sideInfos[props.side].hovered}
         class={sidePositions[props.side]}
@@ -249,7 +249,7 @@ const SplitDropOverlay: Component<{
       <RenderDropPoint
         ref={middleInfos[props.idx].ref}
         style={props.style}
-        icon="dnd_split_insert"
+        icon="DndSplitInsert"
         tooltip="insert tab in split"
         hovered={middleInfos[props.idx].hovered}
         class="absolute self-center z-50"

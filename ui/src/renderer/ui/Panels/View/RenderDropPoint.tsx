@@ -1,11 +1,10 @@
 import { Component, JSX } from "solid-js";
 
-import { Icon, IconKind, icons } from "~/assets/icons";
-
 import { cn } from "~/lib/cn";
 import createBoolTimeout from "~/lib/createBoolTimeout";
 
 import Tooltip from "~/ui/components/Tooltip";
+import Icon, { IconKind } from "~/ui/components/Icon";
 
 export const RenderDropPoint: Component<{
   ref?: HTMLDivElement;
@@ -33,7 +32,7 @@ export const RenderDropPoint: Component<{
         )}
       >
         <Icon
-          icon={icons[props.icon]}
+          icon={props.icon}
           class={cn(
             "fill-transparent size-8 transition-colors duration-100",
             props.hovered() && "stroke-theme-icon-active-stroke",

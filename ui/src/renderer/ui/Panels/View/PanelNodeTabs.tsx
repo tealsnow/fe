@@ -29,8 +29,6 @@ import {
   TooltipTriggerRenderProps,
 } from "@kobalte/core/tooltip";
 
-import { Icon, icons } from "~/assets/icons";
-
 import cn from "~/lib/cn";
 import Integer from "~/lib/Integer";
 import { UpdateFn } from "~/lib/UpdateFn";
@@ -38,6 +36,7 @@ import * as Notif from "~/lib/Notif";
 
 import Button, { ButtonProps } from "~/ui/components/Button";
 import Tooltip from "~/ui/components/Tooltip";
+import Icon from "~/ui/components/Icon";
 
 import { useContext } from "../Context";
 import { PanelNode, SplitAxis, Leaf, tabsSelect } from "../data";
@@ -189,7 +188,7 @@ export const ViewPanelNodeTabs: Component<{
                   TooltipTriggerProps,
                   TooltipTriggerRenderProps
                 >,
-              ) => <Button as={Icon} icon={icons["add"]} {...props} />}
+              ) => <Button as={Icon} icon="Add" {...props} />}
               variant="icon"
               size="icon"
               class="p-1 ml-1"
@@ -321,7 +320,7 @@ const TabsDropOverlay: Component<{
     return (
       <RenderDropPoint
         ref={sideInfos[props.side].ref}
-        icon="dnd_tabs_side"
+        icon="DndTabsSide"
         tooltip={`create split to the ${props.side}`}
         hovered={sideInfos[props.side].hovered}
         class={sidePositions[props.side]}
@@ -342,7 +341,7 @@ const TabsDropOverlay: Component<{
     >
       <RenderDropPoint
         ref={centerRef}
-        icon="dnd_tabs_middle"
+        icon="DndTabsMiddle"
         tooltip="append tab"
         hovered={centerHovered}
         class="col-3 row-3"
@@ -519,7 +518,7 @@ const ViewTabHandleImpl: Component<{
                 TooltipTriggerProps,
                 TooltipTriggerRenderProps
               >,
-            ) => <Button as={Icon} icon={icons["close"]} {...props} />}
+            ) => <Button as={Icon} icon="Close" {...props} />}
             variant="icon"
             size="icon"
             class="size-3.5 mb-0.5 opacity-0 group-hover:opacity-100"

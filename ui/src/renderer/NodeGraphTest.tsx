@@ -26,10 +26,9 @@ import cn from "~/lib/cn";
 import UUID from "~/lib/UUID";
 import { createElementSize, ElementSize } from "~/lib/createElementSize";
 
-import { Icon, icons } from "./assets/icons";
-
 import { ColorKind } from "~/ui/Theme";
 
+import Icon from "~/ui/components/Icon";
 import Button from "~/ui/components/Button";
 import Switch from "./ui/components/Switch";
 import Select from "./ui/components/Select";
@@ -225,11 +224,9 @@ const NodeGraphTest: VoidComponent = () => {
         <Button
           as={Icon}
           icon={
-            icons[
-              sidebarOpen()
-                ? "sidebar_indicator_enabled"
-                : "sidebar_indicator_disabled"
-            ]
+            sidebarOpen()
+              ? "SidebarIndicatorEnabled"
+              : "SidebarIndicatorDisabled"
           }
           variant="icon"
           size="icon"
@@ -504,14 +501,13 @@ const NodeGraphTest: VoidComponent = () => {
         {(() => {
           const Shift: VoidComponent<{ down?: boolean }> = (props) => (
             <Icon
-              // icon={icons[props.down ? "key_shift_down" : "key_shift_up"]}
-              icon={icons[props.down ? "key_shift_down" : "key_shift_up"]}
+              icon={props.down ? "KeyShiftDown" : "KeyShiftUp"}
               class="w-8 h-4 stroke-current"
             />
           );
           const Ctrl: VoidComponent<{ down?: boolean }> = (props) => (
             <Icon
-              icon={icons[props.down ? "key_ctrl_down" : "key_ctrl_up"]}
+              icon={props.down ? "KeyCtrlDown" : "KeyCtrlUp"}
               class="w-8 h-4 stroke-current"
             />
           );
@@ -839,7 +835,7 @@ const Settings: VoidComponent<{
       <Collapsible>
         <Collapsible.Trigger class="div group flex flex-row gap-2 my-1">
           <Icon
-            icon={icons["chevron_right"]}
+            icon="ChevronRight"
             class="size-3 fill-none transition-transform duration-100 group-data-[expanded]:rotate-90"
           />
           <Label>{props.label}</Label>

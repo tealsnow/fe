@@ -31,7 +31,6 @@
     "@fe/theme": "workspace:*",
     "@kobalte/core": "^0.13.11",
     "@solid-primitives/deep": "^0.3.3",
-    "@solid-primitives/destructure": "^0.2.2",
     "@solid-primitives/event-listener": "^2.4.3",
     "@solid-primitives/storage": "^4.3.3",
     "class-variance-authority": "^0.7.1",

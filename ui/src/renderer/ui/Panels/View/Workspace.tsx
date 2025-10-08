@@ -1,13 +1,13 @@
 import { Component, For, Index, Show, VoidComponent } from "solid-js";
 import { Option, Effect, Match } from "effect";
 
-import { Icon, IconKind, icons } from "~/assets/icons";
-
 import { cn } from "~/lib/cn";
+
+import * as Window from "~/ui/Window";
 
 import Button from "~/ui/components/Button";
 import Tooltip from "~/ui/components/Tooltip";
-import * as Window from "~/ui/Window";
+import Icon, { IconKind } from "~/ui/components/Icon";
 
 import { useContext } from "../Context";
 import {
@@ -183,10 +183,10 @@ export const WorkspaceTitlebar: Component<{
     Match.withReturnType<WindowIcons>(),
     Match.when("Linux", () => ({
       record: {
-        close: "adwaita_window_close",
-        maximize: "adwaita_window_maximize",
-        restore: "adwaita_window_restore",
-        minimize: "adwaita_window_minimize",
+        close: "AdwaitaWindowClose",
+        maximize: "AdwaitaWindowMaximize",
+        restore: "AdwaitaWindowMaximize",
+        minimize: "AdwaitaWindowMinimize",
       },
       class: "size-6 rounded-xl group hover:bg-transparent",
       iconClass:
@@ -194,10 +194,10 @@ export const WorkspaceTitlebar: Component<{
     })),
     Match.orElse(() => ({
       record: {
-        close: "close",
-        maximize: "window_maximize",
-        restore: "window_restore",
-        minimize: "window_minimize",
+        close: "Close",
+        maximize: "WindowMaximize",
+        restore: "WindowRestore",
+        minimize: "WindowMinimize",
       },
       class: "h-full w-10 rounded-none",
       iconClass: undefined,
@@ -265,7 +265,7 @@ export const WorkspaceTitlebar: Component<{
 
   return (
     <PanelTitlebar class="window-drag gap-2 border-0">
-      <Icon icon={icons["fe"]} noDefaultStyles class="size-4 mx-1" />
+      <Icon icon={"Fe"} class="size-4 mx-1 fill-none stroke-none" />
 
       <div class="flex flex-row h-full items-center gap-0.5 -window-drag">
         <Index each={sidebarToggleButtons}>
@@ -283,11 +283,9 @@ export const WorkspaceTitlebar: Component<{
                 <Icon
                   class={cn("fill-transparent", toggle().class)}
                   icon={
-                    icons[
-                      toggle().enabled()
-                        ? "sidebar_indicator_enabled"
-                        : "sidebar_indicator_disabled"
-                    ]
+                    toggle().enabled()
+                      ? "SidebarIndicatorEnabled"
+                      : "SidebarIndicatorDisabled"
                   }
                 />
               </Button>
@@ -311,10 +309,7 @@ export const WorkspaceTitlebar: Component<{
                 noOnClickToOnMouseDown
                 onClick={button.onClick}
               >
-                <Icon
-                  icon={icons[button.icon()]}
-                  class={windowIcons.iconClass}
-                />
+                <Icon icon={button.icon()} class={windowIcons.iconClass} />
               </Tooltip.Trigger>
               <Tooltip.Content>{button.tooltip()}</Tooltip.Content>
             </Tooltip>

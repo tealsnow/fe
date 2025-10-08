@@ -2,12 +2,11 @@ import { createSignal, onCleanup, onMount, Component, For } from "solid-js";
 
 import { Effect, Option } from "effect";
 
-import { Icon, icons } from "~/assets/icons";
-
 import { cn } from "~/lib/cn";
 import Integer from "~/lib/Integer";
 import * as Notif from "~/lib/Notif";
 
+import Icon from "~/ui/components/Icon";
 import Noise from "~/ui/components/Noise";
 
 import * as Theme from "~/ui/Theme";
@@ -17,7 +16,7 @@ import * as Panels from "~/ui/Panels";
 
 import Dbg from "~/Dbg";
 
-import CanvasTest from "~/CanvasTest";
+import NodeGraphTest from "~/NodeGraphTest";
 import CommandPaletteTest from "~/CommandPaletteTest";
 import TextEditingTest from "~/TextEditingTest";
 
@@ -76,9 +75,9 @@ const Root: Component = () => {
           active: Integer(0),
           children: [
             panelCtx.createLeaf({
-              title: "canvas",
-              tooltip: "canvas test",
-              render: () => <CanvasTest />,
+              title: "node graph",
+              tooltip: "node graph test",
+              render: () => <NodeGraphTest />,
             }),
             panelCtx.createLeaf({
               title: "text editing",
@@ -136,7 +135,7 @@ const Root: Component = () => {
     const [cleanup, _id] = statusBarCtx.addItem({
       alignment: "right",
       item: StatusBar.BarItem.iconButton({
-        icon: () => <Icon icon={icons["bell"]} />,
+        icon: () => <Icon icon="Bell" />,
         tooltip: () => "notifications",
         onClick: () => {
           const sidebars = panelCtx.workspace.sidebars;

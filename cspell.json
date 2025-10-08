@@ -47,6 +47,7 @@
     "Toaster",
     "autocorrect",
     "linecap",
-    "linejoin"
+    "linejoin",
+    "solidjs"
   ]
 }

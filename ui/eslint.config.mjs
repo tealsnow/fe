@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/dist",
       "**/out",
       "electron.vite.config.*.mjs",
+      "src/renderer/ui/icons",
     ],
   },
   tseslint.configs.recommended,

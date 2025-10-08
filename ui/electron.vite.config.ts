@@ -4,7 +4,7 @@ import solidSvg from "vite-plugin-solid-svg";
 import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-import generateAssetTypesPlugin from "./plugins/generate_asset_types";
+import generateIcons from "./plugins/generateIcons";
 import extraWatcher from "./plugins/extraWatcher";
 
 export default defineConfig({
@@ -23,7 +23,10 @@ export default defineConfig({
       solidSvg({
         defaultAsComponent: true,
       }),
-      generateAssetTypesPlugin({ assetsDir: "src/renderer/assets" }),
+      generateIcons({
+        svgDir: "src/renderer/ui/Icons/svg",
+        outDir: "src/renderer/ui/Icons",
+      }),
       tsconfigPaths(),
       tailwindcss(),
     ],
