@@ -45,6 +45,8 @@
     "accum",
     "describedby",
     "Toaster",
-    "autocorrect"
+    "autocorrect",
+    "linecap",
+    "linejoin"
   ]
 }

@@ -81,7 +81,7 @@ export type Theme = z.infer<typeof ThemeSchema>;
 export const autoIcon = (stroke: string, fill?: string): Icon => {
   return {
     stroke,
-    fill: fill ?? Color(stroke).fade(0.8).hexa(),
+    fill: fill ?? Color(stroke).fade(0.8).darken(0.4).alpha(0.2).hexa(),
   };
 };
 

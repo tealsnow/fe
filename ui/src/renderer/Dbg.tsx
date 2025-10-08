@@ -4,6 +4,7 @@ import * as Notif from "~/lib/Notif";
 
 import Button from "~/ui/components/Button";
 import * as StatusBar from "~/ui/StatusBar";
+import Dialog from "./ui/components/Dialog";
 
 export const Dbg: Component<{
   setShowNoise: Setter<boolean>;
@@ -243,6 +244,33 @@ export const Dbg: Component<{
 
   const _ignore = StatusBarTest;
 
+  const Misc: Component = () => {
+    return (
+      <div class="flex flex-col w-fit gap-2 p-2">
+        <h3 class="text-lg underline">Misc</h3>
+
+        <Dialog>
+          <Dialog.Trigger as={Button}>open dialog</Dialog.Trigger>
+          <Dialog.Content>
+            <Dialog.Header>
+              <Dialog.Title>Title</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Description>description</Dialog.Description>
+            main content
+            <Dialog.Footer>
+              <Button size="small" color="green">
+                ok
+              </Button>
+              <Button size="small" color="red">
+                close
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog>
+      </div>
+    );
+  };
+
   return (
     <div class="flex flex-col w-full gap-2">
       <Settings />
@@ -252,6 +280,8 @@ export const Dbg: Component<{
       <NotificationsTest />
       {/*<hr />
       <StatusBarTest />*/}
+      <hr />
+      <Misc />
     </div>
   );
 };

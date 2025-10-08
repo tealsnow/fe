@@ -114,21 +114,22 @@ function generateIconTypes(
     overwrite: true,
   });
 
-  file.addTypeAlias({
-    name: "IconKind",
-    isExported: true,
-    type: icon_names_strings.join(" | "),
-  });
-
   file.addVariableStatement({
     declarationKind: morph.VariableDeclarationKind.Const,
     isExported: true,
     declarations: [
       {
-        name: "iconKinds",
+        name: "IconKind",
         initializer: `[${icon_names_strings.join(", ")}] as const`,
       },
     ],
+  });
+
+  file.addTypeAlias({
+    name: "IconKind",
+    isExported: true,
+    // type: icon_names_strings.join(" | "),
+    type: "(typeof IconKind)[number]",
   });
 
   file.saveSync();

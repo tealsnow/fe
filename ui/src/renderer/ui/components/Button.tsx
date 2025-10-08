@@ -11,7 +11,7 @@ import { cn } from "~/lib/cn";
 import { ColorKind } from "~/ui/Theme";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1 whitespace-nowrap text-center content-center transition-colors duration-100 cursor-pointer outline-(--button-border) outline-0 ring-(--button-border) border-(--button-border) focus-visible:ring-1 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-1 whitespace-nowrap text-center content-center transition-colors duration-100 cursor-pointer outline-(--button-border) outline-0 ring-(--button-border) border-(--button-border) focus-visible:ring-1 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 min-w-fit",
   {
     variants: {
       size: {
@@ -26,7 +26,7 @@ const buttonVariants = cva(
         ghost: "hover:text-(--button-base) not-hover:border-transparent",
         // @TODO: add a little link icon for this variant
         link: "bg-(--button-background) hover:bg-(--button-base) underline-offset-4 hover:underline",
-        icon: "hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill rounded-sm p-0.5",
+        icon: "outline-theme-border hover:bg-theme-icon-base-fill active:bg-theme-icon-active-fill rounded-sm p-0.5",
       },
       highlighted: {
         true: "bg-(--button-base)",
@@ -52,7 +52,8 @@ const buttonVariants = cva(
       {
         variant: "icon",
         highlighted: true,
-        class: "bg-theme-icon-base-fill/80 border-theme-border/60 border",
+        class:
+          "bg-theme-icon-base-fill/80 border-theme-border/60 outline fill-theme-icon-active-fill stroke-theme-icon-active-stroke",
       },
     ],
   },

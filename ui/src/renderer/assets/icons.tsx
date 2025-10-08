@@ -31,6 +31,7 @@ export type IconProps = JSX.SvgSVGAttributes<SVGElement> & {
   noDefaultStyles?: boolean;
 };
 
+// @TODO: Should probably move this to ~/ui/components
 export const Icon: Component<IconProps> = (props) => {
   const [local, rest] = splitProps(props, ["class", "icon"]);
 
