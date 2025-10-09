@@ -30,14 +30,6 @@ export const Fe: IconComponent = lazy(() => import("./Fe"));
 // @ts-expect-error 2322
 export const FeTransparent: IconComponent = lazy(() => import("./FeTransparent"));
 // @ts-expect-error 2322
-export const KeyCtrlDown: IconComponent = lazy(() => import("./KeyCtrlDown"));
-// @ts-expect-error 2322
-export const KeyCtrlUp: IconComponent = lazy(() => import("./KeyCtrlUp"));
-// @ts-expect-error 2322
-export const KeyShiftDown: IconComponent = lazy(() => import("./KeyShiftDown"));
-// @ts-expect-error 2322
-export const KeyShiftUp: IconComponent = lazy(() => import("./KeyShiftUp"));
-// @ts-expect-error 2322
 export const SidebarIndicatorDisabled: IconComponent = lazy(() => import("./SidebarIndicatorDisabled"));
 // @ts-expect-error 2322
 export const SidebarIndicatorEnabled: IconComponent = lazy(() => import("./SidebarIndicatorEnabled"));
@@ -47,7 +39,7 @@ export const WindowMaximize: IconComponent = lazy(() => import("./WindowMaximize
 export const WindowMinimize: IconComponent = lazy(() => import("./WindowMinimize"));
 // @ts-expect-error 2322
 export const WindowRestore: IconComponent = lazy(() => import("./WindowRestore"));
-export const IconKind = ["Add", "AdwaitaWindowClose", "AdwaitaWindowMaximize", "AdwaitaWindowMinimize", "AdwaitaWindowRestore", "Bell", "ChevronRight", "Close", "DndSplitAppend", "DndSplitInsert", "DndTabsMiddle", "DndTabsSide", "Fe", "FeTransparent", "KeyCtrlDown", "KeyCtrlUp", "KeyShiftDown", "KeyShiftUp", "SidebarIndicatorDisabled", "SidebarIndicatorEnabled", "WindowMaximize", "WindowMinimize", "WindowRestore"] as const;
+export const IconKind = ["Add", "AdwaitaWindowClose", "AdwaitaWindowMaximize", "AdwaitaWindowMinimize", "AdwaitaWindowRestore", "Bell", "ChevronRight", "Close", "DndSplitAppend", "DndSplitInsert", "DndTabsMiddle", "DndTabsSide", "Fe", "FeTransparent", "SidebarIndicatorDisabled", "SidebarIndicatorEnabled", "WindowMaximize", "WindowMinimize", "WindowRestore"] as const;
 
 export type IconKind = (typeof IconKind)[number];
 

@@ -48,6 +48,8 @@
     "autocorrect",
     "linecap",
     "linejoin",
-    "solidjs"
+    "solidjs",
+    "Mousedown",
+    "Mouseup"
   ]
 }

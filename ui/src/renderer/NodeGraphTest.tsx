@@ -1,11 +1,3 @@
-/*
-
-I got a little carried away here, this is less of an experiment now and
-more just the next thing I'm building.
-Still have much more to do, but I'm having fun, and isn't that the point?
-
-*/
-
 import {
   Accessor,
   Setter,
@@ -34,6 +26,8 @@ import Switch from "./ui/components/Switch";
 import Select from "./ui/components/Select";
 import Collapsible from "./ui/components/Collapsible";
 import Label from "./ui/components/Label";
+import KeyboardKey from "./ui/components/KeyboardKey";
+import MouseButton from "./ui/components/MouseButton";
 
 const GridSize = 10;
 
@@ -44,13 +38,13 @@ const ZoomMinMax = {
 
 type Coords = [number, number];
 
-const SnapKind = ["none", "1s", "5s"] as const;
+const SnapKind = ["none", "1s", "5s", "disabled"] as const;
 type SnapKind = (typeof SnapKind)[number];
 
 const coordsSnapToGrid = ([x, y]: Coords, kind: SnapKind): Coords =>
   Match.value(kind).pipe(
     Match.withReturnType<Coords>(),
-    Match.when("none", () => [x, y]),
+    Match.whenOr("none", "disabled", () => [x, y]),
     Match.when("1s", () => [
       Math.round(x / GridSize) * GridSize,
       Math.round(y / GridSize) * GridSize,
@@ -123,6 +117,41 @@ Output :: struct {
 
 */
 
+/* Input (interaction):
+
+Whats the best way we can generalize this?
+
+The current state is an absolute mess and nightmare of spaghetti.
+An abstraction would be highly beneficial here.
+
+First though that comes to mind is to utilize the (yet non existent) modal
+input system. Node editing can be its own super contextual mode, with sub modes.
+But I'm getting ahead of myself.
+
+As of right now, we have a few modes of input:
+ - [ [space+lmb] or [mmb] (on canvas) ] or trackpad pan (anywhere) -> pan
+   - ctrl,shift,ctrlShift -> modify snapping
+ - lmb (on node titlebar) -> move node
+   - ctrl,shift,ctrlShift -> modify snapping
+ - ctrl+scroll or trackpad pinch -> zoom
+ - rmb+move up/down (on canvas) -> zoom
+
+I think we can best thing of these as "layers" which are mostly mutually
+exclusive.
+Currently that is communicated by the input statusbar dynamically hiding and
+showing modes of input based on the current state. This is done mostly
+empirically, just by checking the if other inputs modes are active in a pretty
+indirect manner. This is not helped either by the mess of signals for each
+individual piece of information.
+
+A general outline of what to do:
+  - group logical bits of input information
+  - provide some better heuristic for the current state/layer of input
+  - maybe create an abstraction akin to the layer concept here
+  - use this to provide good information to the user
+
+*/
+
 const NodeGraphTest: VoidComponent = () => {
   const [originOffset, setOriginOffset] = createSignal<Coords>([10, 10]);
   const [zoom, setZoom] = createSignal(1);
@@ -140,14 +169,14 @@ const NodeGraphTest: VoidComponent = () => {
     default: "none",
     shift: "1s",
     ctrl: "5s",
-    ctrlShift: "5s",
+    ctrlShift: "disabled",
   });
 
   const [nodeSnapConfig, setNodeSnapConfig] = createSignal<SnapConfig>({
     default: "1s",
     shift: "none",
     ctrl: "5s",
-    ctrlShift: "5s",
+    ctrlShift: "disabled",
   });
 
   const [containerSize, setContainerSizeRef] = createElementSize();
@@ -155,6 +184,8 @@ const NodeGraphTest: VoidComponent = () => {
 
   const [snapNodeSizesToGrid, setSnapNodeSizesToGrid] = createSignal(true);
 
+  // @NOTE: do not set anything inside of the node directly.
+  //   it goes through a <For> and thus looses reactivity below the node level
   const [nodes, setNodes] = createStore<Node[]>([
     Node({
       title: "some node",
@@ -186,8 +217,12 @@ const NodeGraphTest: VoidComponent = () => {
     },
   );
 
+  const [mouseInside, setMouseInside] = createSignal(false);
+
   const [shiftDown, setShiftDown] = createSignal(false);
   const [ctrlDown, setCtrlDown] = createSignal(false);
+  const [spaceDown, setSpaceDown] = createSignal(false);
+  const [leftMouseButtonDown, setLeftMouseButtonDown] = createSignal(false);
 
   const handleZoom = (delta: number, [x, y]: Coords): void => {
     const oldZoom = zoom();
@@ -218,8 +253,51 @@ const NodeGraphTest: VoidComponent = () => {
     setZoom(newZoom);
   };
 
+  const [nodeHovered, setNodeHovered] = createSignal<{
+    titlebar: boolean;
+  } | null>(null);
+
   return (
     <div class="size-full flex flex-col">
+      <DocumentEventListener
+        onKeydown={(ev) => {
+          Match.value(ev.key).pipe(
+            Match.when("Shift", () => setShiftDown(true)),
+            Match.when("Control", () => setCtrlDown(true)),
+            // eslint-disable-next-line solid/reactivity
+            Match.when(" ", () => {
+              setSpaceDown(true);
+              if (mouseInside() && !containerRef.matches(":focus-within"))
+                containerRef.focus();
+            }),
+            Match.orElse((key) => {
+              console.log(`key down '${key}'`);
+            }),
+          );
+        }}
+        onKeyup={(ev) => {
+          Match.value(ev.key).pipe(
+            Match.when("Shift", () => setShiftDown(false)),
+            Match.when("Control", () => setCtrlDown(false)),
+            Match.when(" ", () => setSpaceDown(false)),
+          );
+        }}
+        onMousedown={(ev) => {
+          Match.value(ev.button).pipe(
+            Match.when(0, () => setLeftMouseButtonDown(true)),
+            // Match.when(1, () => "middle"),
+            // Match.when(2, () => "right"),
+          );
+        }}
+        onMouseup={(ev) => {
+          Match.value(ev.button).pipe(
+            Match.when(0, () => setLeftMouseButtonDown(false)),
+            // Match.when(1, () => "middle"),
+            // Match.when(2, () => "right"),
+          );
+        }}
+      />
+
       <div class="h-7 border-b flex flex-row items-center px-1 gap-4 overflow-y-scroll no-scrollbar">
         <Button
           as={Icon}
@@ -280,6 +358,8 @@ const NodeGraphTest: VoidComponent = () => {
                   reset
                 </Button>
               </div>
+
+              <pre>nodeHovered: {JSON.stringify(nodeHovered())}</pre>
             </div>
           </div>
         </Show>
@@ -289,8 +369,10 @@ const NodeGraphTest: VoidComponent = () => {
             setContainerSizeRef(ref);
             containerRef = ref;
           }}
+          tabIndex="-1"
           class={cn(
-            "size-full relative overflow-hidden cursor-grab",
+            "size-full relative overflow-hidden focus:ring-0 focus:outline-0",
+            spaceDown() && "cursor-grab",
             panning() && "cursor-grabbing",
             draggingNode() && "cursor-move",
             dragZoom() && "cursor-ns-resize",
@@ -316,16 +398,26 @@ const NodeGraphTest: VoidComponent = () => {
           onMouseDown={(ev) => {
             ev.preventDefault();
 
-            // right click
-            if (ev.button === 2) {
+            const rightButton = 2;
+            const middleButton = 1;
+
+            if (ev.button === rightButton) {
               setDragZoom(true);
-            } else {
-              if (draggingNode() === null) setPanning(originOffset());
+              setDragStartPos([ev.x, ev.y]);
+            } else if (
+              ev.button === middleButton ||
+              (spaceDown() && draggingNode() === null)
+            ) {
+              setPanning(originOffset());
+              setDragStartPos([ev.x, ev.y]);
             }
-            setDragStartPos([ev.x, ev.y]);
           }}
           onMouseMove={(ev) => {
+            setMouseInside(true);
+
             if (dragZoom()) {
+              containerRef.focus();
+
               const [startX, startY] = dragStartPos();
               const dy = ev.y - startY;
 
@@ -334,7 +426,7 @@ const NodeGraphTest: VoidComponent = () => {
               const centerY = rect.height / 2;
 
               handleZoom(
-                dy * 0.25,
+                dy * -0.25,
                 ev.ctrlKey ? [centerX, centerY] : [startX, startY],
               );
             } else if (draggingNode()) {
@@ -348,20 +440,24 @@ const NodeGraphTest: VoidComponent = () => {
               const [x, y] = dragNode.start;
               const newCoords: Coords = [x + dx, y + dy];
 
+              const snapped = coordsSnapToGrid(
+                newCoords,
+                kindForSnapConfig(nodeSnapConfig(), {
+                  ctrl: ev.ctrlKey,
+                  shift: ev.shiftKey,
+                }),
+              );
+
               setNodes(
                 (node) => node.id == dragNode.id,
                 (node) => ({
                   ...node,
-                  coords: coordsSnapToGrid(
-                    newCoords,
-                    kindForSnapConfig(nodeSnapConfig(), {
-                      ctrl: ev.ctrlKey,
-                      shift: ev.shiftKey,
-                    }),
-                  ),
+                  coords: snapped,
                 }),
               );
             } else if (panning()) {
+              containerRef.focus();
+
               // delta from where the drag started
               const [startX, startY] = dragStartPos();
               const dx = ev.x - startX;
@@ -392,7 +488,11 @@ const NodeGraphTest: VoidComponent = () => {
             setDraggingNode(null);
             setDragZoom(false);
           }}
+          onMouseEnter={() => {
+            setMouseInside(true);
+          }}
           onMouseLeave={() => {
+            setMouseInside(false);
             setPanning(null);
             setDraggingNode(null);
             setDragZoom(false);
@@ -471,9 +571,17 @@ const NodeGraphTest: VoidComponent = () => {
                       );
                     }}
                     snapNodeSizesToGrid={snapNodeSizesToGrid}
-                    beginDragging={() => {
-                      if (draggingNode() === null)
+                    beginDragging={(ev) => {
+                      if (draggingNode() === null) {
+                        setDragStartPos([ev.x, ev.y]);
                         setDraggingNode({ id: node.id, start: node.coords });
+                      }
+                    }}
+                    onHoverIn={({ titlebar }) => {
+                      setNodeHovered({ titlebar });
+                    }}
+                    onHoverOut={() => {
+                      setNodeHovered(null);
                     }}
                   />
                 );
@@ -484,72 +592,107 @@ const NodeGraphTest: VoidComponent = () => {
       </div>
 
       <div class="h-7 border-t flex flex-row items-center px-1 gap-3 text-theme-deemphasis text-sm">
-        <DocumentEventListener
-          onKeydown={(ev) => {
-            Match.value(ev.key).pipe(
-              Match.when("Shift", () => setShiftDown(true)),
-              Match.when("Control", () => setCtrlDown(true)),
-            );
-          }}
-          onKeyup={(ev) => {
-            Match.value(ev.key).pipe(
-              Match.when("Shift", () => setShiftDown(false)),
-              Match.when("Control", () => setCtrlDown(false)),
-            );
-          }}
-        />
         {(() => {
-          const Shift: VoidComponent<{ down?: boolean }> = (props) => (
-            <Icon
-              icon={props.down ? "KeyShiftDown" : "KeyShiftUp"}
-              class="w-8 h-4 stroke-current"
-            />
-          );
-          const Ctrl: VoidComponent<{ down?: boolean }> = (props) => (
-            <Icon
-              icon={props.down ? "KeyCtrlDown" : "KeyCtrlUp"}
-              class="w-8 h-4 stroke-current"
-            />
-          );
-
           const Hint: VoidComponent<{
+            hide?: any | undefined | null | false;
             down: boolean;
             keys: VoidComponent<{ down: boolean }>;
             action: string;
           }> = (props) => {
             return (
-              <div class="flex flex-row gap-1 [&>span]:pb-0.5">
-                <kbd class="flex flex-row gap-0.5">
-                  {props.keys({ down: props.down })}
-                </kbd>
-                <span>{props.action}</span>
-              </div>
+              <Show when={!(props.hide ?? false)}>
+                <div class="flex flex-row items-center gap-1 h-full">
+                  <kbd class="flex flex-row gap-0.5 text-sm">
+                    {props.keys({ down: props.down })}
+                  </kbd>
+                  <span>{props.action}</span>
+                </div>
+              </Show>
+            );
+          };
+
+          const SnapConfigHints: VoidComponent<{
+            hide: any | undefined | null | false;
+            config: () => SnapConfig;
+          }> = (props) => {
+            const action = (kind: SnapKind): string =>
+              Match.value(kind).pipe(
+                Match.when("none", () => "disable snapping"),
+                Match.whenOr("1s", "5s", (s) => `snap to ${s}`),
+                Match.when(
+                  "disabled",
+                  () => "you shouldn't be able to see this",
+                ),
+                Match.exhaustive,
+              );
+
+            return (
+              <>
+                <Show when={!props.hide}>
+                  <Hint
+                    hide={props.config().shift === "disabled"}
+                    down={shiftDown() && !ctrlDown()}
+                    keys={(props) => <KeyboardKey.Shift down={props.down} />}
+                    action={action(props.config().shift)}
+                  />
+                  <Hint
+                    hide={props.config().ctrl === "disabled"}
+                    down={ctrlDown() && !shiftDown()}
+                    keys={(props) => <KeyboardKey.Ctrl down={props.down} />}
+                    action={action(props.config().ctrl)}
+                  />
+                  <Hint
+                    hide={props.config().ctrlShift === "disabled"}
+                    down={shiftDown() && ctrlDown()}
+                    keys={(props) => (
+                      <>
+                        <KeyboardKey.Shift down={props.down} /> +{" "}
+                        <KeyboardKey.Ctrl down={props.down} />
+                      </>
+                    )}
+                    action={action(props.config().ctrlShift)}
+                  />
+                </Show>
+              </>
             );
           };
 
           return (
             <>
-              <Show when={panning()}>
-                <Hint
-                  down={shiftDown() && !ctrlDown()}
-                  keys={(props) => <Shift down={props.down} />}
-                  action={`snap to ${panSnapConfig().shift}`}
-                />
-                <Hint
-                  down={ctrlDown() && !shiftDown()}
-                  keys={(props) => <Ctrl down={props.down} />}
-                  action={`snap to ${panSnapConfig().ctrl}`}
-                />
-                <Hint
-                  down={shiftDown() && ctrlDown()}
-                  keys={(props) => (
-                    <>
-                      <Shift down={props.down} /> + <Ctrl down={props.down} />
-                    </>
-                  )}
-                  action={`snap to ${panSnapConfig().ctrlShift}`}
-                />
-              </Show>
+              <Hint
+                hide={draggingNode() || dragZoom() || nodeHovered()}
+                down={panning() !== null}
+                keys={(props) => (
+                  <>
+                    <KeyboardKey.Space down={props.down} />+{" "}
+                    <MouseButton kind="left" down={props.down} />
+                    |
+                    <MouseButton kind="middle" down={props.down} />
+                  </>
+                )}
+                action="Pan view"
+              />
+              <SnapConfigHints hide={!panning()} config={panSnapConfig} />
+
+              <Hint
+                hide={panning() || draggingNode() || nodeHovered()}
+                down={dragZoom()}
+                keys={(props) => (
+                  <>
+                    <MouseButton kind="right" down={props.down} /> +{" "}
+                    <MouseButton.Moving kind="vertical" />
+                  </>
+                )}
+                action="Zoom"
+              />
+
+              <Hint
+                hide={!nodeHovered()?.titlebar && !draggingNode()}
+                down={leftMouseButtonDown()}
+                keys={(props) => <MouseButton kind="left" down={props.down} />}
+                action="Move"
+              />
+              <SnapConfigHints hide={!draggingNode()} config={nodeSnapConfig} />
             </>
           );
         })()}
@@ -562,11 +705,12 @@ const RenderNode: VoidComponent<{
   node: Node;
   onTouch: () => void;
   snapNodeSizesToGrid: () => boolean;
-  beginDragging: () => void;
+  beginDragging: (ev: MouseEvent) => void;
+  onHoverIn: (opts: { titlebar: boolean }) => void;
+  onHoverOut: () => void;
 }> = (props) => {
-  let titleRef!: HTMLDivElement;
-
   const [size, setSizeRef] = createElementSize();
+  let titleRef!: HTMLDivElement;
 
   const ceilToGrid = (v: number): number =>
     Math.ceil((v + 2) / GridSize) * GridSize;
@@ -600,6 +744,12 @@ const RenderNode: VoidComponent<{
         ev.stopPropagation();
         props.onTouch();
       }}
+      onMouseEnter={() => {
+        props.onHoverIn({ titlebar: false });
+      }}
+      onMouseLeave={() => {
+        props.onHoverOut();
+      }}
     >
       <div
         ref={titleRef}
@@ -609,13 +759,20 @@ const RenderNode: VoidComponent<{
           "border-color": `var(--theme-colors-${props.node.color}-border)`,
         }}
         onMouseDown={(ev) => {
-          ev.preventDefault();
-          props.beginDragging();
+          props.beginDragging(ev);
+        }}
+        onMouseEnter={() => {
+          props.onHoverIn({ titlebar: true });
         }}
       >
         {props.node.title}
       </div>
-      <div class="p-1 min-w-0 size-full flex flex-col items-center gap-0.5">
+      <div
+        class="p-1 min-w-0 size-full flex flex-col items-center gap-0.5"
+        onMouseEnter={() => {
+          props.onHoverIn({ titlebar: false });
+        }}
+      >
         {(() => {
           const Dot: VoidComponent<{ kind: "input" | "output" }> = (props) => {
             return (
@@ -632,6 +789,10 @@ const RenderNode: VoidComponent<{
 
           return (
             <>
+              {/*<pre>
+                [{props.node.coords[0]}, {props.node.coords[1]}]
+              </pre>*/}
+
               <div class="relative flex w-full px-1">
                 <span class="w-full text-right">output</span>
                 {/*<div class="size-2 rounded-xl bg-theme-colors-green-base border absolute -right-2 top-[50%] -translate-y-1/2 cursor-pointer" />*/}
@@ -684,8 +845,7 @@ const RenderGrid: VoidComponent<{
       const scaledGrid = GridSize * zoom;
 
       // verticals
-      let kx = Math.ceil((0 - ox) / scaledGrid);
-      for (; ; kx++) {
+      for (let kx = Math.ceil((0 - ox) / scaledGrid); ; kx++) {
         const x = Math.round(ox + kx * scaledGrid) + 0.5;
         if (x > size.width) break;
         const alpha = kx % 50 === 0 ? 0.8 : kx % 5 === 0 ? 0.5 : 0.2;
@@ -697,8 +857,7 @@ const RenderGrid: VoidComponent<{
       }
 
       // horizontals
-      let ky = Math.ceil((0 - oy) / scaledGrid);
-      for (; ; ky++) {
+      for (let ky = Math.ceil((0 - oy) / scaledGrid); ; ky++) {
         const y = Math.round(oy + ky * scaledGrid) + 0.5;
         if (y > size.height) break;
         const alpha = ky % 50 === 0 ? 0.8 : ky % 5 === 0 ? 0.5 : 0.2;
@@ -739,7 +898,6 @@ const RenderGrid: VoidComponent<{
             ctx.arc(x, y, r25s, 0, Math.PI * 2);
             ctx.fill();
           } else {
-            // regular 5-unit dot
             ctx.globalAlpha = a5s;
             ctx.beginPath();
             ctx.arc(x, y, r5s, 0, Math.PI * 2);
