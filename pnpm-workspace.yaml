@@ -1,7 +1,7 @@
 packages:
-  - ui
+  - app/theme
+  - app/ui
   - native
-  - theme
 
 onlyBuiltDependencies:
   - "@tailwindcss/oxide"
