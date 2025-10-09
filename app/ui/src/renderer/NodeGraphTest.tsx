@@ -1,6 +1,5 @@
 import {
   Accessor,
-  Setter,
   For,
   JSX,
   Show,
@@ -8,11 +7,11 @@ import {
   createEffect,
   createSignal,
 } from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import { createStore, produce, SetStoreFunction } from "solid-js/store";
 import { makePersisted } from "@solid-primitives/storage";
 import { DocumentEventListener } from "@solid-primitives/event-listener";
 
-import { Data, Match, Order } from "effect";
+import { Data, Match, Option, Order } from "effect";
 
 import cn from "~/lib/cn";
 import UUID from "~/lib/UUID";
@@ -28,6 +27,7 @@ import Collapsible from "./ui/components/Collapsible";
 import Label from "./ui/components/Label";
 import KeyboardKey from "./ui/components/KeyboardKey";
 import MouseButton from "./ui/components/MouseButton";
+import UpdateFn from "./lib/UpdateFn";
 
 const GridSize = 10;
 
@@ -152,37 +152,97 @@ A general outline of what to do:
 
 */
 
-const NodeGraphTest: VoidComponent = () => {
-  const [originOffset, setOriginOffset] = createSignal<Coords>([10, 10]);
-  const [zoom, setZoom] = createSignal(1);
+type Config = {
+  snapping: {
+    canvas: SnapConfig;
+    nodes: SnapConfig;
+  };
+  snapNodeSizesToGrid: boolean;
+  gridStyle: GridStyle;
+};
+const ConfigDefault: Config = {
+  snapping: {
+    canvas: {
+      default: "none",
+      shift: "1s",
+      ctrl: "5s",
+      ctrlShift: "disabled",
+    },
+    nodes: {
+      default: "1s",
+      shift: "none",
+      ctrl: "5s",
+      ctrlShift: "disabled",
+    },
+  },
+  snapNodeSizesToGrid: true,
+  gridStyle: "grid_lines",
+};
 
-  const [dragStartPos, setDragStartPos] = createSignal<Coords>([0, 0]);
-  const [draggingNode, setDraggingNode] = createSignal<{
-    id: UUID;
+type DraggingStateMode = Data.TaggedEnum<{
+  node: {
     start: Coords;
-  } | null>(null);
-  const [panning, setPanning] = createSignal<Coords | null>(null);
+    id: UUID;
+  };
+  canvas: {
+    start: Coords;
+  };
+  zoom: {};
+}>;
+const DraggingStateMode = Data.taggedEnum<DraggingStateMode>();
 
-  const [dragZoom, setDragZoom] = createSignal(false);
+type DraggingState = {
+  startPos: Coords;
+  mode: DraggingStateMode;
+};
 
-  const [panSnapConfig, setPanSnapConfig] = createSignal<SnapConfig>({
-    default: "none",
-    shift: "1s",
-    ctrl: "5s",
-    ctrlShift: "disabled",
+type CanvasState = {
+  offset: Coords;
+  zoom: number;
+  mouseInside: boolean;
+  sidebarOpen: boolean;
+  nodeHovered: null | {
+    titlebar: boolean;
+  };
+};
+
+type InputState = {
+  shift: boolean;
+  ctrl: boolean;
+  space: boolean;
+  leftMouseButton: boolean;
+};
+
+const NodeGraphTest: VoidComponent = () => {
+  const [config, setConfig] = makePersisted(
+    // doesn't understand what makePersisted is
+    // eslint-disable-next-line solid/reactivity
+    createStore<Config>(ConfigDefault),
+    {
+      name: "nodeGraph-config",
+      storage: localStorage,
+    },
+  );
+
+  const [draggingState, setDraggingState] = createSignal<DraggingState | null>(
+    null,
+  );
+
+  const [canvas, setCanvas] = createStore<CanvasState>({
+    offset: [10, 10],
+    zoom: 1,
+    mouseInside: false,
+    sidebarOpen: true,
+    nodeHovered: null,
   });
 
-  const [nodeSnapConfig, setNodeSnapConfig] = createSignal<SnapConfig>({
-    default: "1s",
-    shift: "none",
-    ctrl: "5s",
-    ctrlShift: "disabled",
+  // prefer to use the event information for modifier state
+  const [inputState, setInputState] = createStore<InputState>({
+    shift: false,
+    ctrl: false,
+    space: false,
+    leftMouseButton: false,
   });
-
-  const [containerSize, setContainerSizeRef] = createElementSize();
-  let containerRef!: HTMLDivElement;
-
-  const [snapNodeSizesToGrid, setSnapNodeSizesToGrid] = createSignal(true);
 
   // @NOTE: do not set anything inside of the node directly.
   //   it goes through a <For> and thus looses reactivity below the node level
@@ -201,31 +261,11 @@ const NodeGraphTest: VoidComponent = () => {
     }),
   ]);
 
-  // doesn't understand what makePersisted is
-  // eslint-disable-next-line solid/reactivity
-  const [sidebarOpen, setSidebarOpen] = makePersisted(createSignal(false), {
-    name: "nodeGraph-sidebar-open",
-    storage: localStorage,
-  });
-
-  const [gridStyle, setGridStyle] = makePersisted(
-    // eslint-disable-next-line solid/reactivity
-    createSignal<GridStyle>("grid_lines"),
-    {
-      name: "nodeGraph-gridStyle",
-      storage: localStorage,
-    },
-  );
-
-  const [mouseInside, setMouseInside] = createSignal(false);
-
-  const [shiftDown, setShiftDown] = createSignal(false);
-  const [ctrlDown, setCtrlDown] = createSignal(false);
-  const [spaceDown, setSpaceDown] = createSignal(false);
-  const [leftMouseButtonDown, setLeftMouseButtonDown] = createSignal(false);
+  const [containerSize, setContainerSizeRef] = createElementSize();
+  let containerRef!: HTMLDivElement;
 
   const handleZoom = (delta: number, [x, y]: Coords): void => {
-    const oldZoom = zoom();
+    const oldZoom = canvas.zoom;
 
     const normalized = Math.sign(delta) * Math.min(Math.abs(delta) / 100, 1);
     const zoomSpeed = 0.15; // lower = slower, smoother
@@ -241,33 +281,32 @@ const NodeGraphTest: VoidComponent = () => {
     const mouseY = y - rect.top;
 
     // world coords before zoom
-    const [ox, oy] = originOffset();
+    const [ox, oy] = canvas.offset;
     const worldX = (mouseX - ox) / oldZoom;
     const worldY = (mouseY - oy) / oldZoom;
 
     // new origin so mouse stays fixed in same world space
-    const newOx = mouseX - worldX * newZoom;
-    const newOy = mouseY - worldY * newZoom;
+    const newX = mouseX - worldX * newZoom;
+    const newY = mouseY - worldY * newZoom;
 
-    setOriginOffset([newOx, newOy]);
-    setZoom(newZoom);
+    setCanvas((s) => ({
+      ...s,
+      offset: [newX, newY],
+      zoom: newZoom,
+    }));
   };
-
-  const [nodeHovered, setNodeHovered] = createSignal<{
-    titlebar: boolean;
-  } | null>(null);
 
   return (
     <div class="size-full flex flex-col">
       <DocumentEventListener
         onKeydown={(ev) => {
           Match.value(ev.key).pipe(
-            Match.when("Shift", () => setShiftDown(true)),
-            Match.when("Control", () => setCtrlDown(true)),
+            Match.when("Shift", () => setInputState("shift", true)),
+            Match.when("Control", () => setInputState("ctrl", true)),
             // eslint-disable-next-line solid/reactivity
             Match.when(" ", () => {
-              setSpaceDown(true);
-              if (mouseInside() && !containerRef.matches(":focus-within"))
+              setInputState("space", true);
+              if (canvas.mouseInside && !containerRef.matches(":focus-within"))
                 containerRef.focus();
             }),
             Match.orElse((key) => {
@@ -277,21 +316,21 @@ const NodeGraphTest: VoidComponent = () => {
         }}
         onKeyup={(ev) => {
           Match.value(ev.key).pipe(
-            Match.when("Shift", () => setShiftDown(false)),
-            Match.when("Control", () => setCtrlDown(false)),
-            Match.when(" ", () => setSpaceDown(false)),
+            Match.when("Shift", () => setInputState("shift", false)),
+            Match.when("Control", () => setInputState("ctrl", false)),
+            Match.when(" ", () => setInputState("space", false)),
           );
         }}
         onMousedown={(ev) => {
           Match.value(ev.button).pipe(
-            Match.when(0, () => setLeftMouseButtonDown(true)),
+            Match.when(0, () => setInputState("leftMouseButton", true)),
             // Match.when(1, () => "middle"),
             // Match.when(2, () => "right"),
           );
         }}
         onMouseup={(ev) => {
           Match.value(ev.button).pipe(
-            Match.when(0, () => setLeftMouseButtonDown(false)),
+            Match.when(0, () => setInputState("leftMouseButton", false)),
             // Match.when(1, () => "middle"),
             // Match.when(2, () => "right"),
           );
@@ -302,44 +341,38 @@ const NodeGraphTest: VoidComponent = () => {
         <Button
           as={Icon}
           icon={
-            sidebarOpen()
+            canvas.sidebarOpen
               ? "SidebarIndicatorEnabled"
               : "SidebarIndicatorDisabled"
           }
           variant="icon"
           size="icon"
           class="ml-auto rotate-270"
-          highlighted={sidebarOpen()}
-          onClick={() => setSidebarOpen((b) => !b)}
+          highlighted={canvas.sidebarOpen}
+          onClick={() => setCanvas("sidebarOpen", (b) => !b)}
         />
       </div>
 
       <div class="flex flex-row-reverse size-full">
-        <Show when={sidebarOpen()}>
+        <Show when={canvas.sidebarOpen}>
           <div class="min-w-1/3 max-w-1/3 border-l flex flex-col [&>div]:p-2">
             <Settings
               class="h-2/3 border-b"
-              snapNodeSizesToGrid={snapNodeSizesToGrid}
-              setSnapNodeSizesToGrid={setSnapNodeSizesToGrid}
-              gridStyle={gridStyle}
-              setGridStyle={setGridStyle}
-              panSnapConfig={panSnapConfig}
-              setPanSnapConfig={setPanSnapConfig}
-              nodeSnapConfig={nodeSnapConfig}
-              setNodeSnapConfig={setNodeSnapConfig}
+              config={config}
+              setConfig={setConfig}
             />
             <div class="h-1/3 flex flex-col overflow-x-scroll">
               <h2 class="text-lg underline underline-offset-2">Dbg</h2>
 
               <div class="flex flex-row items-center gap-2">
                 <pre>
-                  offset: [{originOffset()[0].toFixed(2)},{" "}
-                  {originOffset()[1].toFixed(2)}]
+                  offset: [{canvas.offset[0].toFixed(2)},{" "}
+                  {canvas.offset[1].toFixed(2)}]
                 </pre>
                 <Button
                   size="small"
                   variant="outline"
-                  onClick={() => setOriginOffset([0, 0])}
+                  onClick={() => setCanvas("offset", [0, 0])}
                 >
                   reset
                 </Button>
@@ -349,17 +382,17 @@ const NodeGraphTest: VoidComponent = () => {
                 {containerSize().height.toFixed(2)}]
               </pre>
               <div class="flex flex-row items-center gap-2">
-                <pre>zoom: {zoom().toFixed(2)}</pre>
+                <pre>zoom: {canvas.zoom.toFixed(2)}</pre>
                 <Button
                   size="small"
                   variant="outline"
-                  onClick={() => setZoom(1)}
+                  onClick={() => setCanvas("zoom", 1)}
                 >
                   reset
                 </Button>
               </div>
 
-              <pre>nodeHovered: {JSON.stringify(nodeHovered())}</pre>
+              <pre>nodeHovered: {JSON.stringify(canvas.nodeHovered)}</pre>
             </div>
           </div>
         </Show>
@@ -372,10 +405,17 @@ const NodeGraphTest: VoidComponent = () => {
           tabIndex="-1"
           class={cn(
             "size-full relative overflow-hidden focus:ring-0 focus:outline-0",
-            spaceDown() && "cursor-grab",
-            panning() && "cursor-grabbing",
-            draggingNode() && "cursor-move",
-            dragZoom() && "cursor-ns-resize",
+            inputState.space && "cursor-grab",
+            Option.fromNullable(draggingState()).pipe(
+              Option.map((dragging) =>
+                DraggingStateMode.$match({
+                  canvas: () => "cursor-grabbing",
+                  node: () => "cursor-move",
+                  zoom: () => "cursor-ns-resize",
+                })(dragging.mode),
+              ),
+              Option.getOrUndefined,
+            ),
           )}
           onWheel={(ev: WheelEvent) => {
             ev.preventDefault();
@@ -384,128 +424,134 @@ const NodeGraphTest: VoidComponent = () => {
               handleZoom(ev.deltaY * -8, [ev.clientX, ev.clientY]);
             } else {
               const speed = 0.2;
-              const [ox, oy] = originOffset();
+              const [ox, oy] = canvas.offset;
               const dx = ev.deltaX * speed;
               const dy = ev.deltaY * speed;
 
               if (ev.shiftKey) {
-                setOriginOffset([ox - dy, oy]);
+                setCanvas("offset", [ox - dy, oy]);
               } else {
-                setOriginOffset([ox - dx, oy - dy]);
+                setCanvas("offset", [ox - dx, oy - dy]);
               }
             }
           }}
           onMouseDown={(ev) => {
+            if (draggingState() !== null) return;
             ev.preventDefault();
 
-            const rightButton = 2;
+            const leftButton = 0;
             const middleButton = 1;
+            const rightButton = 2;
 
             if (ev.button === rightButton) {
-              setDragZoom(true);
-              setDragStartPos([ev.x, ev.y]);
+              setDraggingState({
+                startPos: [ev.x, ev.y],
+                mode: DraggingStateMode.zoom(),
+              });
             } else if (
-              ev.button === middleButton ||
-              (spaceDown() && draggingNode() === null)
+              (inputState.space && ev.button === leftButton) ||
+              ev.button === middleButton
             ) {
-              setPanning(originOffset());
-              setDragStartPos([ev.x, ev.y]);
+              setDraggingState({
+                startPos: [ev.x, ev.y],
+                mode: DraggingStateMode.canvas({ start: canvas.offset }),
+              });
             }
           }}
           onMouseMove={(ev) => {
-            setMouseInside(true);
+            setCanvas("mouseInside", true);
 
-            if (dragZoom()) {
-              containerRef.focus();
+            const dragging = draggingState();
+            if (!dragging) return;
 
-              const [startX, startY] = dragStartPos();
-              const dy = ev.y - startY;
+            const [startX, startY] = dragging.startPos;
 
-              const rect = containerRef.getBoundingClientRect();
-              const centerX = rect.width / 2;
-              const centerY = rect.height / 2;
+            DraggingStateMode.$match({
+              node: ({ start: [x, y], id }) => {
+                // delta from where the drag started, adjusted to the zoom factor
+                const dx = (ev.x - startX) / canvas.zoom;
+                const dy = (ev.y - startY) / canvas.zoom;
 
-              handleZoom(
-                dy * -0.25,
-                ev.ctrlKey ? [centerX, centerY] : [startX, startY],
-              );
-            } else if (draggingNode()) {
-              const dragNode = draggingNode()!;
+                const newCoords: Coords = [x + dx, y + dy];
 
-              // delta from where the drag started, adjusted to the zoom factor
-              const [startX, startY] = dragStartPos();
-              const dx = (ev.x - startX) / zoom();
-              const dy = (ev.y - startY) / zoom();
+                const snapped = coordsSnapToGrid(
+                  newCoords,
+                  kindForSnapConfig(config.snapping.nodes, {
+                    ctrl: ev.ctrlKey,
+                    shift: ev.shiftKey,
+                  }),
+                );
 
-              const [x, y] = dragNode.start;
-              const newCoords: Coords = [x + dx, y + dy];
+                setNodes(
+                  (node) => node.id == id,
+                  (node) => ({
+                    ...node,
+                    coords: snapped,
+                  }),
+                );
+              },
+              canvas: ({ start: [x, y] }) => {
+                containerRef.focus();
 
-              const snapped = coordsSnapToGrid(
-                newCoords,
-                kindForSnapConfig(nodeSnapConfig(), {
-                  ctrl: ev.ctrlKey,
-                  shift: ev.shiftKey,
-                }),
-              );
+                // delta from where the drag started
+                const dx = ev.x - startX;
+                const dy = ev.y - startY;
 
-              setNodes(
-                (node) => node.id == dragNode.id,
-                (node) => ({
-                  ...node,
-                  coords: snapped,
-                }),
-              );
-            } else if (panning()) {
-              containerRef.focus();
+                const [ox, oy] = [x + dx, y + dy];
 
-              // delta from where the drag started
-              const [startX, startY] = dragStartPos();
-              const dx = ev.x - startX;
-              const dy = ev.y - startY;
+                // convert offset from screen -> world -> snap -> back to screen
+                const zoom = canvas.zoom;
+                const worldOffset: Coords = [ox / zoom, oy / zoom];
+                const snappedWorldOffset = coordsSnapToGrid(
+                  worldOffset,
+                  kindForSnapConfig(config.snapping.canvas, {
+                    ctrl: ev.ctrlKey,
+                    shift: ev.shiftKey,
+                  }),
+                );
+                const newOffset: Coords = [
+                  snappedWorldOffset[0] * zoom,
+                  snappedWorldOffset[1] * zoom,
+                ];
 
-              const [x, y] = panning()!;
-              const [ox, oy] = [x + dx, y + dy];
+                setCanvas("offset", newOffset);
+              },
+              zoom: () => {
+                containerRef.focus();
 
-              // convert offset from screen -> world -> snap -> back to screen
-              const worldOffset: Coords = [ox / zoom(), oy / zoom()];
-              const snappedWorldOffset = coordsSnapToGrid(
-                worldOffset,
-                kindForSnapConfig(panSnapConfig(), {
-                  ctrl: ev.ctrlKey,
-                  shift: ev.shiftKey,
-                }),
-              );
-              const newOffset: Coords = [
-                snappedWorldOffset[0] * zoom(),
-                snappedWorldOffset[1] * zoom(),
-              ];
+                const dy = ev.y - startY;
 
-              setOriginOffset(newOffset);
-            }
+                const rect = containerRef.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+
+                handleZoom(
+                  dy * -0.25,
+                  ev.ctrlKey ? [centerX, centerY] : [startX, startY],
+                );
+              },
+            })(dragging.mode);
           }}
           onMouseUp={() => {
-            setPanning(null);
-            setDraggingNode(null);
-            setDragZoom(false);
+            setDraggingState(null);
           }}
           onMouseEnter={() => {
-            setMouseInside(true);
+            setCanvas("mouseInside", true);
           }}
           onMouseLeave={() => {
-            setMouseInside(false);
-            setPanning(null);
-            setDraggingNode(null);
-            setDragZoom(false);
+            setCanvas("mouseInside", false);
+
+            setDraggingState(null);
           }}
         >
           <RenderGrid
             size={containerSize}
-            originOffset={originOffset}
-            gridStyle={gridStyle}
-            zoom={zoom}
+            offset={() => canvas.offset}
+            gridStyle={() => config.gridStyle}
+            zoom={() => canvas.zoom}
           />
 
-          <Show when={dragZoom()}>
+          <Show when={DraggingStateMode.$is("zoom")(draggingState()?.mode)}>
             {(() => {
               const rect = containerRef.getBoundingClientRect();
               return (
@@ -513,8 +559,8 @@ const NodeGraphTest: VoidComponent = () => {
                   class="absolute"
                   style={{
                     transform: `translate(
-                      ${dragStartPos()[0] - rect.left - 8}px,
-                      ${dragStartPos()[1] - rect.top - 8}px
+                      ${draggingState()!.startPos[0] - rect.left - 8}px,
+                      ${draggingState()!.startPos[1] - rect.top - 8}px
                     )`,
                   }}
                   width="16"
@@ -547,10 +593,10 @@ const NodeGraphTest: VoidComponent = () => {
             style={{
               transform: `
                 translate(
-                  ${originOffset()[0]}px,
-                  ${originOffset()[1]}px
+                  ${canvas.offset[0]}px,
+                  ${canvas.offset[1]}px
                 )
-                scale(${zoom()})
+                scale(${canvas.zoom})
               `,
               "transform-origin": "0 0",
             }}
@@ -570,18 +616,22 @@ const NodeGraphTest: VoidComponent = () => {
                         ),
                       );
                     }}
-                    snapNodeSizesToGrid={snapNodeSizesToGrid}
+                    snapNodeSizesToGrid={() => config.snapNodeSizesToGrid}
                     beginDragging={(ev) => {
-                      if (draggingNode() === null) {
-                        setDragStartPos([ev.x, ev.y]);
-                        setDraggingNode({ id: node.id, start: node.coords });
-                      }
+                      if (draggingState()) return;
+                      setDraggingState({
+                        startPos: [ev.x, ev.y],
+                        mode: DraggingStateMode.node({
+                          id: node.id,
+                          start: node.coords,
+                        }),
+                      });
                     }}
                     onHoverIn={({ titlebar }) => {
-                      setNodeHovered({ titlebar });
+                      setCanvas("nodeHovered", { titlebar });
                     }}
                     onHoverOut={() => {
-                      setNodeHovered(null);
+                      setCanvas("nodeHovered", null);
                     }}
                   />
                 );
@@ -593,14 +643,26 @@ const NodeGraphTest: VoidComponent = () => {
 
       <div class="h-7 border-t flex flex-row items-center px-1 gap-3 text-theme-deemphasis text-sm">
         {(() => {
-          const Hint: VoidComponent<{
-            hide?: any | undefined | null | false;
-            down: boolean;
-            keys: VoidComponent<{ down: boolean }>;
-            action: string;
-          }> = (props) => {
+          const Hint: VoidComponent<
+            {
+              down: boolean;
+              keys: VoidComponent<{ down: boolean }>;
+              action: string;
+            } & (
+              | {
+                  hide?: any | undefined | null | false;
+                  show?: never;
+                }
+              | {
+                  hide?: never;
+                  show?: any | undefined | null | false;
+                }
+            )
+          > = (props) => {
+            const show = (): boolean =>
+              (props.show ?? false) || !(props.hide ?? false);
             return (
-              <Show when={!(props.hide ?? false)}>
+              <Show when={show()}>
                 <div class="flex flex-row items-center gap-1 h-full">
                   <kbd class="flex flex-row gap-0.5 text-sm">
                     {props.keys({ down: props.down })}
@@ -631,19 +693,19 @@ const NodeGraphTest: VoidComponent = () => {
                 <Show when={!props.hide}>
                   <Hint
                     hide={props.config().shift === "disabled"}
-                    down={shiftDown() && !ctrlDown()}
+                    down={inputState.shift && !inputState.ctrl}
                     keys={(props) => <KeyboardKey.Shift down={props.down} />}
                     action={action(props.config().shift)}
                   />
                   <Hint
                     hide={props.config().ctrl === "disabled"}
-                    down={ctrlDown() && !shiftDown()}
+                    down={inputState.ctrl && !inputState.shift}
                     keys={(props) => <KeyboardKey.Ctrl down={props.down} />}
                     action={action(props.config().ctrl)}
                   />
                   <Hint
                     hide={props.config().ctrlShift === "disabled"}
-                    down={shiftDown() && ctrlDown()}
+                    down={inputState.shift && inputState.ctrl}
                     keys={(props) => (
                       <>
                         <KeyboardKey.Shift down={props.down} /> +{" "}
@@ -660,8 +722,13 @@ const NodeGraphTest: VoidComponent = () => {
           return (
             <>
               <Hint
-                hide={draggingNode() || dragZoom() || nodeHovered()}
-                down={panning() !== null}
+                hide={
+                  canvas.nodeHovered !== null ||
+                  (draggingState() !== null
+                    ? !DraggingStateMode.$is("canvas")(draggingState()?.mode)
+                    : false)
+                }
+                down={DraggingStateMode.$is("canvas")(draggingState()?.mode)}
                 keys={(props) => (
                   <>
                     <KeyboardKey.Space down={props.down} />+{" "}
@@ -670,13 +737,21 @@ const NodeGraphTest: VoidComponent = () => {
                     <MouseButton kind="middle" down={props.down} />
                   </>
                 )}
-                action="Pan view"
+                action="Pan"
               />
-              <SnapConfigHints hide={!panning()} config={panSnapConfig} />
+              <SnapConfigHints
+                hide={!DraggingStateMode.$is("canvas")(draggingState()?.mode)}
+                config={() => config.snapping.canvas}
+              />
 
               <Hint
-                hide={panning() || draggingNode() || nodeHovered()}
-                down={dragZoom()}
+                hide={
+                  canvas.nodeHovered !== null ||
+                  (draggingState() !== null
+                    ? !DraggingStateMode.$is("zoom")(draggingState()?.mode)
+                    : false)
+                }
+                down={DraggingStateMode.$is("zoom")(draggingState()?.mode)}
                 keys={(props) => (
                   <>
                     <MouseButton kind="right" down={props.down} /> +{" "}
@@ -687,12 +762,18 @@ const NodeGraphTest: VoidComponent = () => {
               />
 
               <Hint
-                hide={!nodeHovered()?.titlebar && !draggingNode()}
-                down={leftMouseButtonDown()}
+                hide={
+                  !canvas.nodeHovered?.titlebar &&
+                  !DraggingStateMode.$is("node")(draggingState()?.mode)
+                }
+                down={inputState.leftMouseButton}
                 keys={(props) => <MouseButton kind="left" down={props.down} />}
                 action="Move"
               />
-              <SnapConfigHints hide={!draggingNode()} config={nodeSnapConfig} />
+              <SnapConfigHints
+                hide={!DraggingStateMode.$is("node")(draggingState()?.mode)}
+                config={() => config.snapping.nodes}
+              />
             </>
           );
         })()}
@@ -822,7 +903,7 @@ const GridStyleNames: Record<GridStyle, string> = {
 const RenderGrid: VoidComponent<{
   style?: JSX.CSSProperties;
   size: () => ElementSize;
-  originOffset: () => Coords;
+  offset: () => Coords;
   zoom: () => number;
   gridStyle: () => GridStyle;
 }> = (props) => {
@@ -918,7 +999,7 @@ const RenderGrid: VoidComponent<{
     const size = props.size();
     const styles = getComputedStyle(canvasRef);
 
-    const originOffset = props.originOffset();
+    const originOffset = props.offset();
     const borderColor = styles.getPropertyValue("--theme-border");
 
     const zoom = props.zoom();
@@ -941,21 +1022,16 @@ const RenderGrid: VoidComponent<{
   );
 };
 
+// @TODO: reset buttons
 const Settings: VoidComponent<{
   class?: string;
-  snapNodeSizesToGrid: Accessor<boolean>;
-  setSnapNodeSizesToGrid: Setter<boolean>;
-  gridStyle: Accessor<GridStyle>;
-  setGridStyle: Setter<GridStyle>;
-  panSnapConfig: Accessor<SnapConfig>;
-  setPanSnapConfig: Setter<SnapConfig>;
-  nodeSnapConfig: Accessor<SnapConfig>;
-  setNodeSnapConfig: Setter<SnapConfig>;
+  config: Config;
+  setConfig: SetStoreFunction<Config>;
 }> = (props) => {
   const SnapConfig: VoidComponent<{
     label: string;
     snapConfig: Accessor<SnapConfig>;
-    setSnapConfig: Setter<SnapConfig>;
+    setSnapConfig: UpdateFn<SnapConfig>;
   }> = (props) => {
     const KindSelect: VoidComponent<{
       label: string;
@@ -1038,8 +1114,8 @@ const Settings: VoidComponent<{
 
       <Switch
         class="flex items-center gap-1 w-full"
-        checked={props.snapNodeSizesToGrid()}
-        onChange={() => props.setSnapNodeSizesToGrid((b) => !b)}
+        checked={props.config.snapNodeSizesToGrid}
+        onChange={() => props.setConfig("snapNodeSizesToGrid", (b) => !b)}
       >
         <Switch.Label class="mr-auto">Snap node sizes to grid</Switch.Label>
 
@@ -1050,10 +1126,12 @@ const Settings: VoidComponent<{
 
       <Select<GridStyle>
         class="flex items-center gap-1 w-full"
-        value={props.gridStyle()}
-        onChange={(s) => props.setGridStyle(s ?? "grid_lines")}
+        value={props.config.gridStyle}
+        onChange={(s) =>
+          props.setConfig("gridStyle", s ?? ConfigDefault.gridStyle)
+        }
         options={[...GridStyle]}
-        defaultValue={"grid_lines"}
+        defaultValue={ConfigDefault.gridStyle}
         itemComponent={(props) => (
           <Select.Item item={props.item}>
             {GridStyleNames[props.item.textValue]}
@@ -1072,14 +1150,14 @@ const Settings: VoidComponent<{
 
       <SnapConfig
         label="Pan snap settings"
-        snapConfig={props.panSnapConfig}
-        setSnapConfig={props.setPanSnapConfig}
+        snapConfig={() => props.config.snapping.canvas}
+        setSnapConfig={(fn) => props.setConfig("snapping", "canvas", fn)}
       />
 
       <SnapConfig
         label="Node snap settings"
-        snapConfig={props.nodeSnapConfig}
-        setSnapConfig={props.setNodeSnapConfig}
+        snapConfig={() => props.config.snapping.nodes}
+        setSnapConfig={(fn) => props.setConfig("snapping", "nodes", fn)}
       />
     </div>
   );
