@@ -6,28 +6,30 @@ import {
   VoidComponent,
   createEffect,
   createSignal,
+  batch,
 } from "solid-js";
 import { createStore, produce, SetStoreFunction } from "solid-js/store";
 import { makePersisted } from "@solid-primitives/storage";
 import { DocumentEventListener } from "@solid-primitives/event-listener";
+import { MapOption } from "solid-effect";
 
 import { Data, Match, Option, Order } from "effect";
 
 import cn from "~/lib/cn";
 import UUID from "~/lib/UUID";
 import { createElementSize, ElementSize } from "~/lib/createElementSize";
+import UpdateFn from "~/lib/UpdateFn";
 
 import { ColorKind } from "~/ui/Theme";
 
 import Icon from "~/ui/components/Icon";
 import Button from "~/ui/components/Button";
-import Switch from "./ui/components/Switch";
-import Select from "./ui/components/Select";
-import Collapsible from "./ui/components/Collapsible";
-import Label from "./ui/components/Label";
-import KeyboardKey from "./ui/components/KeyboardKey";
-import MouseButton from "./ui/components/MouseButton";
-import UpdateFn from "./lib/UpdateFn";
+import Switch from "~/ui/components/Switch";
+import Select from "~/ui/components/Select";
+import Collapsible from "~/ui/components/Collapsible";
+import Label from "~/ui/components/Label";
+import KeyboardKey from "~/ui/components/KeyboardKey";
+import MouseButton from "~/ui/components/MouseButton";
 
 const GridSize = 10;
 
@@ -41,20 +43,18 @@ type Coords = [number, number];
 const SnapKind = ["none", "1s", "5s", "disabled"] as const;
 type SnapKind = (typeof SnapKind)[number];
 
-const coordsSnapToGrid = ([x, y]: Coords, kind: SnapKind): Coords =>
+const snapKindToNumber = (kind: SnapKind): number =>
   Match.value(kind).pipe(
-    Match.withReturnType<Coords>(),
-    Match.whenOr("none", "disabled", () => [x, y]),
-    Match.when("1s", () => [
-      Math.round(x / GridSize) * GridSize,
-      Math.round(y / GridSize) * GridSize,
-    ]),
-    Match.when("5s", () => [
-      Math.round(x / (GridSize * 5)) * GridSize * 5,
-      Math.round(y / (GridSize * 5)) * GridSize * 5,
-    ]),
+    Match.whenOr("none", "disabled", () => 1),
+    Match.when("1s", () => GridSize),
+    Match.when("5s", () => GridSize * 5),
     Match.exhaustive,
   );
+
+const coordsSnapToGrid = ([x, y]: Coords, snapTo: number): Coords => [
+  Math.round(x / snapTo) * snapTo,
+  Math.round(y / snapTo) * snapTo,
+];
 
 type SnapConfig = {
   default: SnapKind;
@@ -181,15 +181,31 @@ const ConfigDefault: Config = {
 
 type DraggingStateMode = Data.TaggedEnum<{
   node: {
-    start: Coords;
-    id: UUID;
+    nodes: {
+      start: Coords;
+      id: UUID;
+    }[];
   };
   canvas: {
     start: Coords;
   };
   zoom: {};
+  selection: {
+    start: Coords;
+    end: Coords;
+  };
 }>;
 const DraggingStateMode = Data.taggedEnum<DraggingStateMode>();
+
+const TaggedEnumAs = <E extends { _tag: string }, T extends E["_tag"]>(
+  tag: T,
+): ((taggedEnum: unknown) => Option.Option<Data.TaggedEnum.Value<E, T>>) => {
+  return (taggedEnum) => {
+    if (!!taggedEnum && (taggedEnum as any)._tag === tag)
+      return Option.some(taggedEnum as Data.TaggedEnum.Value<E, T>);
+    return Option.none();
+  };
+};
 
 type DraggingState = {
   startPos: Coords;
@@ -259,7 +275,23 @@ const NodeGraphTest: VoidComponent = () => {
       content: () => "some content",
       coords: [220, 120],
     }),
+    Node({
+      title: "test 1",
+      color: "green",
+      content: () => "some content",
+      coords: [320, 220],
+    }),
+    Node({
+      title: "test 2",
+      color: "green",
+      content: () => "some content",
+      coords: [420, 220],
+    }),
   ]);
+
+  const [nodeSizes, setNodeSizes] = createStore<Record<UUID, ElementSize>>({});
+
+  const [selectedNodes, setSelectedNodes] = createStore<UUID[]>([]);
 
   const [containerSize, setContainerSizeRef] = createElementSize();
   let containerRef!: HTMLDivElement;
@@ -393,6 +425,36 @@ const NodeGraphTest: VoidComponent = () => {
               </div>
 
               <pre>nodeHovered: {JSON.stringify(canvas.nodeHovered)}</pre>
+
+              <pre>
+                Selected Nodes: [
+                <For each={selectedNodes}>
+                  {(id, idx) => {
+                    const name = nodes.find((node) => node.id === id)!.title;
+                    const [x, y] = nodes.find((node) => node.id === id)!.coords;
+                    const { width, height } = nodeSizes[id];
+
+                    return (
+                      <>
+                        <Show when={idx() === 0}>
+                          <br />
+                        </Show>
+                        {"    "}"{name}" -- {id}
+                        <br />
+                        {"    "}
+                        {"    "}
+                        coords: [{x.toFixed(2)}, {y.toFixed(2)}]
+                        <br />
+                        {"    "}
+                        {"    "}
+                        size: [{width.toFixed(2)}, {height.toFixed(2)}]
+                        <br />
+                      </>
+                    );
+                  }}
+                </For>
+                ]
+              </pre>
             </div>
           </div>
         </Show>
@@ -412,6 +474,7 @@ const NodeGraphTest: VoidComponent = () => {
                   canvas: () => "cursor-grabbing",
                   node: () => "cursor-move",
                   zoom: () => "cursor-ns-resize",
+                  selection: () => "",
                 })(dragging.mode),
               ),
               Option.getOrUndefined,
@@ -456,6 +519,20 @@ const NodeGraphTest: VoidComponent = () => {
                 startPos: [ev.x, ev.y],
                 mode: DraggingStateMode.canvas({ start: canvas.offset }),
               });
+            } else if (ev.button === leftButton) {
+              batch(() => {
+                setSelectedNodes([]);
+                containerRef.focus();
+
+                const coords: Coords = [ev.x, ev.y];
+                setDraggingState({
+                  startPos: coords,
+                  mode: DraggingStateMode.selection({
+                    start: coords,
+                    end: coords,
+                  }),
+                });
+              });
             }
           }}
           onMouseMove={(ev) => {
@@ -467,28 +544,38 @@ const NodeGraphTest: VoidComponent = () => {
             const [startX, startY] = dragging.startPos;
 
             DraggingStateMode.$match({
-              node: ({ start: [x, y], id }) => {
-                // delta from where the drag started, adjusted to the zoom factor
-                const dx = (ev.x - startX) / canvas.zoom;
-                const dy = (ev.y - startY) / canvas.zoom;
+              node: ({ nodes }) => {
+                batch(() => {
+                  for (const node of nodes) {
+                    const [x, y] = node.start;
+                    const id = node.id;
 
-                const newCoords: Coords = [x + dx, y + dy];
+                    // delta from where the drag started,
+                    // adjusted to the zoom factor
+                    const dx = (ev.x - startX) / canvas.zoom;
+                    const dy = (ev.y - startY) / canvas.zoom;
 
-                const snapped = coordsSnapToGrid(
-                  newCoords,
-                  kindForSnapConfig(config.snapping.nodes, {
-                    ctrl: ev.ctrlKey,
-                    shift: ev.shiftKey,
-                  }),
-                );
+                    const newCoords: Coords = [x + dx, y + dy];
 
-                setNodes(
-                  (node) => node.id == id,
-                  (node) => ({
-                    ...node,
-                    coords: snapped,
-                  }),
-                );
+                    const snapped = coordsSnapToGrid(
+                      newCoords,
+                      snapKindToNumber(
+                        kindForSnapConfig(config.snapping.nodes, {
+                          ctrl: ev.ctrlKey,
+                          shift: ev.shiftKey,
+                        }),
+                      ),
+                    );
+
+                    setNodes(
+                      (node) => node.id == id,
+                      (node) => ({
+                        ...node,
+                        coords: snapped,
+                      }),
+                    );
+                  }
+                });
               },
               canvas: ({ start: [x, y] }) => {
                 containerRef.focus();
@@ -504,10 +591,12 @@ const NodeGraphTest: VoidComponent = () => {
                 const worldOffset: Coords = [ox / zoom, oy / zoom];
                 const snappedWorldOffset = coordsSnapToGrid(
                   worldOffset,
-                  kindForSnapConfig(config.snapping.canvas, {
-                    ctrl: ev.ctrlKey,
-                    shift: ev.shiftKey,
-                  }),
+                  snapKindToNumber(
+                    kindForSnapConfig(config.snapping.canvas, {
+                      ctrl: ev.ctrlKey,
+                      shift: ev.shiftKey,
+                    }),
+                  ),
                 );
                 const newOffset: Coords = [
                   snappedWorldOffset[0] * zoom,
@@ -530,6 +619,115 @@ const NodeGraphTest: VoidComponent = () => {
                   ev.ctrlKey ? [centerX, centerY] : [startX, startY],
                 );
               },
+              selection: (selection) => {
+                const end: Coords = [ev.x, ev.y];
+                setDraggingState({
+                  startPos: [startX, startY],
+                  mode: DraggingStateMode.selection({
+                    start: selection.start,
+                    end,
+                  }),
+                });
+
+                const updateSelection = async (): Promise<void> => {
+                  const inSelection: UUID[] = [];
+
+                  for (const node of nodes) {
+                    const size = nodeSizes[node.id];
+                    if (!size) continue;
+
+                    const rect = containerRef.getBoundingClientRect();
+
+                    // convert node coords to screen space
+                    const normalizedLeftX =
+                      node.coords[0] + canvas.offset[0] / canvas.zoom;
+                    const normalizedTopY =
+                      node.coords[1] + canvas.offset[1] / canvas.zoom;
+
+                    const normalizedRightX =
+                      node.coords[0] +
+                      size.width +
+                      canvas.offset[0] / canvas.zoom;
+                    const normalizedBottomY =
+                      node.coords[1] +
+                      size.height +
+                      canvas.offset[1] / canvas.zoom;
+
+                    // get selection start and end in screen coords
+                    const selectionStartX =
+                      (selection.start[0] - rect.left) / canvas.zoom;
+                    const selectionStartY =
+                      (selection.start[1] - rect.top) / canvas.zoom;
+
+                    const selectionEndX =
+                      (selection.end[0] - rect.left) / canvas.zoom;
+                    const selectionEndY =
+                      (selection.end[1] - rect.top) / canvas.zoom;
+
+                    // get selection start and end normalized regardless of
+                    // start and end direction
+                    const normalizedSelectionStartX =
+                      selectionStartX < selectionEndX
+                        ? selectionStartX
+                        : selectionEndX;
+                    const normalizedSelectionEndX =
+                      selectionEndX < selectionStartX
+                        ? selectionStartX
+                        : selectionEndX;
+
+                    const normalizedSelectionStartY =
+                      selectionStartY < selectionEndY
+                        ? selectionStartY
+                        : selectionEndY;
+                    const normalizedSelectionEndY =
+                      selectionEndY < selectionStartY
+                        ? selectionStartY
+                        : selectionEndY;
+
+                    // check each edge
+                    const inLeftX =
+                      normalizedLeftX > normalizedSelectionStartX &&
+                      normalizedLeftX < normalizedSelectionEndX;
+
+                    const inTopY =
+                      normalizedTopY > normalizedSelectionStartY &&
+                      normalizedTopY < normalizedSelectionEndY;
+
+                    const inRightX =
+                      normalizedRightX > normalizedSelectionStartX &&
+                      normalizedRightX < normalizedSelectionEndX;
+
+                    const inBottomY =
+                      normalizedBottomY > normalizedSelectionStartY &&
+                      normalizedBottomY < normalizedSelectionEndY;
+
+                    // check each corner
+                    const inTopLeft = inLeftX && inTopY;
+                    const inTopRight = inRightX && inTopY;
+                    const inBottomLeft = inLeftX && inBottomY;
+                    const inBottomRight = inRightX && inBottomY;
+
+                    // maybe we could select if any part is inside the selection
+                    // but not sure how to do that without a lot of extra work
+
+                    // const select =
+                    //   inTopLeft || inTopRight || inBottomLeft || inBottomRight;
+                    // const select =
+                    //   inTopLeft && inTopRight && inBottomLeft && inBottomRight;
+                    const select =
+                      (inTopLeft && inTopRight) ||
+                      (inTopRight && inBottomRight) ||
+                      (inBottomRight && inBottomLeft) ||
+                      (inBottomLeft && inTopLeft);
+
+                    if (select) inSelection.push(node.id);
+                  }
+
+                  setSelectedNodes(inSelection);
+                };
+
+                updateSelection();
+              },
             })(dragging.mode);
           }}
           onMouseUp={() => {
@@ -539,9 +737,11 @@ const NodeGraphTest: VoidComponent = () => {
             setCanvas("mouseInside", true);
           }}
           onMouseLeave={() => {
-            setCanvas("mouseInside", false);
+            batch(() => {
+              setCanvas("mouseInside", false);
 
-            setDraggingState(null);
+              setDraggingState(null);
+            });
           }}
         >
           <RenderGrid
@@ -550,6 +750,55 @@ const NodeGraphTest: VoidComponent = () => {
             gridStyle={() => config.gridStyle}
             zoom={() => canvas.zoom}
           />
+
+          <MapOption
+            on={TaggedEnumAs<DraggingStateMode, "selection">("selection")(
+              draggingState()?.mode,
+            )}
+          >
+            {(selection) => {
+              const rect = containerRef.getBoundingClientRect();
+
+              const start = (): Coords => draggingState()!.startPos;
+
+              const coords = (): {
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+              } => {
+                const [startX, startY] = start();
+                const [endX, endY] = selection().end;
+
+                const [x, width] =
+                  startX < endX
+                    ? [startX - rect.left, endX - startX]
+                    : [endX - rect.left, startX - endX];
+                const [y, height] =
+                  startY < endY
+                    ? [startY - rect.top, endY - startY]
+                    : [endY - rect.top, startY - endY];
+
+                return { x, y, width, height };
+              };
+
+              return (
+                <div
+                  class="absolute z-20 bg-theme-colors-aqua-background/20 border-theme-colors-aqua-border border-2"
+                  style={{
+                    transform: `
+                      translate(
+                        ${coords().x}px,
+                        ${coords().y}px
+                      )
+                    `,
+                    width: `${coords().width}px`,
+                    height: `${coords().height}px`,
+                  }}
+                />
+              );
+            }}
+          </MapOption>
 
           <Show when={DraggingStateMode.$is("zoom")(draggingState()?.mode)}>
             {(() => {
@@ -608,25 +857,66 @@ const NodeGraphTest: VoidComponent = () => {
                 return (
                   <RenderNode
                     node={node}
-                    onTouch={() => {
-                      // move the touched item last so it will render on top
-                      setNodes(
-                        produce((items) =>
-                          items.push(items.splice(idx(), 1)[0]),
-                        ),
-                      );
-                    }}
+                    selected={() => selectedNodes.includes(node.id)}
                     snapNodeSizesToGrid={() => config.snapNodeSizesToGrid}
-                    beginDragging={(ev) => {
-                      if (draggingState()) return;
-                      setDraggingState({
-                        startPos: [ev.x, ev.y],
-                        mode: DraggingStateMode.node({
-                          id: node.id,
-                          start: node.coords,
-                        }),
-                      });
+                    beginDragging={(ev) =>
+                      batch(() => {
+                        if (draggingState()) return;
+
+                        if (
+                          selectedNodes.length > 0 &&
+                          selectedNodes.includes(node.id)
+                        ) {
+                          setDraggingState({
+                            startPos: [ev.x, ev.y],
+                            mode: DraggingStateMode.node({
+                              nodes: selectedNodes.map((id) => ({
+                                id,
+                                start: nodes.find((node) => node.id === id)!
+                                  .coords,
+                              })),
+                            }),
+                          });
+                        } else {
+                          setSelectedNodes([node.id]);
+                          setDraggingState({
+                            startPos: [ev.x, ev.y],
+                            mode: DraggingStateMode.node({
+                              nodes: [
+                                {
+                                  id: node.id,
+                                  start: node.coords,
+                                },
+                              ],
+                            }),
+                          });
+                        }
+                      })
+                    }
+                    sized={(size) => {
+                      setNodeSizes((sizes) => ({
+                        ...sizes,
+                        [node.id]: size,
+                      }));
                     }}
+                    onMouseDown={(ev) =>
+                      batch(() => {
+                        // move the touched item last so it will render on top
+                        setNodes(
+                          produce((items) =>
+                            items.push(items.splice(idx(), 1)[0]),
+                          ),
+                        );
+
+                        if (draggingState() !== null) return;
+
+                        if (ev.ctrlKey) {
+                          setSelectedNodes((nodes) => [...nodes, node.id]);
+                        } else {
+                          setSelectedNodes([node.id]);
+                        }
+                      })
+                    }
                     onHoverIn={({ titlebar }) => {
                       setCanvas("nodeHovered", { titlebar });
                     }}
@@ -731,7 +1021,7 @@ const NodeGraphTest: VoidComponent = () => {
                 down={DraggingStateMode.$is("canvas")(draggingState()?.mode)}
                 keys={(props) => (
                   <>
-                    <KeyboardKey.Space down={props.down} />+{" "}
+                    <KeyboardKey.Space down={props.down} /> +{" "}
                     <MouseButton kind="left" down={props.down} />
                     |
                     <MouseButton kind="middle" down={props.down} />
@@ -760,11 +1050,27 @@ const NodeGraphTest: VoidComponent = () => {
                 )}
                 action="Zoom"
               />
+              <Hint
+                hide={
+                  canvas.nodeHovered !== null ||
+                  (draggingState() !== null
+                    ? !DraggingStateMode.$is("selection")(draggingState()?.mode)
+                    : false)
+                }
+                down={DraggingStateMode.$is("selection")(draggingState()?.mode)}
+                keys={(props) => (
+                  <>
+                    <MouseButton kind="left" down={props.down} />
+                  </>
+                )}
+                action="Select"
+              />
 
               <Hint
                 hide={
-                  !canvas.nodeHovered?.titlebar &&
-                  !DraggingStateMode.$is("node")(draggingState()?.mode)
+                  (!canvas.nodeHovered?.titlebar &&
+                    !DraggingStateMode.$is("node")(draggingState()?.mode)) ||
+                  DraggingStateMode.$is("selection")(draggingState()?.mode)
                 }
                 down={inputState.leftMouseButton}
                 keys={(props) => <MouseButton kind="left" down={props.down} />}
@@ -784,9 +1090,11 @@ const NodeGraphTest: VoidComponent = () => {
 
 const RenderNode: VoidComponent<{
   node: Node;
-  onTouch: () => void;
+  selected: () => boolean;
   snapNodeSizesToGrid: () => boolean;
   beginDragging: (ev: MouseEvent) => void;
+  sized: (size: ElementSize) => void;
+  onMouseDown: (ev: MouseEvent) => void;
   onHoverIn: (opts: { titlebar: boolean }) => void;
   onHoverOut: () => void;
 }> = (props) => {
@@ -804,11 +1112,19 @@ const RenderNode: VoidComponent<{
   const snappedWidth = (): string => snapSize(size().width);
   const snappedHeight = (): string => snapSize(size().height);
 
+  // inform parent of size whenever set
+  createEffect(() => {
+    props.sized(size());
+  });
+
   return (
     <div
       ref={setSizeRef}
       tabIndex="0"
-      class="absolute border rounded-sm bg-theme-background/75 max-w-80 inline-flex flex-col box-border drop-shadow-xl -outline-offset-2 focus:outline-1 cursor-default"
+      class={cn(
+        "absolute border rounded-sm bg-theme-background/75 max-w-80 inline-flex flex-col box-border drop-shadow-xl outline-offset-0 focus:outline-1 cursor-default",
+        props.selected() && "outline-1",
+      )}
       style={{
         transform: `translate(
           ${props.node.coords[0]}px,
@@ -823,7 +1139,7 @@ const RenderNode: VoidComponent<{
       }}
       onMouseDown={(ev) => {
         ev.stopPropagation();
-        props.onTouch();
+        props.onMouseDown(ev);
       }}
       onMouseEnter={() => {
         props.onHoverIn({ titlebar: false });
