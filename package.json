@@ -8,12 +8,10 @@
     "lint": "turbo run lint",
     "lint:watch": "turbo run lint:watch",
     "test": "turbo run test",
-    "test:watch": "turbo run test:watch",
-    "env": "env"
+    "test:watch": "turbo run test:watch"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.2.0",
-    "depcheck": "^1.4.7",
     "prettier": "^3.6.2",
     "turbo": "^2.5.7",
     "typescript": "^5.9.2"

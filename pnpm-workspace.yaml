@@ -1,9 +1,12 @@
 packages:
-  - app/theme
-  - app/ui
   - native
+  - ui/app
+  - ui/theme
+
+minimumReleaseAge: 1440
 
 onlyBuiltDependencies:
   - "@tailwindcss/oxide"
   - electron
+  - electron-winstaller
   - esbuild

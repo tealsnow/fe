@@ -54,6 +54,12 @@
               pango
               udev
 
+              #- packaging
+              zip
+              # flatpak
+              # flatpak-builder
+              # elfutils
+
               #- rust
               rustc
               cargo
@@ -93,6 +99,8 @@
 
             export GIT_ROOT=$(git rev-parse --show-toplevel)
             export PATH="$GIT_ROOT/node_modules/.bin:$PATH"
+
+            # flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           '';
         };
       }

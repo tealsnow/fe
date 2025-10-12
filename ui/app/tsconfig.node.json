@@ -1,0 +1,16 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": [
+    "vite.*.config.ts",
+    "forge.config.ts",
+    "forge.env.d.ts",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "plugins/**/*"
+  ],
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "composite": true
+  }
+}
