@@ -16,7 +16,7 @@ import * as Panels from "~/ui/Panels";
 
 import Dbg from "~/Dbg";
 
-import NodeGraphTest from "~/NodeGraphTest";
+import NodeGraph from "~/NodeGraph";
 import CommandPaletteTest from "~/CommandPaletteTest";
 import TextEditingTest from "~/TextEditingTest";
 
@@ -77,7 +77,7 @@ const Root: Component = () => {
             panelCtx.createLeaf({
               title: "node graph",
               tooltip: "node graph test",
-              render: () => <NodeGraphTest />,
+              render: () => <NodeGraph />,
             }),
             panelCtx.createLeaf({
               title: "text editing",
