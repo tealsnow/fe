@@ -60,7 +60,7 @@ pre {
 }
 
 @utility electron-corner-smoothing-* {
-  -electron-corner-smoothing: var(--value([*]));
+  -electron-corner-smoothing: --value([*]);
 }
 
 hr {

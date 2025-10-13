@@ -1,11 +1,7 @@
 import path from "path";
 import fs from "fs";
-import type { Plugin } from "vite";
+import type { Plugin, Rollup } from "vite";
 import * as morph from "ts-morph";
-
-import { createLogger } from "./lib/logger";
-
-const logger = createLogger("generateIcons");
 
 export type Options = {
   svgDir: string;
@@ -19,14 +15,14 @@ export default function generateIconsPlugin(opts: Options): Plugin {
   return {
     name: "generateIcons",
     buildStart() {
-      logger.info("running plugin");
+      this.info("running plugin");
 
       if (!fs.existsSync(opts.svgDir)) {
-        logger.error(`svg dir does not exist "${opts.svgDir}"`);
+        this.error(`svg dir does not exist "${opts.svgDir}"`);
         return;
       }
       if (!fs.existsSync(opts.outDir)) {
-        logger.error(`output dir does not exist "${opts.outDir}"`);
+        this.error(`output dir does not exist "${opts.outDir}"`);
         return;
       }
 
@@ -37,25 +33,27 @@ export default function generateIconsPlugin(opts: Options): Plugin {
           return path.join(root, "tsconfig.json");
         })();
 
-      generateIcons({
+      generateIcons(this, {
         ...opts,
         tsConfigPath: tsconfigPath,
       });
+
+      if (process.env.NODE_ENV !== "development") return;
 
       if (!iconsDirWatcher) {
         try {
           iconsDirWatcher = fs.watch(opts.svgDir, (eventType, _filename) => {
             if (eventType === "rename") {
-              logger.info("svg directory changed, regenerating...");
-              generateIcons({
+              this.info("svg directory changed, regenerating...");
+              generateIcons(this, {
                 ...opts,
                 tsConfigPath: tsconfigPath,
               });
             }
           });
-          logger.info(`watching svg directory: ${opts.svgDir}`);
+          this.info(`watching svg directory: ${opts.svgDir}`);
         } catch (error) {
-          logger.error(`failed to watch svg directory: ${error}`);
+          this.error(`failed to watch svg directory: ${error}`);
         }
       }
     },
@@ -75,15 +73,26 @@ const snakeToCapitalCamelCase = (snakeCaseString: string): string =>
     .join("");
 
 const generateIcons = (
+  ctx: Rollup.PluginContext,
   opts: Omit<Options, "tsconfigPath"> & { tsConfigPath: string },
 ): void => {
+  // fs.readdir(opts.outDir, (err, files) => {
+  //   if (err) throw err;
+
+  //   for (const file of files) {
+  //     fs.unlink(path.join(opts.outDir, file), (err) => {
+  //       if (err) throw err;
+  //     });
+  //   }
+  // });
+
   const iconNames: string[] = [];
   fs.readdirSync(opts.svgDir).forEach((strPath) => {
     const p = path.parse(strPath);
     if (p.ext === ".svg") {
       iconNames.push(p.name);
     } else {
-      logger.warn(`non-svg icon in icons dir ('${opts.svgDir}'): '${strPath}'`);
+      ctx.warn(`non-svg icon in icons dir ('${opts.svgDir}'): '${strPath}'`);
     }
   });
 

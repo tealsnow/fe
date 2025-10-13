@@ -56,9 +56,9 @@
 
               #- packaging
               zip
-              # flatpak
-              # flatpak-builder
-              # elfutils
+              flatpak
+              flatpak-builder
+              elfutils
 
               #- rust
               rustc
@@ -89,6 +89,7 @@
                 libgbm
               ]
             );
+            # shouldn't need this for electron 38
             ELECTRON_OZONE_PLATFORM_HINT = "auto";
 
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";

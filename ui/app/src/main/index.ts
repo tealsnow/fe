@@ -40,6 +40,11 @@ function createWindow(): void {
     transparent: true,
     frame: false,
   });
+  mainWindow.setTitle("Fe");
+
+  mainWindow.on("page-title-updated", (e) => {
+    e.preventDefault();
+  });
 
   mainWindow.on("ready-to-show", () => {
     mainWindow.show();
@@ -49,14 +54,6 @@ function createWindow(): void {
     shell.openExternal(details.url);
     return { action: "deny" };
   });
-
-  // // HMR for renderer base on electron-vite cli.
-  // // Load the remote URL for development or the local html file for production.
-  // if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-  //   mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-  // } else {
-  //   mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  // }
 
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -73,8 +70,8 @@ function createWindow(): void {
     });
 
   ipcMain.on("reload", () => {
-    // console.log("Reloading...");
-    // mainWindow.reload();
+    console.log("Reloading...");
+    mainWindow.reload();
   });
 
   ipcMain.on("get window/isMaximized", (event) => {
@@ -106,7 +103,9 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId("me.ketanr");
+  electronApp.setAppUserModelId("io.github.Fe");
+
+  app.setName("Fe");
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

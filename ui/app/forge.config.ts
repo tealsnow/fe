@@ -1,7 +1,7 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
-// import { MakerFlatpak } from "@electron-forge/maker-flatpak";
+import { MakerFlatpak } from "@electron-forge/maker-flatpak";
 // import { MakerDeb } from "@electron-forge/maker-deb";
 // import { MakerRpm } from "@electron-forge/maker-rpm";
 import { VitePlugin } from "@electron-forge/plugin-vite";
@@ -11,38 +11,66 @@ import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-nati
 
 import path from "path";
 import * as fs_extra from "fs-extra";
-import { dirname } from "path/win32";
-import { glob } from "glob";
+// import { glob } from "glob";
 
 const config: ForgeConfig = {
   packagerConfig: {
+    name: "fe",
     asar: true,
   },
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({}),
     new MakerZIP({}, ["darwin", "linux"]),
-    // new MakerFlatpak({
-    //   options: {
-    //     id: "me.ketanr.fe",
-    //     productName: "Fe",
-    //     description: "Fe description",
-    //     // branch:
-    //     // base:
-    //     // baseVersion:
-    //     // baseFlatpakref:
-    //     // runtime:
-    //     // runtimeVersion:
-    //     // sdk:
-    //     // finishArgs:
-    //     files: [],
-    //     // modules:
-    //     bin: "Fe",
-    //     // icon:
-    //     categories: ["Development"],
-    //     // mimeType:
-    //   },
-    // }),
+    new MakerFlatpak({
+      options: {
+        id: "io.github.Fe",
+        productName: "Fe",
+        description: "Fe description",
+        // branch:
+        base: "org.electronjs.Electron2.BaseApp",
+        baseVersion: "24.08",
+        // baseFlatpakref:
+        runtime: "org.freedesktop.Platform",
+        runtimeVersion: "24.08",
+        sdk: "org.freedesktop.Sdk",
+        finishArgs: [
+          // x11
+          "--share=ipc",
+          "--socket=fallback-x11",
+          // wayland
+          "--socket=wayland",
+          // gpu acceleration
+          "--device=dri",
+          // // network
+          // "--share=network",
+          // // local files
+          // "--filesystem=xdg-documents",
+          "--env=ELECTRON_TRASH=gio",
+          "--env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons",
+          "--socket=system-bus",
+        ],
+        files: [],
+        // modules:
+        modules: [
+          {
+            name: "zypak",
+            sources: [
+              {
+                type: "git",
+                url: "https://github.com/refi64/zypak",
+                tag: "v2025.09",
+              },
+            ],
+          },
+        ],
+        bin: "fe",
+        // icon: "assets/io.github.Fe.svg",
+        icon: "assets/io.github.Fe@512x512.png",
+        categories: ["Development"],
+        // mimeType:
+      },
+    }),
     // new MakerRpm({}),
     // new MakerDeb({}),
   ],

@@ -15,6 +15,15 @@
           ]
         }
       }
+    },
+    "vscode-css-language-server": {
+      "settings": {
+        "css": {
+          "lint": {
+            "unknownAtRules": "ignore"
+          }
+        }
+      }
     }
   },
   "languages": {
