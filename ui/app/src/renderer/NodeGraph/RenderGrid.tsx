@@ -1,5 +1,6 @@
-import { JSX, VoidComponent, createEffect } from "solid-js";
+import { VoidComponent, createEffect } from "solid-js";
 
+import cn from "~/lib/cn";
 import { ElementSize } from "~/lib/createElementSize";
 
 import { GridStyle, GridSize } from "./Config";
@@ -25,10 +26,10 @@ const drawGridLines: DrawGridFn = ({
 
   const scaledGrid = GridSize * zoom;
 
-  // verticals
   for (let kx = Math.ceil((0 - ox) / scaledGrid); ; kx++) {
     const x = Math.round(ox + kx * scaledGrid) + 0.5;
     if (x > size.width) break;
+
     const alpha = kx % 50 === 0 ? 0.8 : kx % 5 === 0 ? 0.5 : 0.2;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
@@ -37,10 +38,10 @@ const drawGridLines: DrawGridFn = ({
     ctx.stroke();
   }
 
-  // horizontals
   for (let ky = Math.ceil((0 - oy) / scaledGrid); ; ky++) {
     const y = Math.round(oy + ky * scaledGrid) + 0.5;
     if (y > size.height) break;
+
     const alpha = ky % 50 === 0 ? 0.8 : ky % 5 === 0 ? 0.5 : 0.2;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
@@ -101,11 +102,11 @@ const drawGrid: Record<GridStyle, DrawGridFn> = {
 };
 
 export const RenderGrid: VoidComponent<{
-  style?: JSX.CSSProperties;
+  class?: string;
+  gridStyle: () => GridStyle;
   size: () => ElementSize;
   offset: () => Coords;
   zoom: () => number;
-  gridStyle: () => GridStyle;
 }> = (props) => {
   let canvasRef!: HTMLCanvasElement;
 
@@ -119,25 +120,29 @@ export const RenderGrid: VoidComponent<{
         console.error("no canvas context");
         return;
       }
-      const size = props.size();
-      const styles = getComputedStyle(canvasRef);
 
-      const originOffset = props.offset();
-      const borderColor = styles.getPropertyValue("--theme-border");
+      createEffect(() => {
+        const size = props.size();
+        const originOffset = props.offset();
+        const zoom = props.zoom();
 
-      const zoom = props.zoom();
+        const styles = getComputedStyle(canvasRef);
+        const borderColor = styles.getPropertyValue("--theme-border");
 
-      ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
+        ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
 
-      drawFn({ ctx, borderColor, size, originOffset, zoom });
+        drawFn({ ctx, borderColor, size, originOffset, zoom });
+      });
     });
   });
 
   return (
     <canvas
       ref={canvasRef}
-      class="absolute left-0 right-0 top-0 bottom-0 pointer-events-none"
-      style={props.style}
+      class={cn(
+        "absolute left-0 right-0 top-0 bottom-0 pointer-events-none",
+        props.class,
+      )}
       width={props.size().width}
       height={props.size().height}
     >

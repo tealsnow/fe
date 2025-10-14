@@ -1,5 +1,14 @@
-import { For, Show, VoidComponent, createSignal, batch } from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import {
+  For,
+  Show,
+  VoidComponent,
+  createSignal,
+  batch,
+  createEffect,
+  onMount,
+  createMemo,
+} from "solid-js";
+import { createStore } from "solid-js/store";
 import { makePersisted } from "@solid-primitives/storage";
 import { DocumentEventListener } from "@solid-primitives/event-listener";
 import { MapOption } from "solid-effect";
@@ -30,38 +39,10 @@ import {
   snapKindToNumber,
   snapKindForConfig,
 } from "./coords";
-import { Node, RenderNode } from "./Node";
+import { Node, RenderNode, Input, Output, Connection, Socket } from "./Node";
 import { RenderGrid } from "./RenderGrid";
 
 import { InputContextProvider, useInputContext } from "./InputContextProvider";
-
-/* IO:
-
-store connections out of scope?
-node id -> Connection {
-  input id
-  output id
-}
-
-InputID :: struct {
-  node NodeID
-  id UUID
-}
-
-Node :: struct {
-  ...
-  inputs []InputID
-}
-
-Input :: struct {
-  type ...
-}
-
-Output :: struct {
-  type ...
-}
-
-*/
 
 /* Input (interaction):
 
@@ -95,6 +76,7 @@ A general outline of what to do:
   - provide some better heuristic for the current state/layer of input
   - maybe create an abstraction akin to the layer concept here
   - use this to provide good information to the user
+    and a high degree of configurability
 
 */
 
@@ -113,8 +95,22 @@ type DraggingStateMode = Data.TaggedEnum<{
     start: Coords;
     end: Coords;
   };
+  connection: {
+    end: Coords;
+    // startSocket will always be filled,
+    // then either from and to will be startSocket as well, depending on if its
+    // an input or output, the other will be filled if hovered
+    startSocket: Socket;
+    from: { node: UUID; socket: Output } | null;
+    to: { node: UUID; socket: Input } | null;
+  };
 }>;
 const DraggingStateMode = Data.taggedEnum<DraggingStateMode>();
+
+type DraggingConnection = Data.TaggedEnum.Value<
+  DraggingStateMode,
+  "connection"
+>;
 
 type DraggingState = {
   startPos: Coords;
@@ -166,34 +162,95 @@ const NodeGraphInner: VoidComponent<{}> = () => {
 
   // @NOTE: do not set anything inside of the node directly.
   //   it goes through a <For> and thus looses reactivity below the node level
-  const [nodes, setNodes] = createStore<Node[]>([
-    Node({
-      title: "some node",
-      color: "blue",
-      content: () => "some content",
-      coords: [20, 100],
-    }),
-    Node({
-      title: "another node",
-      color: "green",
-      content: () => "some content",
-      coords: [220, 120],
-    }),
-    Node({
-      title: "test 1",
-      color: "green",
-      content: () => "some content",
-      coords: [320, 220],
-    }),
-    Node({
-      title: "test 2",
-      color: "green",
-      content: () => "some content",
-      coords: [420, 220],
-    }),
+  const [nodes, setNodes] = createStore<Record<UUID, Node>>({});
+
+  const addNode = (node: Node): void => {
+    setNodes({
+      ...nodes,
+      [node.id]: node,
+    });
+  };
+  const addNodes = (...nodes: Node[]): void => {
+    batch(() => {
+      for (const node of nodes) addNode(node);
+    });
+  };
+
+  const socketById = createMemo(() => {
+    let map: Record<UUID, Socket> = {};
+    for (const node of Object.values(nodes)) {
+      for (const output of node.outputs) {
+        map = { ...map, [output.id]: output };
+      }
+      for (const input of node.inputs) {
+        map = { ...map, [input.id]: input };
+      }
+    }
+    return map;
+  });
+
+  const node42Id = UUID.make();
+  const out42Id = UUID.make();
+  const nodeAddId = UUID.make();
+  const inLeftAddId = UUID.make();
+
+  onMount(() => {
+    addNodes(
+      Node({
+        id: node42Id,
+        title: "is 42",
+        color: "blue",
+        coords: [80, 100],
+        outputs: [Output({ name: "42", id: out42Id })],
+      }),
+      Node({
+        title: "is 27",
+        color: "blue",
+        coords: [80, 180],
+        outputs: [Output({ name: "27" })],
+      }),
+      Node({
+        id: nodeAddId,
+        title: "add",
+        color: "green",
+        coords: [200, 120],
+        inputs: [
+          Input({ name: "left", id: inLeftAddId }),
+          Input({ name: "right" }),
+        ],
+        outputs: [Output({ name: "result" })],
+      }),
+      Node({
+        title: "print",
+        color: "purple",
+        coords: [320, 200],
+        inputs: [Input({ name: "value" })],
+      }),
+      // Node({
+      //   title: "test 2",
+      //   color: "green",
+      //   coords: [420, 220],
+      // }),
+    );
+  });
+
+  const [connections, setConnections] = createStore<Connection[]>([
+    {
+      from: { node: node42Id, socket: out42Id },
+      to: { node: nodeAddId, socket: inLeftAddId },
+    },
   ]);
 
   const [nodeSizes, setNodeSizes] = createStore<Record<UUID, ElementSize>>({});
+
+  const [socketRefs, setSocketRefs] = createStore<Record<UUID, HTMLDivElement>>(
+    {},
+  );
+
+  const [hoveredSocket, setHoveredSocket] = createSignal<{
+    node: UUID;
+    socket: UUID;
+  } | null>(null);
 
   const [selectedNodes, setSelectedNodes] = createStore<UUID[]>([]);
 
@@ -321,13 +378,10 @@ const NodeGraphInner: VoidComponent<{}> = () => {
               ),
             );
 
-            setNodes(
-              (node) => node.id == id,
-              (node) => ({
-                ...node,
-                coords: snapped,
-              }),
-            );
+            setNodes(id, (node) => ({
+              ...node,
+              coords: snapped,
+            }));
           }
         });
       },
@@ -386,7 +440,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
         const updateSelection = async (): Promise<void> => {
           const inSelection: UUID[] = [];
 
-          for (const node of nodes) {
+          for (const node of Object.values(nodes)) {
             const size = nodeSizes[node.id];
             if (!size) continue;
 
@@ -468,6 +522,38 @@ const NodeGraphInner: VoidComponent<{}> = () => {
 
         updateSelection();
       },
+      connection: (conn) => {
+        const hovered = Option.fromNullable(hoveredSocket()).pipe(
+          Option.flatMap(({ node, socket }) =>
+            Option.fromNullable({ node: node, socket: socketById()[socket]! }),
+          ),
+          Option.getOrNull,
+        );
+
+        const from =
+          conn.startSocket._tag === "Input" && hovered?.socket._tag === "Output"
+            ? { node: hovered.node, socket: hovered.socket as Output }
+            : conn.startSocket._tag === "Output"
+              ? conn.from
+              : null;
+        const to =
+          conn.startSocket._tag === "Output" && hovered?.socket._tag === "Input"
+            ? { node: hovered.node, socket: hovered.socket as Input }
+            : conn.startSocket._tag === "Input"
+              ? conn.to
+              : null;
+
+        const end: Coords = [ev.x, ev.y];
+        setDraggingState({
+          startPos: [startX, startY],
+          mode: DraggingStateMode.connection({
+            ...conn,
+            end,
+            from,
+            to,
+          }),
+        });
+      },
     })(dragging.mode);
   };
 
@@ -543,9 +629,10 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                 Selected Nodes: [
                 <For each={selectedNodes}>
                   {(id, idx) => {
-                    const name = nodes.find((node) => node.id === id)!.title;
-                    const [x, y] = nodes.find((node) => node.id === id)!.coords;
-                    const { width, height } = nodeSizes[id];
+                    const node = nodes[id]!;
+                    const name = node.title;
+                    const [x, y] = node.coords;
+                    const { width, height } = nodeSizes[id]!;
 
                     return (
                       <>
@@ -588,6 +675,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                   node: () => "cursor-move",
                   zoom: () => "cursor-ns-resize",
                   selection: () => "",
+                  connection: () => "",
                 })(dragging.mode),
               ),
               Option.getOrUndefined,
@@ -597,24 +685,72 @@ const NodeGraphInner: VoidComponent<{}> = () => {
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={() => {
+            const state = draggingState();
+            if (!state) return;
+
+            Match.value(state.mode).pipe(
+              Match.tag("connection", ({ from, to }) => {
+                if (from && to) {
+                  setConnections((conns) => [
+                    ...conns.filter((conn) => conn.to.socket !== to.socket.id),
+                    {
+                      from: {
+                        node: from.node,
+                        socket: from.socket.id,
+                      },
+                      to: {
+                        node: to.node,
+                        socket: to.socket.id,
+                      },
+                    },
+                  ]);
+                }
+              }),
+            );
+
             setDraggingState(null);
           }}
           onMouseEnter={() => {
             setCanvas("mouseInside", true);
           }}
-          onMouseLeave={() => {
+          onMouseLeave={() =>
             batch(() => {
               setCanvas("mouseInside", false);
 
               setDraggingState(null);
-            });
-          }}
+            })
+          }
         >
           <RenderGrid
+            class="z-0"
+            gridStyle={() => config.gridStyle}
             size={containerSize}
             offset={() => canvas.offset}
-            gridStyle={() => config.gridStyle}
             zoom={() => canvas.zoom}
+          />
+
+          <DrawConnections
+            class="z-10"
+            size={containerSize}
+            offset={() => canvas.offset}
+            zoom={() => canvas.zoom}
+            containerRef={containerRef}
+            nodes={nodes}
+            nodeSizes={nodeSizes}
+            // outputsById={outputsById}
+            // inputsById={inputsById}
+            socketRefs={socketRefs}
+            connections={connections}
+            draggingConnection={() => {
+              const state = draggingState();
+              return state !== null
+                ? Option.getOrNull(
+                    taggedEnumAs<DraggingStateMode, "connection">("connection")(
+                      state.mode,
+                    ),
+                  )
+                : null;
+            }}
           />
 
           <MapOption
@@ -704,7 +840,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
           </Show>
 
           <div
-            class={cn("absolute size-full overflow-visible z-10")}
+            class={cn("absolute size-full overflow-visible z-20")}
             style={{
               transform: `
                 translate(
@@ -718,8 +854,12 @@ const NodeGraphInner: VoidComponent<{}> = () => {
           >
             <div class="size-px bg-white absolute left-0 right-0" />
 
-            <For each={nodes}>
-              {(node, idx) => {
+            <For
+              each={Object.values(nodes).sort(
+                (a, b) => (a.lastTouchedTime ?? 0) - (b.lastTouchedTime ?? 0),
+              )}
+            >
+              {(node) => {
                 return (
                   <RenderNode
                     node={node}
@@ -738,8 +878,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                             mode: DraggingStateMode.node({
                               nodes: selectedNodes.map((id) => ({
                                 id,
-                                start: nodes.find((node) => node.id === id)!
-                                  .coords,
+                                start: nodes[id]!.coords,
                               })),
                             }),
                           });
@@ -759,20 +898,61 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                         }
                       })
                     }
+                    beginConnection={(id, ev) => {
+                      let socket = socketById()[id];
+                      if (!socket) {
+                        console.warn("socket not found");
+                        return;
+                      }
+
+                      if (socket._tag === "Input") {
+                        const existing = connections.find(
+                          (conn) => conn.to.socket === id,
+                        );
+                        if (existing)
+                          socket = socketById()[existing.from.socket]!;
+
+                        setConnections((conns) =>
+                          conns.filter(
+                            (conn) =>
+                              !(
+                                conn.from.socket === id || conn.to.socket === id
+                              ),
+                          ),
+                        );
+                      }
+
+                      const from = socket._tag === "Output" ? socket : null;
+                      const to = socket._tag === "Input" ? socket : null;
+
+                      setDraggingState({
+                        startPos: [ev.x, ev.y],
+                        mode: DraggingStateMode.connection({
+                          end: [ev.x, ev.y],
+                          startSocket: socket,
+                          from: from ? { node: node.id, socket: from } : null,
+                          to: to ? { node: node.id, socket: to } : null,
+                        }),
+                      });
+                    }}
                     sized={(size) => {
                       setNodeSizes((sizes) => ({
                         ...sizes,
                         [node.id]: size,
                       }));
                     }}
+                    socketRef={(id, ref) => {
+                      setSocketRefs((refs) => ({
+                        ...refs,
+                        [id]: ref,
+                      }));
+                    }}
                     onMouseDown={(ev) =>
                       batch(() => {
-                        // move the touched item last so it will render on top
-                        setNodes(
-                          produce((items) =>
-                            items.push(items.splice(idx(), 1)[0]),
-                          ),
-                        );
+                        setNodes(node.id, (node) => ({
+                          ...node,
+                          lastTouchedTime: Date.now(),
+                        }));
 
                         if (draggingState() !== null) return;
 
@@ -783,11 +963,13 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                         }
                       })
                     }
-                    onHoverIn={({ titlebar }) => {
-                      setCanvas("nodeHovered", { titlebar });
+                    onHoverChange={(opts) => {
+                      setCanvas("nodeHovered", opts);
                     }}
-                    onHoverOut={() => {
-                      setCanvas("nodeHovered", null);
+                    onHoverSocketChange={(id) => {
+                      setHoveredSocket(
+                        id ? { node: node.id, socket: id } : null,
+                      );
                     }}
                   />
                 );
@@ -978,5 +1160,169 @@ const InputHints: VoidComponent<{
         );
       })()}
     </div>
+  );
+};
+
+const DrawConnections: VoidComponent<{
+  class?: string;
+  size: () => ElementSize;
+  offset: () => Coords;
+  zoom: () => number;
+  containerRef: HTMLDivElement;
+  nodes: Record<UUID, Node>;
+  nodeSizes: Record<UUID, ElementSize>;
+  // outputsById: () => Record<UUID, Output>;
+  // inputsById: () => Record<UUID, Input>;
+  socketRefs: Record<UUID, HTMLDivElement>;
+  connections: Connection[];
+  draggingConnection: () => DraggingConnection | null;
+}> = (props) => {
+  let canvasRef!: HTMLCanvasElement;
+
+  createEffect(() => {
+    const ctx = canvasRef.getContext("2d");
+    if (!ctx) {
+      console.error("no canvas context");
+      return;
+    }
+
+    createEffect(() => {
+      // track size / offset / zoom
+      const _size = props.size();
+      const _offset = props.offset();
+      const _zoom = props.zoom();
+
+      // const outputsById = props.outputsById();
+      // const inputsById = props.inputsById();
+
+      const styles = getComputedStyle(canvasRef);
+      const textColor = styles.getPropertyValue("--theme-text");
+
+      ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
+
+      ctx.strokeStyle = textColor;
+      ctx.lineWidth = 2;
+
+      for (const conn of props.connections) {
+        const fromNode = props.nodes[conn.from.node];
+        const toNode = props.nodes[conn.to.node];
+        if (!fromNode || !toNode) continue;
+
+        // track coords / sizes
+        const _fromCoords = fromNode.coords;
+        const _toCoords = toNode.coords;
+        const _fromSize = props.nodeSizes[conn.from.node];
+        const _toSize = props.nodeSizes[conn.to.node];
+
+        const fromRef = props.socketRefs[conn.from.socket];
+        const toRef = props.socketRefs[conn.to.socket];
+        if (!fromRef || !toRef) continue;
+
+        const containerRect = props.containerRef.getBoundingClientRect();
+
+        const fromRect = fromRef.getBoundingClientRect();
+        const toRect = toRef.getBoundingClientRect();
+
+        const fromCenterX = fromRect.x + fromRect.width / 2;
+        const fromCenterY = fromRect.y + fromRect.height / 2;
+
+        const toCenterX = toRect.x + toRect.width / 2;
+        const toCenterY = toRect.y + toRect.height / 2;
+
+        const fromX = fromCenterX - containerRect.x;
+        const fromY = fromCenterY - containerRect.y;
+
+        const toX = toCenterX - containerRect.x;
+        const toY = toCenterY - containerRect.y;
+
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.bezierCurveTo(
+          fromX + (toX - fromX) / 2,
+          fromY,
+          toX - (toX - fromX) / 2,
+          toY,
+          toX,
+          toY,
+        );
+        ctx.stroke();
+      }
+
+      const draggingConnection = props.draggingConnection();
+      if (!draggingConnection) return;
+
+      const endSocket =
+        // the one other than start
+        draggingConnection.startSocket.id === draggingConnection.from?.socket.id
+          ? draggingConnection.to?.socket
+          : draggingConnection.from?.socket;
+
+      const startRef = props.socketRefs[draggingConnection.startSocket.id];
+      if (!startRef) return;
+
+      const startRect = startRef.getBoundingClientRect();
+
+      const startCenterX = startRect.x + startRect.width / 2;
+      const startCenterY = startRect.y + startRect.height / 2;
+
+      const containerRect = props.containerRef.getBoundingClientRect();
+
+      const startX = startCenterX - containerRect.x;
+      const startY = startCenterY - containerRect.y;
+
+      if (endSocket) {
+        const endRef = props.socketRefs[endSocket.id];
+        if (!endRef) return;
+
+        const endRect = endRef.getBoundingClientRect();
+
+        const endCenterX = endRect.x + endRect.width / 2;
+        const endCenterY = endRect.y + endRect.height / 2;
+
+        const endX = endCenterX - containerRect.x;
+        const endY = endCenterY - containerRect.y;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.bezierCurveTo(
+          startX + (endX - startX) / 2,
+          startY,
+          endX - (endX - startX) / 2,
+          endY,
+          endX,
+          endY,
+        );
+        ctx.stroke();
+      } else {
+        const endX = draggingConnection.end[0] - containerRect.x;
+        const endY = draggingConnection.end[1] - containerRect.y;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.bezierCurveTo(
+          startX + (endX - startX) / 2,
+          startY,
+          endX - (endX - startX) / 2,
+          endY,
+          endX,
+          endY,
+        );
+        ctx.stroke();
+      }
+    });
+  });
+
+  return (
+    <canvas
+      ref={canvasRef}
+      class={cn(
+        "absolute left-0 right-0 top-0 bottom-0 pointer-events-none",
+        props.class,
+      )}
+      width={props.size().width}
+      height={props.size().height}
+    >
+      {/* intentionally left blank */}
+    </canvas>
   );
 };

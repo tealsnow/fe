@@ -14,7 +14,7 @@ export const createElementSize = <T extends HTMLElement>(): [
     size,
     (element: T) => {
       new ResizeObserver(([entry]) => {
-        const { width, height } = entry.contentRect;
+        const { width, height } = entry!.contentRect;
         setSize({ width, height });
       }).observe(element);
     },
