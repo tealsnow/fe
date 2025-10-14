@@ -63,7 +63,7 @@ export const ViewPanelNodeTabs: Component<{
     // eslint-disable-next-line solid/reactivity
     Option.flatMap(props.tabs().active, (idx) => {
       if (idx >= props.tabs().children.length) return Option.none();
-      return Option.some(props.tabs().children[idx]);
+      return Option.some(props.tabs().children[idx]!);
     });
 
   const [hasDrop, setHasDrop] = createSignal(false);

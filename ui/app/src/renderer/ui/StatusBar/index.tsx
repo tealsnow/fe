@@ -17,12 +17,12 @@ export const StatusBar: Component<{}> = () => {
   return (
     <div class="flex flex-row w-full min-h-6 max-h-6 border-t items-center px-1 py-[1px] text-xs gap-1">
       <Index each={ctx.items().left}>
-        {(id) => <RenderItem item={() => ctx.item_map()[id()]} />}
+        {(id) => <RenderItem item={() => ctx.item_map()[id()]!} />}
       </Index>
       <div class="flex grow h-full" />
       <div class="flex flex-row-reverse items-center gap-1">
         <Index each={ctx.items().right}>
-          {(id) => <RenderItem item={() => ctx.item_map()[id()]} />}
+          {(id) => <RenderItem item={() => ctx.item_map()[id()]!} />}
         </Index>
       </div>
     </div>

@@ -108,7 +108,7 @@ export const ViewPanelNodeSplit: Component<{
               <SplitResizeHandle
                 updateSplit={(fn) => props.updateSplit(fn)}
                 currentChild={child}
-                nextChild={() => props.split().children[idx + 1]}
+                nextChild={() => props.split().children[idx + 1]!}
                 idx={() => idx}
                 axis={() => props.split().axis}
               />
@@ -247,11 +247,11 @@ const SplitDropOverlay: Component<{
   }> = (props) => {
     return (
       <RenderDropPoint
-        ref={middleInfos[props.idx].ref}
+        ref={middleInfos[props.idx]!.ref}
         style={props.style}
         icon="DndSplitInsert"
         tooltip="insert tab in split"
-        hovered={middleInfos[props.idx].hovered}
+        hovered={middleInfos[props.idx]!.hovered}
         class="absolute self-center z-50"
         iconClass={cn(axis() === "horizontal" ? "rotate-90" : "")}
       />
@@ -285,7 +285,7 @@ const SplitDropOverlay: Component<{
           const percent = (): number => {
             let accum = 0;
             for (let i = 0; i <= idx; i += 1)
-              accum += props.split().children[i].percent;
+              accum += props.split().children[i]!.percent;
             assert(accum < 1);
             return accum;
           };

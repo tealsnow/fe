@@ -166,7 +166,7 @@ export const splitAddChild = ({
     const total = children.reduce((s, c) => s + c.percent, 0);
     const drift = 1 - total;
     if (Math.abs(drift) > 1e-12) {
-      const last = children[children.length - 1];
+      const last = children[children.length - 1]!;
       children[children.length - 1] = {
         ...last,
         percent: Percent(last.percent + drift),
