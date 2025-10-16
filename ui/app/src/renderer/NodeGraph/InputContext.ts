@@ -2,9 +2,12 @@ import { createContext } from "solid-js";
 
 // prefer to use event information for modifier state
 export type InputContext = {
-  shift: boolean;
   ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+
   space: boolean;
+
   leftMouseButton: boolean;
 };
 

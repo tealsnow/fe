@@ -75,14 +75,14 @@ const Root: Component = () => {
           active: Integer(0),
           children: [
             panelCtx.createLeaf({
-              title: "node graph",
-              tooltip: "node graph test",
-              render: () => <NodeGraph />,
-            }),
-            panelCtx.createLeaf({
               title: "text editing",
               tooltip: "text editing test",
               render: () => <TextEditingTest />,
+            }),
+            panelCtx.createLeaf({
+              title: "node graph",
+              tooltip: "node graph test",
+              render: () => <NodeGraph />,
             }),
             panelCtx.createLeaf({
               title: "command palette",

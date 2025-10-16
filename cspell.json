@@ -50,6 +50,8 @@
     "linejoin",
     "solidjs",
     "Mousedown",
-    "Mouseup"
+    "Mouseup",
+    "Backquote",
+    "Numpad"
   ]
 }

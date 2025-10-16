@@ -1,9 +1,182 @@
-import { createSignal, VoidComponent, createEffect } from "solid-js";
+/* eslint-disable solid/reactivity */
 
-import { Match } from "effect";
+import {
+  createSignal,
+  VoidComponent,
+  createEffect,
+  Accessor,
+  Show,
+  createMemo,
+  batch,
+  For,
+} from "solid-js";
+import { Match, Number, Order } from "effect";
 
 import { cn } from "~/lib/cn";
 import assert from "~/lib/assert";
+
+import Switch from "~/ui/components/Switch";
+import { createStore } from "solid-js/store";
+import Button from "./ui/components/Button";
+
+type TextBufferStore = {
+  lines: string[];
+  lineIndex: number;
+  lineOffset: number;
+};
+
+type TextBuffer = {
+  store: TextBufferStore;
+
+  length: () => number;
+  // offset: () => number;
+  // lineOffset: () => [lineIdx: number, offsetInLine: number];
+
+  insert: (str: string) => void;
+  backspace: () => void;
+  newline: () => void;
+
+  moveLeft: () => void;
+  moveRight: () => void;
+  moveUp: () => void;
+  moveDown: () => void;
+};
+
+const TextBuffer = (initialText?: string): TextBuffer => {
+  const [store, setStore] = createStore<TextBufferStore>({
+    lines: initialText ? initialText.split("\n") : [],
+    lineIndex: 0,
+    lineOffset: 0,
+  });
+
+  // const [lines, setLines] = createStore<string[]>(
+  //   initialText ? initialText.split("\n") : [],
+  // );
+
+  const length = createMemo(() => {
+    let len = 0;
+    for (const line of store.lines) len += line.length + 1;
+    return len;
+  });
+
+  // const lineIndex = createSignal(number)
+
+  // const [offset, setOffset] = createSignal(length());
+
+  // const lineOffset = createMemo<[lineIdx: number, offsetInLine: number]>(() => {
+  //   const off = offset();
+  //   let idx = 0;
+  //   let lineIdx = 0;
+  //   for (const line of lines) {
+  //     idx += line.length;
+  //     if (idx > off) {
+  //       return [lineIdx, idx - off];
+  //     }
+  //     lineIdx += 1;
+  //   }
+  //   return [0, 0];
+  // });
+
+  const insert = (str: string): void => {
+    batch(() => {
+      if (str.includes("\n")) {
+        console.log("TODO");
+        return;
+      }
+
+      setStore(
+        "lines",
+        store.lineIndex,
+        (text) =>
+          text.slice(0, store.lineOffset) + str + text.slice(store.lineOffset),
+      );
+      setStore("lineOffset", (offset) => offset + str.length);
+    });
+  };
+
+  const backspace = (): void => {
+    batch(() => {
+      if (store.lineOffset === 0) {
+        console.warn("TODO");
+        return;
+      }
+
+      setStore(
+        "lines",
+        store.lineIndex,
+        (text) =>
+          text.slice(0, store.lineOffset - 1) + text.slice(store.lineOffset),
+      );
+      setStore("lineOffset", (offset) => offset - 1);
+    });
+  };
+
+  const newline = (): void => {
+    batch(() => {
+      setStore("lines", (lines) => {
+        const line = lines[store.lineIndex]!;
+
+        const left = line.slice(0, store.lineOffset);
+        const right = line.slice(store.lineOffset);
+
+        const before = lines.slice(0, store.lineIndex);
+        const after = lines.slice(store.lineIndex + 1);
+
+        return [...before, left, right, ...after];
+      });
+      setStore("lineIndex", (idx) => idx + 1);
+      setStore("lineOffset", 0);
+    });
+  };
+
+  const moveLeft = (): void => {
+    if (store.lineOffset === 0) {
+      console.warn("TODO");
+      return;
+    }
+    setStore("lineOffset", (offset) => offset - 1);
+  };
+  const moveRight = (): void => {
+    const line = store.lines[store.lineIndex]!;
+    if (line.length === store.lineOffset) {
+      console.warn("TODO");
+      return;
+    }
+
+    setStore("lineOffset", (offset) => offset + 1);
+  };
+  const moveUp = (): void => {
+    if (store.lineIndex === 0) return;
+    setStore("lineIndex", (idx) => idx - 1);
+  };
+  const moveDown = (): void => {
+    if (store.lines.length - 1 === store.lineIndex) return;
+
+    batch(() => {
+      const line = store.lines[store.lineIndex + 1]!;
+      setStore("lineIndex", (idx) => idx + 1);
+      setStore("lineOffset", (offset) =>
+        Order.clamp(Number.Order)({ minimum: 0, maximum: line.length })(offset),
+      );
+    });
+  };
+
+  return {
+    store,
+    length,
+    // offset,
+    // lineOffset,
+
+    insert,
+    backspace,
+    newline,
+
+    moveLeft,
+    moveRight,
+    moveUp,
+    moveDown,
+  };
+};
 
 const TextEditingTest: VoidComponent = () => {
   // This is just the beginnings of what will be the modal text editing system.
@@ -61,23 +234,32 @@ const TextEditingTest: VoidComponent = () => {
 
   let textRef!: HTMLDivElement;
 
-  const [enableMono, setEnableMono] = createSignal(false);
+  const [enableMono, setEnableMono] = createSignal(true);
 
-  const [text, setText] = createSignal("some existing text\nmultiline");
-  // eslint-disable-next-line solid/reactivity
-  const [caretIndex, setCaretIndex] = createSignal(text().length);
+  const [blockCaret, setBlockCaret] = createSignal(false);
 
-  const insertText = (str: string): void => {
-    const offset = caretIndex();
-    setText((text) => text.slice(0, offset) + str + text.slice(offset));
-  };
+  // const [text, setText] = createSignal("some existing text\nmultiline");
+  // const [caretIndex, setCaretIndex] = createSignal(text().length);
+
+  // const insertText = (str: string): void => {
+  //   const offset = caretIndex();
+  //   setText((text) => text.slice(0, offset) + str + text.slice(offset));
+  // };
+  const buffer = TextBuffer("some existing text\nmultiline");
+
+  const insertCharWidth = 1;
 
   const [caretX, setCaretX] = createSignal(0);
+  const [caretY, setCaretY] = createSignal(0);
   const [caretHeight, setCaretHeight] = createSignal(0);
+  const [caretWidth, setCaretWidth] = createSignal(insertCharWidth);
 
-  const [caretX2, setCaretX2] = createSignal(0);
-  const [caretY2, setCaretY2] = createSignal(0);
-  const [caretHeight2, setCaretHeight2] = createSignal(0);
+  // const [caretX2, setCaretX2] = createSignal(0);
+  // const [caretY2, setCaretY2] = createSignal(0);
+  // const [caretHeight2, setCaretHeight2] = createSignal(0);
+  // const [caretWidth2, setCaretWidth2] = createSignal(insertCharWidth);
+
+  // document.caretPositionFromPoint
 
   createEffect(() => {
     console.group("canvas api caret calc - setup");
@@ -91,23 +273,60 @@ const TextEditingTest: VoidComponent = () => {
     console.log("font:", font);
 
     const containerComputedStyle = getComputedStyle(containerRef);
-    const leftPadding = parseFloat(containerComputedStyle.paddingLeft);
+    const paddingLeft = parseFloat(containerComputedStyle.paddingLeft);
+    const paddingTop = parseFloat(containerComputedStyle.paddingTop);
 
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d")!;
     context.font = font;
 
-    setCaretHeight(parseFloat(textComputedStyle.lineHeight));
+    const lineHeight = parseFloat(textComputedStyle.lineHeight);
+    setCaretHeight(lineHeight);
 
     createEffect(() => {
       console.group("canvas api caret calc");
       const start = performance.now();
 
-      const measure = context.measureText(text().slice(0, caretIndex()));
+      const line = buffer.store.lines[buffer.store.lineIndex]!;
+      const lineOffset = buffer.store.lineOffset;
 
-      const x = measure.width + leftPadding;
-      console.log("x:", x);
+      const textToCaret = line.slice(0, lineOffset);
+      const measure = context.measureText(textToCaret);
+
+      const x = paddingLeft + measure.width;
+      const y = paddingTop + lineHeight * buffer.store.lineIndex;
+      console.log("x:", x, "y:", y);
       setCaretX(x);
+      setCaretY(y);
+
+      // const fontBoundingBoxAscent = measure.fontBoundingBoxAscent;
+      // const fontBoundingBoxDescent = measure.fontBoundingBoxDescent;
+      // const fontHeight = fontBoundingBoxAscent + fontBoundingBoxDescent;
+
+      if (blockCaret()) {
+        const currentChar = line[lineOffset];
+        const measure = context.measureText(currentChar ?? " ");
+        const width = measure.width;
+        setCaretWidth(width);
+      } else {
+        setCaretWidth(insertCharWidth);
+      }
+
+      // const textToCaret = text().slice(0, caretIndex());
+      // const measure = context.measureText(textToCaret);
+
+      // const x = measure.width + leftPadding;
+      // console.log("x:", x);
+      // setCaretX(x);
+
+      // if (blockCaret()) {
+      //   const currentChar = text()[caretIndex()];
+      //   const measure = context.measureText(currentChar ?? " ");
+      //   const width = measure.width;
+      //   setCaretWidth(width);
+      // } else {
+      //   setCaretWidth(insertCharWidth);
+      // }
 
       const end = performance.now();
       console.timeStamp(`time: ${end - start}ms`);
@@ -119,116 +338,135 @@ const TextEditingTest: VoidComponent = () => {
     console.groupEnd();
   });
 
-  const mapIndexToNode = (
-    index: number,
-  ): { node: Node; localIndex: number } | null => {
-    let cumulativeOffset = 0;
+  // const mapIndexToNode = (
+  //   index: number,
+  // ): { node: Node; localIndex: number } | null => {
+  //   let cumulativeOffset = 0;
 
-    const walker = document.createTreeWalker(
-      textRef,
-      NodeFilter.SHOW_TEXT,
-      null,
-    );
+  //   const walker = document.createTreeWalker(
+  //     textRef,
+  //     NodeFilter.SHOW_TEXT,
+  //     null,
+  //   );
 
-    let currentNode: Node | null;
-    for (; (currentNode = walker.nextNode()); currentNode != null) {
-      assert(currentNode.nodeType === Node.TEXT_NODE);
+  //   let currentNode: Node | null;
+  //   for (; (currentNode = walker.nextNode()); currentNode != null) {
+  //     assert(currentNode.nodeType === Node.TEXT_NODE);
 
-      const nodeTextLength = currentNode.nodeValue?.length ?? 0;
+  //     const nodeTextLength = currentNode.nodeValue?.length ?? 0;
 
-      if (cumulativeOffset + nodeTextLength >= index) {
-        const localIndex = index - cumulativeOffset;
-        return { node: currentNode, localIndex };
-      }
+  //     if (cumulativeOffset + nodeTextLength >= index) {
+  //       const localIndex = index - cumulativeOffset;
+  //       return { node: currentNode, localIndex };
+  //     }
 
-      cumulativeOffset += nodeTextLength;
-    }
+  //     cumulativeOffset += nodeTextLength;
+  //   }
 
-    if (cumulativeOffset > 0) {
-      const node = currentNode || walker.lastChild();
-      if (!node) return null;
-      return {
-        node,
-        localIndex: node.nodeValue?.length ?? 0,
-      };
-    }
+  //   if (cumulativeOffset > 0) {
+  //     const node = currentNode || walker.lastChild();
+  //     if (!node) return null;
+  //     return {
+  //       node,
+  //       localIndex: node.nodeValue?.length ?? 0,
+  //     };
+  //   }
 
-    return null;
-  };
+  //   return null;
+  // };
 
-  createEffect(() => {
-    console.group("document range caret calc - setup");
-    const start = performance.now();
+  // createEffect(() => {
+  //   console.group("document range caret calc - setup");
+  //   const start = performance.now();
 
-    enableMono(); // track font
+  //   enableMono(); // track font
 
-    const containerComputedStyle = getComputedStyle(containerRef);
-    const paddingLeft = parseFloat(containerComputedStyle.paddingLeft);
-    const paddingTop = parseFloat(containerComputedStyle.paddingTop);
+  //   const containerComputedStyle = getComputedStyle(containerRef);
+  //   const paddingLeft = parseFloat(containerComputedStyle.paddingLeft);
+  //   const paddingTop = parseFloat(containerComputedStyle.paddingTop);
 
-    const range = document.createRange();
+  //   const range = document.createRange();
 
-    createEffect(() => {
-      console.group("document range caret calc");
-      const start = performance.now();
+  //   createEffect(() => {
+  //     console.group("document range caret calc");
+  //     const start = performance.now();
 
-      try {
-        const nodeMapping = mapIndexToNode(caretIndex());
+  //     try {
+  //       const nodeMapping = mapIndexToNode(caretIndex());
 
-        if (!nodeMapping) {
-          console.warn("empty line?");
-          return;
-        }
+  //       if (!nodeMapping) {
+  //         console.warn("empty line?");
+  //         return;
+  //       }
 
-        const { node, localIndex } = nodeMapping;
+  //       const { node, localIndex } = nodeMapping;
 
-        console.log("localIndex:", localIndex);
+  //       console.log("localIndex:", localIndex);
 
-        range.setStart(node, localIndex);
-        range.setEnd(node, localIndex);
+  //       range.setStart(node, localIndex);
+  //       range.setEnd(node, localIndex);
 
-        const globalRect = range.getBoundingClientRect();
-        const textRect = textRef.getBoundingClientRect();
+  //       const globalRect = range.getBoundingClientRect();
+  //       const textRect = textRef.getBoundingClientRect();
 
-        const x = globalRect.x - textRect.x + paddingLeft;
-        const y = globalRect.y - textRect.y + paddingTop;
-        console.log("x:", x, "y:", y, "height:", globalRect.height);
+  //       const x = globalRect.x - textRect.x + paddingLeft;
+  //       const y = globalRect.y - textRect.y + paddingTop;
+  //       console.log("x:", x, "y:", y, "height:", globalRect.height);
 
-        setCaretHeight2(globalRect.height);
-        setCaretX2(x);
-        setCaretY2(y);
-      } catch (err) {
-        console.error(err);
-      }
+  //       setCaretHeight2(globalRect.height);
+  //       setCaretX2(x);
+  //       setCaretY2(y);
 
-      const end = performance.now();
-      console.timeStamp(`time: ${end - start}ms`);
-      console.groupEnd();
-    });
+  //       if (blockCaret()) {
+  //         if (localIndex === text().length) {
+  //           range.setStart(node, localIndex - 1);
+  //           range.setEnd(node, localIndex);
+  //         } else {
+  //           range.setStart(node, localIndex);
+  //           range.setEnd(node, localIndex + 1);
+  //         }
 
-    const end = performance.now();
-    console.timeStamp(`time: ${end - start}ms`);
-    console.groupEnd();
-  });
+  //         const lastCharRect = range.getBoundingClientRect();
+  //         setCaretWidth2(lastCharRect.width);
+  //       } else {
+  //         setCaretWidth2(insertCharWidth);
+  //       }
+  //     } catch (err) {
+  //       console.error(err);
+  //     }
+
+  //     const end = performance.now();
+  //     console.timeStamp(`time: ${end - start}ms`);
+  //     console.groupEnd();
+  //   });
+
+  //   const end = performance.now();
+  //   console.timeStamp(`time: ${end - start}ms`);
+  //   console.groupEnd();
+  // });
+
+  const [focused, setFocused] = createSignal(false);
 
   return (
     <div class="size-full flex flex-col p-2">
       <div
         ref={containerRef}
-        tabIndex="0"
+        // tabIndex="0"
         class="-outline-offset-1 outline-theme-colors-aqua-base focus-within:outline-1 relative p-2"
-        onMouseDown={(e) => {
-          // prevent gaining focus on click
-          e.preventDefault();
+        onMouseDown={(ev) => {
+          ev.preventDefault();
         }}
-        onClick={() => {
-          textAreaRef.focus();
+        onClick={(ev) => {
+          if (!focused()) textAreaRef.focus();
+
+          // const point = document.caretPositionFromPoint(ev.x, ev.y);
+          // if (point?.offset) setCaretIndex(point.offset);
         }}
         onFocusIn={() => {
-          if (document.activeElement !== textAreaRef) textAreaRef.focus();
+          // textAreaRef.focus();
         }}
         onFocusOut={() => {
-          textAreaRef.blur();
+          // textAreaRef.blur();
         }}
         onKeyDown={(e) => {
           if (e.key === "Escape") textAreaRef.blur();
@@ -236,51 +474,67 @@ const TextEditingTest: VoidComponent = () => {
       >
         <textarea
           ref={textAreaRef}
-          tabIndex="-1"
+          tabIndex="0"
           class="absolute p-0 border-0 size-0 overflow-hidden whitespace-nowrap"
           style={{ clip: "rect(0px, 0px, 0px, 0px)" }}
           autocomplete="off"
           autocorrect="off"
           onFocusIn={() => {
             console.log("text area focus");
+            setFocused(true);
+          }}
+          onFocusOut={() => {
+            setFocused(false);
           }}
           onKeyDown={(ev) => {
-            /* eslint-disable solid/reactivity */
             console.group("textArea onKeyDown");
 
             Match.value(ev.key).pipe(
               Match.when("Backspace", () => {
                 console.log("> backspace");
+                buffer.backspace();
 
-                setText(
-                  text().slice(0, caretIndex() - 1) +
-                    text().slice(caretIndex()),
-                );
-                setCaretIndex((offset) => Math.max(offset - 1, 0));
+                // setText(
+                //   text().slice(0, caretIndex() - 1) +
+                //     text().slice(caretIndex()),
+                // );
+                // setCaretIndex((offset) => Math.max(offset - 1, 0));
               }),
               Match.when("Enter", () => {
                 console.log("> enter");
+                buffer.newline();
 
-                insertText("\n");
-                setCaretIndex((offset) => Math.min(offset + 1, text().length));
+                // insertText("\n");
+                // setCaretIndex((offset) => Math.min(offset + 1, text().length));
               }),
               Match.when("ArrowLeft", () => {
                 console.log("> left");
-                setCaretIndex((offset) => Math.max(offset - 1, 0));
+                buffer.moveLeft();
+
+                // setCaretIndex((offset) => Math.max(offset - 1, 0));
               }),
               Match.when("ArrowRight", () => {
                 console.log("> right");
-                setCaretIndex((offset) => Math.min(offset + 1, text().length));
+                buffer.moveRight();
+
+                // setCaretIndex((offset) => Math.min(offset + 1, text().length));
+              }),
+              Match.when("ArrowUp", () => {
+                console.log("> up");
+                buffer.moveUp();
+              }),
+              Match.when("ArrowDown", () => {
+                console.log("> down");
+                buffer.moveDown();
               }),
               Match.orElse((key) => {
-                console.log("key:", key);
+                console.log("unhandled key:", key);
               }),
             );
 
             console.groupEnd();
           }}
           onInput={(ev) => {
-            /* eslint-disable solid/reactivity */
             console.group("textArea onInput");
 
             console.log("input event:", ev);
@@ -293,8 +547,9 @@ const TextEditingTest: VoidComponent = () => {
                 console.log("> insert");
                 if (!ev.data) return;
 
-                insertText(ev.data);
-                setCaretIndex((offset) => offset + ev.data!.length);
+                // insertText(ev.data);
+                // setCaretIndex((offset) => offset + ev.data!.length);
+                buffer.insert(ev.data);
               }),
               Match.when("insertLineBreak", () => {
                 // console.log("> newline");
@@ -315,43 +570,109 @@ const TextEditingTest: VoidComponent = () => {
           }}
         />
 
-        <div
-          class="absolute w-[1px] h-4 bg-theme-colors-green-border/50"
-          style={{
-            left: `${caretX()}px`,
-            height: `${caretHeight()}px`,
-          }}
-        />
+        <Show when={focused()}>
+          <div
+            class="absolute bg-theme-colors-green-border/50"
+            style={{
+              left: `${caretX()}px`,
+              top: `${caretY()}px`,
+              height: `${caretHeight()}px`,
+              width: `${caretWidth()}px`,
+            }}
+          />
 
-        <div
-          class="absolute w-[1px] h-4 bg-theme-colors-blue-border/50"
-          style={{
-            left: `${caretX2()}px`,
-            top: `${caretY2()}px`,
-            height: `${caretHeight2()}px`,
-          }}
-        />
+          {/*<div
+            class="absolute bg-theme-colors-blue-border/50"
+            style={{
+              left: `${caretX2()}px`,
+              top: `${caretY2()}px`,
+              height: `${caretHeight2()}px`,
+              width: `${caretWidth2()}px`,
+            }}
+          />*/}
+        </Show>
 
         <div
           ref={textRef}
-          class={cn("whitespace-pre", enableMono() && "font-mono")}
+          class={cn(
+            "flex flex-col whitespace-pre cursor-text selection:bg-theme-selection ",
+            enableMono() && "font-mono",
+          )}
         >
-          <span>{text()}</span>
+          <For each={buffer.store.lines}>
+            {(line) => (
+              <span>
+                {line}
+                {"\n"}
+              </span>
+            )}
+          </For>
+          {/*<span>{text()}</span>*/}
         </div>
       </div>
 
       <hr class="my-2" />
       <div class="flex flex-col gap-2">
-        caret offset: {caretIndex()}
-        <label class="flex gap-1">
-          <input
-            type="checkbox"
-            checked={enableMono()}
-            onInput={({ target }) => setEnableMono(target.checked)}
-          />
-          Monospace
-        </label>
+        <div class="text-sm flex flex-row items-baseline gap-1">
+          {/*caret offset: <pre>{caretIndex()}</pre>*/}
+          line index: <pre>{buffer.store.lineIndex}</pre>
+          line offset: <pre>{buffer.store.lineOffset}</pre>
+        </div>
+
+        <div class="text-sm flex flex-row items-baseline gap-1">
+          focused: <pre>{focused() ? "true" : "false"}</pre>
+        </div>
+
+        <Switch
+          checked={enableMono()}
+          onChange={() => setEnableMono((b) => !b)}
+        >
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+          <Switch.Label>Monospace</Switch.Label>
+        </Switch>
+
+        <Switch
+          checked={blockCaret()}
+          onChange={() => setBlockCaret((b) => !b)}
+        >
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+          <Switch.Label>Block caret</Switch.Label>
+        </Switch>
       </div>
+
+      <hr class="my-2" />
+
+      <pre>
+        {JSON.stringify(buffer.store, null, 2)}
+        {/*{JSON.stringify(
+          {
+            caretIndex: caretIndex(),
+            canvasCaret: {
+              x: caretX(),
+              height: caretHeight(),
+              width: caretWidth(),
+            },
+            domCaret: {
+              x: caretX2(),
+              y: caretY2(),
+              height: caretHeight2(),
+              width: caretWidth2(),
+            },
+            delta: {
+              x: caretX() - caretX2(),
+              y: "N/A",
+              height: caretHeight() - caretHeight2(),
+              width: caretWidth() - caretWidth2(),
+            },
+          },
+          null,
+          2,
+        )}*/}
+      </pre>
     </div>
   );
 };

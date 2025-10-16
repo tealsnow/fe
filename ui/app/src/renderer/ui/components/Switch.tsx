@@ -6,9 +6,32 @@ import * as SwitchPrimitive from "@kobalte/core/switch";
 
 import cn from "~/lib/cn";
 
-const SwitchRoot = SwitchPrimitive.Root;
+// const SwitchRoot = SwitchPrimitive.Root;
 const SwitchDescription = SwitchPrimitive.Description;
 const SwitchErrorMessage = SwitchPrimitive.ErrorMessage;
+
+export type SwitchRootProps = SwitchPrimitive.SwitchRootProps & {
+  class?: string | undefined;
+  children?: JSX.Element;
+};
+
+const SwitchRoot = <T extends ValidComponent = "div">(
+  props: PolymorphicProps<T, SwitchRootProps>,
+): JSX.Element => {
+  const [local, others] = splitProps(props as SwitchRootProps, [
+    "class",
+    "children",
+  ]);
+
+  return (
+    <SwitchPrimitive.Root
+      class={cn("flex flex-row items-center gap-1", local.class)}
+      {...others}
+    >
+      {local.children}
+    </SwitchPrimitive.Root>
+  );
+};
 
 export type SwitchControlProps = SwitchPrimitive.SwitchControlProps & {
   class?: string | undefined;

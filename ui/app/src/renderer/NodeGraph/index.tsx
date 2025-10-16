@@ -39,7 +39,17 @@ import {
   snapKindToNumber,
   snapKindForConfig,
 } from "./coords";
-import { Node, RenderNode, Input, Output, Connection, Socket } from "./Node";
+import {
+  Node,
+  NodeId,
+  RenderNode,
+  Socket,
+  SocketId,
+  SocketInput,
+  SocketOutput,
+  Connection,
+  SocketKind,
+} from "./Node";
 import { RenderGrid } from "./RenderGrid";
 
 import { InputContextProvider, useInputContext } from "./InputContextProvider";
@@ -84,7 +94,7 @@ type DraggingStateMode = Data.TaggedEnum<{
   node: {
     nodes: {
       start: Coords;
-      id: UUID;
+      id: NodeId;
     }[];
   };
   canvas: {
@@ -97,12 +107,12 @@ type DraggingStateMode = Data.TaggedEnum<{
   };
   connection: {
     end: Coords;
-    // startSocket will always be filled,
-    // then either from and to will be startSocket as well, depending on if its
+    // start will always be filled,
+    // then either from and to will be start as well, depending on if its
     // an input or output, the other will be filled if hovered
-    startSocket: Socket;
-    from: { node: UUID; socket: Output } | null;
-    to: { node: UUID; socket: Input } | null;
+    start: { node: NodeId; socket: Socket };
+    from: { node: NodeId; socket: SocketOutput } | null;
+    to: { node: NodeId; socket: SocketInput } | null;
   };
 }>;
 const DraggingStateMode = Data.taggedEnum<DraggingStateMode>();
@@ -162,7 +172,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
 
   // @NOTE: do not set anything inside of the node directly.
   //   it goes through a <For> and thus looses reactivity below the node level
-  const [nodes, setNodes] = createStore<Record<UUID, Node>>({});
+  const [nodes, setNodes] = createStore<Record<NodeId, Node>>({});
 
   const addNode = (node: Node): void => {
     setNodes({
@@ -177,7 +187,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
   };
 
   const socketById = createMemo(() => {
-    let map: Record<UUID, Socket> = {};
+    let map: Record<SocketId, Socket> = {};
     for (const node of Object.values(nodes)) {
       for (const output of node.outputs) {
         map = { ...map, [output.id]: output };
@@ -189,10 +199,10 @@ const NodeGraphInner: VoidComponent<{}> = () => {
     return map;
   });
 
-  const node42Id = UUID.make();
-  const out42Id = UUID.make();
-  const nodeAddId = UUID.make();
-  const inLeftAddId = UUID.make();
+  const node42Id = NodeId(UUID.make());
+  const out42Id = SocketId(UUID.make());
+  const nodeAddId = NodeId(UUID.make());
+  const inLeftAddId = SocketId(UUID.make());
 
   onMount(() => {
     addNodes(
@@ -201,13 +211,15 @@ const NodeGraphInner: VoidComponent<{}> = () => {
         title: "is 42",
         color: "blue",
         coords: [80, 100],
-        outputs: [Output({ name: "42", id: out42Id })],
+        outputs: [
+          Socket({ kind: SocketKind.Output({}), name: "42", id: out42Id }),
+        ],
       }),
       Node({
         title: "is 27",
         color: "blue",
         coords: [80, 180],
-        outputs: [Output({ name: "27" })],
+        outputs: [Socket({ kind: SocketKind.Output({}), name: "27" })],
       }),
       Node({
         id: nodeAddId,
@@ -215,16 +227,16 @@ const NodeGraphInner: VoidComponent<{}> = () => {
         color: "green",
         coords: [200, 120],
         inputs: [
-          Input({ name: "left", id: inLeftAddId }),
-          Input({ name: "right" }),
+          Socket({ kind: SocketKind.Input({}), name: "left", id: inLeftAddId }),
+          Socket({ kind: SocketKind.Input({}), name: "right" }),
         ],
-        outputs: [Output({ name: "result" })],
+        outputs: [Socket({ kind: SocketKind.Output({}), name: "result" })],
       }),
       Node({
         title: "print",
         color: "purple",
         coords: [320, 200],
-        inputs: [Input({ name: "value" })],
+        inputs: [Socket({ kind: SocketKind.Input({}), name: "value" })],
       }),
       // Node({
       //   title: "test 2",
@@ -241,18 +253,20 @@ const NodeGraphInner: VoidComponent<{}> = () => {
     },
   ]);
 
-  const [nodeSizes, setNodeSizes] = createStore<Record<UUID, ElementSize>>({});
-
-  const [socketRefs, setSocketRefs] = createStore<Record<UUID, HTMLDivElement>>(
+  const [nodeSizes, setNodeSizes] = createStore<Record<NodeId, ElementSize>>(
     {},
   );
 
+  const [socketRefs, setSocketRefs] = createStore<
+    Record<SocketId, HTMLDivElement>
+  >({});
+
   const [hoveredSocket, setHoveredSocket] = createSignal<{
-    node: UUID;
-    socket: UUID;
+    node: NodeId;
+    socket: SocketId;
   } | null>(null);
 
-  const [selectedNodes, setSelectedNodes] = createStore<UUID[]>([]);
+  const [selectedNodes, setSelectedNodes] = createStore<NodeId[]>([]);
 
   const [containerSize, setContainerSizeRef] = createElementSize();
   let containerRef!: HTMLDivElement;
@@ -438,7 +452,7 @@ const NodeGraphInner: VoidComponent<{}> = () => {
         });
 
         const updateSelection = async (): Promise<void> => {
-          const inSelection: UUID[] = [];
+          const inSelection: NodeId[] = [];
 
           for (const node of Object.values(nodes)) {
             const size = nodeSizes[node.id];
@@ -525,23 +539,28 @@ const NodeGraphInner: VoidComponent<{}> = () => {
       connection: (conn) => {
         const hovered = Option.fromNullable(hoveredSocket()).pipe(
           Option.flatMap(({ node, socket }) =>
-            Option.fromNullable({ node: node, socket: socketById()[socket]! }),
+            Option.fromNullable({ node, socket: socketById()[socket]! }),
           ),
           Option.getOrNull,
         );
 
         const from =
-          conn.startSocket._tag === "Input" && hovered?.socket._tag === "Output"
-            ? { node: hovered.node, socket: hovered.socket as Output }
-            : conn.startSocket._tag === "Output"
+          conn.start.socket.kind._tag === "Input" &&
+          hovered?.socket.kind._tag === "Output"
+            ? { node: hovered.node, socket: hovered.socket as SocketOutput }
+            : conn.start.socket.kind._tag === "Output"
               ? conn.from
               : null;
-        const to =
-          conn.startSocket._tag === "Output" && hovered?.socket._tag === "Input"
-            ? { node: hovered.node, socket: hovered.socket as Input }
-            : conn.startSocket._tag === "Input"
+        let to =
+          conn.start.socket.kind._tag === "Output" &&
+          hovered?.socket.kind._tag === "Input"
+            ? { node: hovered.node, socket: hovered.socket as SocketInput }
+            : conn.start.socket.kind._tag === "Input"
               ? conn.to
               : null;
+
+        // don't let sockets connect to themselves
+        if (conn.start.node === hovered?.node) to = null;
 
         const end: Coords = [ev.x, ev.y];
         setDraggingState({
@@ -624,6 +643,10 @@ const NodeGraphInner: VoidComponent<{}> = () => {
               </div>
 
               <pre>nodeHovered: {JSON.stringify(canvas.nodeHovered)}</pre>
+
+              <pre>
+                hoveredSocket: {JSON.stringify(hoveredSocket(), null, 2)}
+              </pre>
 
               <pre>
                 Selected Nodes: [
@@ -905,12 +928,12 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                         return;
                       }
 
-                      if (socket._tag === "Input") {
+                      if (socket.kind._tag === "Input") {
                         const existing = connections.find(
                           (conn) => conn.to.socket === id,
                         );
                         if (existing)
-                          socket = socketById()[existing.from.socket]!;
+                          socket = socketById()[existing.from.socket];
 
                         setConnections((conns) =>
                           conns.filter(
@@ -921,15 +944,25 @@ const NodeGraphInner: VoidComponent<{}> = () => {
                           ),
                         );
                       }
+                      if (!socket) {
+                        console.warn("socket not found");
+                        return;
+                      }
 
-                      const from = socket._tag === "Output" ? socket : null;
-                      const to = socket._tag === "Input" ? socket : null;
+                      const from =
+                        socket.kind._tag === "Output"
+                          ? (socket as SocketOutput)
+                          : null;
+                      const to =
+                        socket.kind._tag === "Input"
+                          ? (socket as SocketInput)
+                          : null;
 
                       setDraggingState({
                         startPos: [ev.x, ev.y],
                         mode: DraggingStateMode.connection({
                           end: [ev.x, ev.y],
-                          startSocket: socket,
+                          start: { node: node.id, socket },
                           from: from ? { node: node.id, socket: from } : null,
                           to: to ? { node: node.id, socket: to } : null,
                         }),
@@ -1253,11 +1286,12 @@ const DrawConnections: VoidComponent<{
 
       const endSocket =
         // the one other than start
-        draggingConnection.startSocket.id === draggingConnection.from?.socket.id
+        draggingConnection.start.socket.id ===
+        draggingConnection.from?.socket.id
           ? draggingConnection.to?.socket
           : draggingConnection.from?.socket;
 
-      const startRef = props.socketRefs[draggingConnection.startSocket.id];
+      const startRef = props.socketRefs[draggingConnection.start.socket.id];
       if (!startRef) return;
 
       const startRect = startRef.getBoundingClientRect();

@@ -7,7 +7,7 @@ import {
   onMount,
 } from "solid-js";
 
-import { Data } from "effect";
+import { Brand, Data } from "effect";
 
 import cn from "~/lib/cn";
 import UUID from "~/lib/UUID";
@@ -19,49 +19,20 @@ import { GridSize } from "./Config";
 import { Coords } from "./coords";
 import { PickPartial } from "~/lib/type_helpers";
 
-export type Socket = Data.TaggedEnum<{
-  Input: {
-    id: UUID;
-    name: string;
-  };
-  Output: {
-    id: UUID;
-    name: string;
-  };
-}>;
+type NodeBrand = string & Brand.Brand<"NodeId">;
+const NodeBrand = Brand.nominal<NodeBrand>();
 
-export type Input = Data.TaggedEnum.Value<Socket, "Input">;
-export type Output = Data.TaggedEnum.Value<Socket, "Output">;
-
-export const Input = (
-  params: PickPartial<Omit<Input, "_tag">, "id">,
-): Input => ({
-  _tag: "Input",
-  id: UUID.make(),
-  ...params,
-});
-
-export const Output = (
-  params: PickPartial<Omit<Output, "_tag">, "id">,
-): Output => ({
-  _tag: "Output",
-  id: UUID.make(),
-  ...params,
-});
-
-export type Connection = {
-  from: { node: UUID; socket: UUID };
-  to: { node: UUID; socket: UUID };
-};
+export const NodeId = Brand.all(NodeBrand, UUID);
+export type NodeId = Brand.Brand.FromConstructor<typeof NodeId>;
 
 export type Node = {
-  id: UUID;
+  id: NodeId;
   lastTouchedTime: number | null;
   coords: Coords;
   title: string;
   color: ColorKind;
-  inputs: Input[];
-  outputs: Output[];
+  inputs: SocketInput[];
+  outputs: SocketOutput[];
 };
 export const Node = ({
   inputs = [],
@@ -72,24 +43,72 @@ export const Node = ({
   "inputs" | "outputs" | "id"
 >): Node =>
   Data.case<Node>()({
-    id: UUID.make(),
+    id: NodeId(UUID.make()),
     lastTouchedTime: null,
     inputs,
     outputs,
     ...params,
   });
 
+type SocketBrand = string & Brand.Brand<"SocketId">;
+const SocketBrand = Brand.nominal<SocketBrand>();
+
+export const SocketId = Brand.all(SocketBrand, UUID);
+export type SocketId = Brand.Brand.FromConstructor<typeof SocketId>;
+
+export type SocketKind = Data.TaggedEnum<{
+  Input: {};
+  Output: {};
+}>;
+export namespace SocketKind {
+  export type Input = Data.TaggedEnum.Value<SocketKind, "Input">;
+  export type Output = Data.TaggedEnum.Value<SocketKind, "Output">;
+
+  export const Input = (params: Omit<Input, "_tag">): Input => ({
+    _tag: "Input",
+    ...params,
+  });
+
+  export const Output = (params: Omit<Output, "_tag">): Output => ({
+    _tag: "Output",
+    ...params,
+  });
+}
+
+export type Socket = {
+  id: SocketId;
+  name: string;
+  kind: SocketKind;
+};
+export function Socket(params: PickPartial<SocketInput, "id">): SocketInput;
+export function Socket(params: PickPartial<SocketOutput, "id">): SocketOutput;
+export function Socket(params: PickPartial<Socket, "id">): Socket {
+  return {
+    id: SocketId(UUID.make()),
+    ...params,
+  };
+}
+
+export type SocketInput = Socket & { kind: SocketKind.Input };
+export type SocketOutput = Socket & { kind: SocketKind.Output };
+
+export type Connection = {
+  from: { node: NodeId; socket: SocketId };
+  to: { node: NodeId; socket: SocketId };
+};
+export const Connection = Data.case<Connection>();
+
 export const RenderNode: VoidComponent<{
   node: Node;
   selected: () => boolean;
   snapNodeSizesToGrid: () => boolean;
   beginDragging: (ev: MouseEvent) => void;
-  beginConnection: (id: UUID, ev: MouseEvent) => void;
+  beginConnection: (id: SocketId, ev: MouseEvent) => void;
   sized: (size: ElementSize) => void;
-  socketRef: (id: UUID, ref: HTMLDivElement) => void;
+  socketRef: (id: SocketId, ref: HTMLDivElement) => void;
   onMouseDown: (ev: MouseEvent) => void;
   onHoverChange: (opts: { titlebar: boolean } | null) => void;
-  onHoverSocketChange: (id: UUID | null) => void;
+  onHoverSocketChange: (id: SocketId | null) => void;
 }> = (props) => {
   const [size, setSizeRef] = createElementSize();
   let titleRef!: HTMLDivElement;
@@ -162,15 +181,17 @@ export const RenderNode: VoidComponent<{
         }}
       >
         {(() => {
-          const socketRef = (): ((id: UUID, ref: HTMLDivElement) => void) =>
+          const socketRef = (): ((id: SocketId, ref: HTMLDivElement) => void) =>
             props.socketRef;
-          const beginConnection = (): ((id: UUID, ev: MouseEvent) => void) =>
-            props.beginConnection;
-          const onHoverSocketChange = (): ((id: UUID | null) => void) =>
+          const beginConnection = (): ((
+            id: SocketId,
+            ev: MouseEvent,
+          ) => void) => props.beginConnection;
+          const onHoverSocketChange = (): ((id: SocketId | null) => void) =>
             props.onHoverSocketChange;
 
           const Socket: VoidComponent<{
-            id: UUID;
+            id: SocketId;
             kind: "input" | "output";
           }> = (props) => {
             let ref!: HTMLDivElement;
@@ -201,7 +222,7 @@ export const RenderNode: VoidComponent<{
           const IO: VoidComponent<{
             kind: "input" | "output";
             name: string;
-            id: UUID;
+            id: SocketId;
           }> = (props) => {
             return (
               <div class="relative h-6 flex w-full px-1 items-center">
