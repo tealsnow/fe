@@ -6,7 +6,8 @@
     "DISPLAY",
     "WAYLAND_DISPLAY",
     "DBUS_SESSION_BUS_ADDRESS",
-    "ELECTRON_OZONE_PLATFORM_HINT"
+    "ELECTRON_OZONE_PLATFORM_HINT",
+    "XAUTHORITY"
   ],
   "tasks": {
     "build": {
