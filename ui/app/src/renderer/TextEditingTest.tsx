@@ -1,10 +1,26 @@
 /* eslint-disable solid/reactivity */
 
+/* Layers
+
+current modal state is implemented as a set of layers, applied top to bottom
+events are sent from bottom to top, stopping propagation once consumed
+
+this works well for something like the arrow keys which should do the same thing
+in both insert and normal mode, it just doesn't get overridden lower down
+
+now which mode should be at the bottom first thought tells me normal
+but I actually think it should be insert mode
+make that the default - the standard mode that you should be able to do
+most everything you should need to, normal mode would be a layer on top
+that overrides almost all input to do normal mode things, then we can add
+visual mode or whatever else on top of that.
+
+*/
+
 import {
   createSignal,
   VoidComponent,
   createEffect,
-  Accessor,
   Show,
   createMemo,
   batch,
@@ -21,37 +37,47 @@ import Button from "./ui/components/Button";
 
 type TextBufferStore = {
   lines: string[];
+  // in the range 0..=(lines.length - 1)
   lineIndex: number;
-  lineOffset: number;
+  // in the range 0..=(lines[lineIndex].length)
+  columnIndex: number;
+
+  // set on horizontal movement
+  // used to maintain column during vertical movement
+  // if infinity go to max
+  lastColumnIndex: number;
 };
 
 type TextBuffer = {
   store: TextBufferStore;
 
   length: () => number;
-  // offset: () => number;
-  // lineOffset: () => [lineIdx: number, offsetInLine: number];
 
   insert: (str: string) => void;
-  backspace: () => void;
+  deleteBackward: () => void;
+  deleteForward: () => void;
   newline: () => void;
 
   moveLeft: () => void;
   moveRight: () => void;
   moveUp: () => void;
   moveDown: () => void;
+  home: () => void;
+  end: () => void;
+  move: (lineIndex: number, columnIndex: number) => void;
 };
 
-const TextBuffer = (initialText?: string): TextBuffer => {
+const TextBuffer = (initialText?: string | string[]): TextBuffer => {
   const [store, setStore] = createStore<TextBufferStore>({
-    lines: initialText ? initialText.split("\n") : [],
+    lines: initialText
+      ? typeof initialText === "string"
+        ? initialText.split("\n")
+        : initialText
+      : [],
     lineIndex: 0,
-    lineOffset: 0,
+    columnIndex: 0,
+    lastColumnIndex: 0,
   });
-
-  // const [lines, setLines] = createStore<string[]>(
-  //   initialText ? initialText.split("\n") : [],
-  // );
 
   const length = createMemo(() => {
     let len = 0;
@@ -59,25 +85,7 @@ const TextBuffer = (initialText?: string): TextBuffer => {
     return len;
   });
 
-  // const lineIndex = createSignal(number)
-
-  // const [offset, setOffset] = createSignal(length());
-
-  // const lineOffset = createMemo<[lineIdx: number, offsetInLine: number]>(() => {
-  //   const off = offset();
-  //   let idx = 0;
-  //   let lineIdx = 0;
-  //   for (const line of lines) {
-  //     idx += line.length;
-  //     if (idx > off) {
-  //       return [lineIdx, idx - off];
-  //     }
-  //     lineIdx += 1;
-  //   }
-  //   return [0, 0];
-  // });
-
-  const insert = (str: string): void => {
+  const insert: TextBuffer["insert"] = (str) =>
     batch(() => {
       if (str.includes("\n")) {
         console.log("TODO");
@@ -88,36 +96,70 @@ const TextBuffer = (initialText?: string): TextBuffer => {
         "lines",
         store.lineIndex,
         (text) =>
-          text.slice(0, store.lineOffset) + str + text.slice(store.lineOffset),
+          text.slice(0, store.columnIndex) +
+          str +
+          text.slice(store.columnIndex),
       );
-      setStore("lineOffset", (offset) => offset + str.length);
+      setStore("columnIndex", (idx) => idx + str.length);
     });
-  };
-
-  const backspace = (): void => {
+  const deleteBackward: TextBuffer["deleteBackward"] = () =>
     batch(() => {
-      if (store.lineOffset === 0) {
-        console.warn("TODO");
-        return;
+      if (store.columnIndex === 0) {
+        if (store.lineIndex === 0) return;
+
+        const lines = store.lines;
+        const before = lines.slice(0, store.lineIndex - 1);
+        const after = lines.slice(store.lineIndex + 1);
+
+        const left = lines[store.lineIndex - 1]!;
+        const right = lines[store.lineIndex]!;
+
+        setStore("lines", () => {
+          return [...before, left + right, ...after];
+        });
+        setStore("lineIndex", (idx) => idx - 1);
+        setStore("columnIndex", left.length);
+      } else {
+        setStore(
+          "lines",
+          store.lineIndex,
+          (text) =>
+            text.slice(0, store.columnIndex - 1) +
+            text.slice(store.columnIndex),
+        );
+        setStore("columnIndex", (idx) => idx - 1);
       }
-
-      setStore(
-        "lines",
-        store.lineIndex,
-        (text) =>
-          text.slice(0, store.lineOffset - 1) + text.slice(store.lineOffset),
-      );
-      setStore("lineOffset", (offset) => offset - 1);
     });
-  };
+  const deleteForward: TextBuffer["deleteForward"] = () =>
+    batch(() => {
+      const line = store.lines[store.lineIndex]!;
+      if (store.columnIndex === line.length) {
+        setStore("lines", (lines) => {
+          const before = lines.slice(0, store.lineIndex);
+          const after = lines.slice(store.lineIndex + 2);
 
-  const newline = (): void => {
+          const left = lines[store.lineIndex]!;
+          const right = lines[store.lineIndex + 1];
+
+          return [...before, left + (right ?? ""), ...after];
+        });
+      } else {
+        setStore(
+          "lines",
+          store.lineIndex,
+          (text) =>
+            text.slice(0, store.columnIndex) +
+            text.slice(store.columnIndex + 1),
+        );
+      }
+    });
+  const newline: TextBuffer["newline"] = () =>
     batch(() => {
       setStore("lines", (lines) => {
         const line = lines[store.lineIndex]!;
 
-        const left = line.slice(0, store.lineOffset);
-        const right = line.slice(store.lineOffset);
+        const left = line.slice(0, store.columnIndex);
+        const right = line.slice(store.columnIndex);
 
         const before = lines.slice(0, store.lineIndex);
         const after = lines.slice(store.lineIndex + 1);
@@ -125,56 +167,117 @@ const TextBuffer = (initialText?: string): TextBuffer => {
         return [...before, left, right, ...after];
       });
       setStore("lineIndex", (idx) => idx + 1);
-      setStore("lineOffset", 0);
+      setStore("columnIndex", 0);
     });
-  };
 
-  const moveLeft = (): void => {
-    if (store.lineOffset === 0) {
-      console.warn("TODO");
-      return;
-    }
-    setStore("lineOffset", (offset) => offset - 1);
-  };
-  const moveRight = (): void => {
-    const line = store.lines[store.lineIndex]!;
-    if (line.length === store.lineOffset) {
-      console.warn("TODO");
-      return;
-    }
-
-    setStore("lineOffset", (offset) => offset + 1);
-  };
-  const moveUp = (): void => {
-    if (store.lineIndex === 0) return;
-    setStore("lineIndex", (idx) => idx - 1);
-  };
-  const moveDown = (): void => {
-    if (store.lines.length - 1 === store.lineIndex) return;
-
+  const moveLeft: TextBuffer["moveLeft"] = () =>
     batch(() => {
-      const line = store.lines[store.lineIndex + 1]!;
-      setStore("lineIndex", (idx) => idx + 1);
-      setStore("lineOffset", (offset) =>
-        Order.clamp(Number.Order)({ minimum: 0, maximum: line.length })(offset),
-      );
+      if (store.columnIndex === 0) {
+        if (store.lineIndex === 0) return;
+
+        setStore("lineIndex", (idx) => idx - 1);
+        const line = store.lines[store.lineIndex]!;
+
+        setStore("columnIndex", line.length);
+        setStore("lastColumnIndex", store.columnIndex);
+      } else {
+        setStore("columnIndex", (idx) => idx - 1);
+        setStore("lastColumnIndex", store.columnIndex);
+      }
     });
-  };
+  const moveRight: TextBuffer["moveRight"] = () =>
+    batch(() => {
+      const line = store.lines[store.lineIndex]!;
+      if (line.length === store.columnIndex) {
+        if (store.lineIndex === store.lines.length - 1) return;
+
+        setStore("columnIndex", 0);
+        setStore("lastColumnIndex", 0);
+        setStore("lineIndex", (idx) => idx + 1);
+      } else {
+        setStore("columnIndex", (idx) => idx + 1);
+        setStore("lastColumnIndex", store.columnIndex);
+      }
+    });
+  const moveUp: TextBuffer["moveUp"] = () =>
+    batch(() => {
+      if (store.lineIndex === 0) {
+        setStore("columnIndex", 0);
+        setStore("lastColumnIndex", store.columnIndex);
+      } else {
+        setStore("lineIndex", (idx) => idx - 1);
+
+        setStore("columnIndex", () => {
+          const line = store.lines[store.lineIndex]!;
+          return Order.clamp(Number.Order)({
+            minimum: 0,
+            maximum: line.length,
+          })(store.lastColumnIndex);
+        });
+      }
+    });
+  const moveDown: TextBuffer["moveDown"] = () =>
+    batch(() => {
+      if (store.lines.length - 1 === store.lineIndex) {
+        setStore("columnIndex", () => {
+          const line = store.lines[store.lineIndex]!;
+          return line.length;
+        });
+        setStore("lastColumnIndex", store.columnIndex);
+      } else {
+        setStore("lineIndex", (idx) => idx + 1);
+        setStore("columnIndex", () => {
+          const line = store.lines[store.lineIndex]!;
+          return Order.clamp(Number.Order)({
+            minimum: 0,
+            maximum: line.length,
+          })(store.lastColumnIndex);
+        });
+      }
+    });
+  const home: TextBuffer["home"] = () =>
+    batch(() => {
+      setStore("columnIndex", 0);
+      setStore("lastColumnIndex", 0);
+    });
+  const end: TextBuffer["end"] = () =>
+    batch(() => {
+      setStore("columnIndex", store.lines[store.lineIndex]!.length);
+      setStore("lastColumnIndex", Infinity);
+    });
+  const move: TextBuffer["move"] = (lineIndex, columnIndex) =>
+    batch(() => {
+      const clamp = Order.clamp(Number.Order);
+
+      setStore(
+        "lineIndex",
+        clamp({ minimum: 0, maximum: store.lines.length })(lineIndex),
+      );
+      setStore(
+        "columnIndex",
+        clamp({ minimum: 0, maximum: store.lines[store.lineIndex]!.length })(
+          columnIndex,
+        ),
+      );
+      setStore("lastColumnIndex", store.columnIndex);
+    });
 
   return {
     store,
     length,
-    // offset,
-    // lineOffset,
 
     insert,
-    backspace,
+    deleteBackward,
+    deleteForward,
     newline,
 
     moveLeft,
     moveRight,
     moveUp,
     moveDown,
+    home,
+    end,
+    move,
   };
 };
 
@@ -245,9 +348,17 @@ const TextEditingTest: VoidComponent = () => {
   //   const offset = caretIndex();
   //   setText((text) => text.slice(0, offset) + str + text.slice(offset));
   // };
-  const buffer = TextBuffer("some existing text\nmultiline");
+  // const buffer = TextBuffer("some existing text\nmultiline");
 
-  const insertCharWidth = 1;
+  const buffer = TextBuffer([
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+    "Sed quis tortor id nisi dapibus molestie.",
+    "Aenean pellentesque tempor lacinia.",
+    "Maecenas porttitor aliquam elementum.",
+    "Morbi id arcu enim. Fusce mattis Morbi id arcu enim. Fusce mattis",
+  ]);
+
+  const insertCharWidth = 2;
 
   const [caretX, setCaretX] = createSignal(0);
   const [caretY, setCaretY] = createSignal(0);
@@ -288,7 +399,7 @@ const TextEditingTest: VoidComponent = () => {
       const start = performance.now();
 
       const line = buffer.store.lines[buffer.store.lineIndex]!;
-      const lineOffset = buffer.store.lineOffset;
+      const lineOffset = buffer.store.columnIndex;
 
       const textToCaret = line.slice(0, lineOffset);
       const measure = context.measureText(textToCaret);
@@ -456,11 +567,8 @@ const TextEditingTest: VoidComponent = () => {
         onMouseDown={(ev) => {
           ev.preventDefault();
         }}
-        onClick={(ev) => {
+        onClick={() => {
           if (!focused()) textAreaRef.focus();
-
-          // const point = document.caretPositionFromPoint(ev.x, ev.y);
-          // if (point?.offset) setCaretIndex(point.offset);
         }}
         onFocusIn={() => {
           // textAreaRef.focus();
@@ -492,32 +600,23 @@ const TextEditingTest: VoidComponent = () => {
             Match.value(ev.key).pipe(
               Match.when("Backspace", () => {
                 console.log("> backspace");
-                buffer.backspace();
-
-                // setText(
-                //   text().slice(0, caretIndex() - 1) +
-                //     text().slice(caretIndex()),
-                // );
-                // setCaretIndex((offset) => Math.max(offset - 1, 0));
+                buffer.deleteBackward();
+              }),
+              Match.when("Delete", () => {
+                console.log("> delete");
+                buffer.deleteForward();
               }),
               Match.when("Enter", () => {
                 console.log("> enter");
                 buffer.newline();
-
-                // insertText("\n");
-                // setCaretIndex((offset) => Math.min(offset + 1, text().length));
               }),
               Match.when("ArrowLeft", () => {
                 console.log("> left");
                 buffer.moveLeft();
-
-                // setCaretIndex((offset) => Math.max(offset - 1, 0));
               }),
               Match.when("ArrowRight", () => {
                 console.log("> right");
                 buffer.moveRight();
-
-                // setCaretIndex((offset) => Math.min(offset + 1, text().length));
               }),
               Match.when("ArrowUp", () => {
                 console.log("> up");
@@ -527,8 +626,17 @@ const TextEditingTest: VoidComponent = () => {
                 console.log("> down");
                 buffer.moveDown();
               }),
+              Match.when("Home", () => {
+                console.log("> home");
+                buffer.home();
+              }),
+              Match.when("End", () => {
+                console.log("> end");
+                buffer.end();
+              }),
               Match.orElse((key) => {
                 console.log("unhandled key:", key);
+                console.log("unhandled key code:", ev.code);
               }),
             );
 
@@ -546,15 +654,14 @@ const TextEditingTest: VoidComponent = () => {
               Match.when("insertText", () => {
                 console.log("> insert");
                 if (!ev.data) return;
-
-                // insertText(ev.data);
-                // setCaretIndex((offset) => offset + ev.data!.length);
+                buffer.insert(ev.data);
+              }),
+              Match.when("insertFromPaste", () => {
+                if (!ev.data) return;
                 buffer.insert(ev.data);
               }),
               Match.when("insertLineBreak", () => {
-                // console.log("> newline");
-                // insertText("\n");
-                // setCaretOffset((offset) => offset + 1);
+                //
               }),
               Match.when("deleteContentBackward", () => {
                 // empty since we never get this is an empty textarea
@@ -572,7 +679,7 @@ const TextEditingTest: VoidComponent = () => {
 
         <Show when={focused()}>
           <div
-            class="absolute bg-theme-colors-green-border/50"
+            class="absolute bg-theme-colors-aqua-base/75"
             style={{
               left: `${caretX()}px`,
               top: `${caretY()}px`,
@@ -600,11 +707,22 @@ const TextEditingTest: VoidComponent = () => {
           )}
         >
           <For each={buffer.store.lines}>
-            {(line) => (
-              <span>
-                {line}
-                {"\n"}
-              </span>
+            {(line, idx) => (
+              <div
+                class="w-full"
+                onClick={(ev) => {
+                  const point = document.caretPositionFromPoint(ev.x, ev.y);
+                  if (!point) return;
+                  console.log("point:", point, "line: ", idx());
+                  buffer.move(idx(), point?.offset);
+                }}
+              >
+                <Show when={line.length === 0}>
+                  {/* @HACK: so that empty lines are not ignored */}
+                  <span> </span>
+                </Show>
+                <span class="whitespace-pre">{line}</span>
+              </div>
             )}
           </For>
           {/*<span>{text()}</span>*/}
@@ -616,7 +734,7 @@ const TextEditingTest: VoidComponent = () => {
         <div class="text-sm flex flex-row items-baseline gap-1">
           {/*caret offset: <pre>{caretIndex()}</pre>*/}
           line index: <pre>{buffer.store.lineIndex}</pre>
-          line offset: <pre>{buffer.store.lineOffset}</pre>
+          line offset: <pre>{buffer.store.columnIndex}</pre>
         </div>
 
         <div class="text-sm flex flex-row items-baseline gap-1">
